@@ -14,6 +14,7 @@ class AgentConfig:
     max_context_chars: int = 120_000
     opencode_executable: str = "opencode"
     opencode_agent: str = "plan"
+    telemetry_file: str = ".vial-cache/events.jsonl"
 
 
 def load_config(root: Path) -> AgentConfig:
@@ -34,4 +35,7 @@ def load_config(root: Path) -> AgentConfig:
             "VIAL_OPENCODE_EXECUTABLE", str(values.get("opencode_executable", "opencode"))
         ),
         opencode_agent=os.environ.get("VIAL_OPENCODE_AGENT", str(values.get("opencode_agent", "plan"))),
+        telemetry_file=os.environ.get(
+            "VIAL_TELEMETRY_FILE", str(values.get("telemetry_file", ".vial-cache/events.jsonl"))
+        ),
     )

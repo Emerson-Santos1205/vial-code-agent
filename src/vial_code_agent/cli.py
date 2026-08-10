@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
 from .agent import CodeAgent
@@ -14,11 +15,14 @@ from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .router import ModelRouter
 from .test_runner import run_tests
+from .telemetry import Telemetry
 from .workspace import select_files
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Select context for a VIAL code task")
+    parser.add_argument("command", nargs="?", choices=["review"])
+    parser.add_argument("patch_file", nargs="?")
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--vial-root", type=Path)
     parser.add_argument("--include", action="append")
@@ -55,6 +59,27 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
+    telemetry = Telemetry(
+        None if not config.telemetry_file else (root / config.telemetry_file).resolve()
+    )
+    if args.command == "review":
+        if not args.patch_file:
+            print("error: review requires a patch file", file=sys.stderr)
+            return 2
+        patch_path = Path(args.patch_file)
+        if not patch_path.is_absolute():
+            patch_path = Path.cwd() / patch_path
+        try:
+            patch = patch_path.read_text(encoding="utf-8")
+            PatchApplier(root).validate(patch)
+        except (OSError, PatchError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(f"review: {patch_path}")
+        print(f"files: {', '.join(sorted(PatchApplier(root).paths(patch)))}")
+        print(patch, end="" if patch.endswith("\n") else "\n")
+        telemetry.record("review", files=sorted(PatchApplier(root).paths(patch)))
+        return 0
     if args.model == "auto":
         args.model = config.model
     if args.cache_dir == Path(".vial-cache"):
@@ -86,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --apply requires --generate", file=sys.stderr)
         return 2
     if args.generate:
+        started = time.monotonic()
         try:
             generated = CodeAgent(
                 OpenCodeProvider(
@@ -97,6 +123,15 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
+        telemetry.record(
+            "generation",
+            model=route,
+            returncode=generated.response.returncode,
+            duration_seconds=round(time.monotonic() - started, 4),
+            input_tokens=generated.response.input_tokens,
+            output_tokens=generated.response.output_tokens,
+            has_patch=generated.patch is not None,
+        )
         if generated.response.returncode != 0:
             print(f"error: model exited with code {generated.response.returncode}", file=sys.stderr)
             if generated.response.stderr:
@@ -113,6 +148,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("patch:")
         print(generated.patch)
+        try:
+            PatchApplier(root).validate(generated.patch, {path.relative_to(root).as_posix() for path in files})
+        except PatchError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
         if not args.apply:
             return 0
         if not args.yes:
@@ -131,9 +171,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         print("patch: applied")
+        telemetry.record("patch_applied", model=route, files=sorted(PatchApplier(root).paths(generated.patch)))
         if args.test_command:
             result = run_tests(root, args.test_command, args.test_timeout)
             print(f"tests: {'passed' if result.passed else 'failed'}")
+            telemetry.record(
+                "tests",
+                passed=result.passed,
+                returncode=result.returncode,
+                duration_seconds=round(result.elapsed_seconds, 4),
+            )
             if result.stdout:
                 print(result.stdout, end="")
             if result.stderr:

@@ -14,7 +14,7 @@ class PatchApplier:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
-    def _run(self, patch: str, reverse: bool = False) -> None:
+    def _normalize(self, patch: str) -> str:
         if not patch.strip():
             raise PatchError("patch is empty")
         normalized_lines: list[str] = []
@@ -27,7 +27,20 @@ class PatchApplier:
             if in_hunk and line == "":
                 line = " "
             normalized_lines.append(line)
-        patch = "\n".join(normalized_lines) + "\n"
+        return "\n".join(normalized_lines) + "\n"
+
+    def paths(self, patch: str) -> set[str]:
+        normalized = self._normalize(patch)
+        result: set[str] = set()
+        for line in normalized.splitlines():
+            if line.startswith(("--- ", "+++ ")):
+                path = line[4:].split("\t", 1)[0]
+                if path != "/dev/null":
+                    result.add(path.removeprefix("a/").removeprefix("b/"))
+        return result
+
+    def _check(self, patch: str, reverse: bool = False) -> tuple[list[str], str]:
+        patch = self._normalize(patch)
         for line in patch.splitlines():
             if line.startswith(("--- ", "+++ ")):
                 path = line[4:].split("\t", 1)[0]
@@ -49,6 +62,19 @@ class PatchApplier:
         )
         if check.returncode != 0:
             raise PatchError(check.stderr.strip() or "patch validation failed")
+        return command, patch
+
+    def validate(self, patch: str, allowed_paths: set[str] | None = None) -> None:
+        if allowed_paths is not None:
+            changed = self.paths(patch)
+            unexpected = changed - allowed_paths
+            if unexpected:
+                names = ", ".join(sorted(unexpected))
+                raise PatchError(f"patch changes files outside selected context: {names}")
+        self._check(patch)
+
+    def _run(self, patch: str, reverse: bool = False) -> None:
+        command, patch = self._check(patch, reverse)
         applied = subprocess.run(
             command + ["-"], input=patch, text=True, cwd=self.root,
             capture_output=True, check=False,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vial-code-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Experimental code agent built on the VIAL core"
 requires-python = ">=3.10"
 dependencies = []

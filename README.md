@@ -44,7 +44,16 @@ vial --root . --task "fix the parser" --generate --apply --yes `
   --test-command python -m unittest discover -s tests
 ```
 
-The `vial` command is installed by the editable package install. The optional
+Review a patch without applying it:
+
+```text
+vial review path/to/change.patch --root .
+```
+
+The agent rejects generated patches that modify files outside the selected
+context. Local telemetry is written as JSONL without prompts or file contents.
+Copy `.vial.json.example` to `.vial.json` to configure a default model and
+runtime options. The `vial` command is installed by the editable package install. The optional
 `.vial.json` file can define `model`, `cache_dir`, `test_timeout`,
 `max_context_chars`, `opencode_executable` and `opencode_agent`; matching `VIAL_*` environment
 variables override those values.
