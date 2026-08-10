@@ -1,0 +1,17 @@
+{
+  "name": "vial-code-agent-smoke",
+  "tasks": [
+    {
+      "id": "return-value",
+      "initial": "def solve():\n    return 0\n",
+      "patch": "--- a/solution.py\n+++ b/solution.py\n@@ -1,2 +1,2 @@\n def solve():\n-    return 0\n+    return 42\n",
+      "tests": "import unittest\nfrom solution import solve\n\nclass SolutionTests(unittest.TestCase):\n    def test_answer(self):\n        self.assertEqual(solve(), 42)\n\nif __name__ == '__main__':\n    unittest.main()\n"
+    },
+    {
+      "id": "string-value",
+      "initial": "def solve():\n    return ''\n",
+      "patch": "--- a/solution.py\n+++ b/solution.py\n@@ -1,2 +1,2 @@\n def solve():\n-    return ''\n+    return 'vial'\n",
+      "tests": "import unittest\nfrom solution import solve\n\nclass SolutionTests(unittest.TestCase):\n    def test_answer(self):\n        self.assertEqual(solve(), 'vial')\n\nif __name__ == '__main__':\n    unittest.main()\n"
+    }
+  ]
+}
