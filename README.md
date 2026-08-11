@@ -22,6 +22,17 @@ python -m pip install -e .
 python -m vial_code_agent --root . --include "*.py"
 ```
 
+Clone with the official VIAL core:
+
+```text
+git clone <vial-code-agent-repository> --recurse-submodules
+git submodule update --init --recursive
+```
+
+The pinned VIAL implementation is available at `vendor/vial-core`. Code
+generation uses its official selective `Context` lifecycle and patch execution
+is authorized and audited through VIAL `Decision` and `Tool` contracts.
+
 The command prints the selected files and the route chosen for the request.
 
 Generate a patch with the locally installed `opencode` command:
@@ -57,6 +68,23 @@ runtime options. The `vial` command is installed by the editable package install
 `.vial.json` file can define `model`, `cache_dir`, `test_timeout`,
 `max_context_chars`, `opencode_executable` and `opencode_agent`; matching `VIAL_*` environment
 variables override those values.
+
+Additional interfaces:
+
+```text
+vial fix "corrija o parser" --generate --apply --yes
+vial run --exec-command "python -m unittest discover -s tests"
+vial serve --port 8765
+vial chat
+```
+
+The local web API exposes `GET /health` and `POST /chat`. The VS Code
+extension in `vscode-extension/` connects to that local server. Chat sessions
+are stored in `.vial-sessions/`; sequential workflows and multi-agent teams
+are available through the `workflow` and `agents` modules.
+
+The command runner is allowlisted by default. `--unsafe` is an explicit opt-in
+for trusted workspaces; unrestricted execution is never the default.
 
 Run a workspace test command, keeping it last because it consumes the remaining
 CLI arguments:

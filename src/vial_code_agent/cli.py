@@ -14,14 +14,17 @@ from .core import VialCoreReference
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .router import ModelRouter
+from .command_runner import CommandRunner
+from .session import SessionStore
 from .test_runner import run_tests
 from .telemetry import Telemetry
+from .web import serve
 from .workspace import select_files
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Select context for a VIAL code task")
-    parser.add_argument("command", nargs="?", choices=["review"])
+    parser.add_argument("command", nargs="?", choices=["review", "fix", "chat", "serve", "run"])
     parser.add_argument("patch_file", nargs="?")
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--vial-root", type=Path)
@@ -33,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="apply the generated patch")
     parser.add_argument("--yes", action="store_true", help="apply without confirmation")
     parser.add_argument("--keep-on-failure", action="store_true", help="keep changes when tests fail")
-    parser.add_argument("--max-context-chars", type=int, default=120_000)
+    parser.add_argument("--max-context-chars", type=int, default=6_000)
     parser.add_argument("--opencode-executable", default="opencode")
     parser.add_argument("--opencode-agent", default="plan")
     parser.add_argument(
@@ -48,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Command to run after a change; keep this option last",
     )
     parser.add_argument("--test-timeout", type=int, default=120)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--exec-command")
+    parser.add_argument("--unsafe", action="store_true", help="allow non-allowlisted commands")
     return parser
 
 
@@ -62,6 +69,46 @@ def main(argv: list[str] | None = None) -> int:
     telemetry = Telemetry(
         None if not config.telemetry_file else (root / config.telemetry_file).resolve()
     )
+    vial_root = args.vial_root or (root / "vendor" / "vial-core")
+    vial = VialCoreReference(vial_root.resolve()) if vial_root.is_dir() else None
+    if args.command == "run":
+        if not args.exec_command:
+            print("error: run requires --exec-command", file=sys.stderr)
+            return 2
+        try:
+            result = CommandRunner(root, unsafe=args.unsafe).run(
+                CommandRunner.parse(args.exec_command), args.test_timeout
+            )
+        except (PermissionError, ValueError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+    if args.command == "chat":
+        store = SessionStore(root / ".vial-sessions")
+        session_id = args.patch_file or store.create()
+        print(f"session: {session_id}")
+        print("Digite /exit para sair.")
+        while True:
+            try:
+                message = input("you> ")
+            except EOFError:
+                break
+            if message.strip() == "/exit":
+                break
+            if message.strip():
+                store.append(session_id, "user", message)
+                print("assistant> Mensagem registrada; conecte um provider para gerar a resposta.")
+        return 0
+    if args.command == "fix":
+        if not args.patch_file:
+            print("error: fix requires a task", file=sys.stderr)
+            return 2
+        args.task = args.patch_file
+        args.generate = True
+        args.apply = args.apply or args.yes
     if args.command == "review":
         if not args.patch_file:
             print("error: review requires a patch file", file=sys.stderr)
@@ -86,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         args.cache_dir = Path(config.cache_dir)
     if args.test_timeout == 120:
         args.test_timeout = config.test_timeout
-    if args.max_context_chars == 120_000:
+    if args.max_context_chars == 6_000:
         args.max_context_chars = config.max_context_chars
     if args.opencode_executable == "opencode":
         args.opencode_executable = config.opencode_executable
@@ -96,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     args.exclude = args.exclude or [".git", ".venv", "__pycache__"]
     files = select_files(root, args.include, args.exclude)
     route = ModelRouter().route(args.task, args.model)
+    if args.command == "serve":
+        print(f"web: http://{args.host}:{args.port}")
+        serve(root, args.host, args.port, OpenCodeProvider(route, args.opencode_executable, args.opencode_auto, args.opencode_agent))
+        return 0
 
     print(f"route: {route}")
     if args.vial_root:
@@ -118,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
                     route, args.opencode_executable, args.opencode_auto, args.opencode_agent
                 )
             ).generate(
-                args.task, root, files, args.max_context_chars
+                args.task, root, files, args.max_context_chars, vial
             )
         except RuntimeError as error:
             print(f"error: {error}", file=sys.stderr)
@@ -165,6 +216,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if generated.workspace_changed:
                 print("patch: already applied by opencode")
+            elif vial is not None:
+                result = vial.execute_patch(PatchApplier(root), generated.patch, generated.context_id)
+                if not result.ok():
+                    raise PatchError(result.error or "VIAL tool rejected patch")
             else:
                 PatchApplier(root).apply(generated.patch)
         except PatchError as error:

@@ -50,9 +50,7 @@ class OpenCodeProvider:
         instruction = f"{prompt} Return only a unified diff."
         executable = self.executable
         if not os.path.dirname(executable):
-            executable = shutil.which(executable) or (
-                shutil.which(f"{executable}.cmd") if os.name == "nt" else None
-            ) or executable
+            executable = _resolve_executable(executable)
         command = [executable, "run"]
         if self.auto_approve:
             command.append("--auto")
@@ -67,6 +65,8 @@ class OpenCodeProvider:
                 timeout=timeout_seconds, check=False, cwd=directory,
             )
         except FileNotFoundError as error:
+            if getattr(error, "winerror", None) == 206:
+                raise RuntimeError("model prompt is too large for Windows command-line limits; reduce --max-context-chars") from error
             raise RuntimeError(f"model executable not found: {self.executable}") from error
         except subprocess.TimeoutExpired as error:
             raise RuntimeError(f"model request timed out after {timeout_seconds}s") from error
@@ -105,6 +105,25 @@ class OpenCodeProvider:
             **usage,
         )
 
+    def chat(self, prompt: str, directory: Path | None = None, timeout_seconds: int = 180) -> ModelResponse:
+        """Return a conversational response without forcing diff extraction."""
+        executable = self.executable
+        if not os.path.dirname(executable):
+            executable = _resolve_executable(executable)
+        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model, prompt]
+        if self.auto_approve:
+            command.insert(2, "--auto")
+        process = subprocess.run(
+            command, cwd=directory, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout_seconds, check=False,
+        )
+        text = "".join(
+            json.loads(line).get("part", {}).get("text", "")
+            for line in process.stdout.splitlines()
+            if _is_text_event(line)
+        )
+        return ModelResponse(text, process.returncode, process.stderr)
+
 
 def extract_diff(text: str) -> str | None:
     git_start = text.find("diff --git ")
@@ -139,3 +158,25 @@ def _find_diff_text(value: object) -> str | None:
             if found is not None:
                 return found
     return None
+
+
+def _is_text_event(line: str) -> bool:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    return event.get("type") == "text"
+
+
+def _resolve_executable(executable: str) -> str:
+    resolved = shutil.which(executable)
+    if resolved:
+        return resolved
+    if os.name == "nt":
+        for candidate in (
+            Path.home() / "AppData" / "Roaming" / "npm" / f"{executable}.cmd",
+            Path.home() / "AppData" / "Roaming" / "npm" / f"{executable}.ps1",
+        ):
+            if candidate.is_file():
+                return str(candidate)
+    return executable

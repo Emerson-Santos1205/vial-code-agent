@@ -1,0 +1,13 @@
+{
+  "name": "vial-code-agent",
+  "displayName": "VIAL Code Agent",
+  "description": "VIAL Code Agent chat and workspace commands",
+  "version": "0.2.0",
+  "engines": { "vscode": ">=1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onCommand:vial.openChat"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [{ "command": "vial.openChat", "title": "VIAL: Open Chat" }]
+  }
+}

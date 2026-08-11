@@ -5,6 +5,7 @@ import difflib
 from pathlib import Path
 
 from .model import ModelResponse, OpenCodeProvider, extract_diff
+from .core import VialCoreReference
 
 
 @dataclass(frozen=True)
@@ -12,9 +13,10 @@ class GenerationResult:
     response: ModelResponse
     patch: str | None
     workspace_changed: bool = False
+    context_id: str = ""
 
 
-def build_prompt(task: str, root: Path, files: list[Path], max_chars: int = 120_000) -> str:
+def build_prompt(task: str, root: Path, files: list[Path], max_chars: int = 6_000) -> str:
     """Build a bounded, deterministic prompt from selected workspace files."""
     sections: list[str] = [f"Task: {task}\n\nThe file content is:\n"]
     used = sum(len(section) for section in sections)
@@ -40,13 +42,23 @@ class CodeAgent:
     def __init__(self, provider: OpenCodeProvider) -> None:
         self.provider = provider
 
-    def generate(self, task: str, root: Path, files: list[Path], max_chars: int = 120_000) -> GenerationResult:
+    def generate(
+        self, task: str, root: Path, files: list[Path], max_chars: int = 6_000,
+        vial: VialCoreReference | None = None,
+    ) -> GenerationResult:
         before = {path: path.read_bytes() for path in files if path.is_file()}
-        prompt = build_prompt(task, root, files, max_chars)
+        context_id = ""
+        if vial is not None and vial.exists():
+            context = vial.build_context(task, root, files)
+            context_id = context.context_id
+            context.consume()
+            prompt = context.body
+        else:
+            prompt = build_prompt(task, root, files, max_chars)
         response = self.provider.generate(prompt, directory=root)
         patch = extract_diff(response.text)
         if patch is not None:
-            return GenerationResult(response=response, patch=patch)
+            return GenerationResult(response=response, patch=patch, context_id=context_id)
         for path, original in before.items():
             if not path.is_file():
                 continue
@@ -62,5 +74,5 @@ class CodeAgent:
             generated = difflib.unified_diff(
                 old_text, new_text, fromfile=f"a/{relative}", tofile=f"b/{relative}"
             )
-            return GenerationResult(response=response, patch="".join(generated), workspace_changed=True)
+            return GenerationResult(response=response, patch="".join(generated), workspace_changed=True, context_id=context_id)
         return GenerationResult(response=response, patch=None)
