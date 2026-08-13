@@ -39,7 +39,7 @@ class CliIntegrationTests(unittest.TestCase):
             generated = GenerationResult(ModelResponse("", 0), PATCH)
 
             class FakeAgent:
-                def __init__(self, provider: object) -> None:
+                def __init__(self, provider: object, runtime=None) -> None:
                     pass
 
                 def generate(self, *args: object, **kwargs: object) -> GenerationResult:

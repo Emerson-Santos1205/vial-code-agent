@@ -57,8 +57,9 @@ class PatchApplier:
         if reverse:
             command.append("--reverse")
         check = subprocess.run(
-            command + ["--check", "-"], input=patch, text=True, cwd=self.root,
+            command + ["--check", "-"], input=patch, cwd=self.root,
             capture_output=True, check=False,
+            encoding="utf-8", errors="replace",
         )
         if check.returncode != 0:
             raise PatchError(check.stderr.strip() or "patch validation failed")
@@ -76,8 +77,9 @@ class PatchApplier:
     def _run(self, patch: str, reverse: bool = False) -> None:
         command, patch = self._check(patch, reverse)
         applied = subprocess.run(
-            command + ["-"], input=patch, text=True, cwd=self.root,
+            command + ["-"], input=patch, cwd=self.root,
             capture_output=True, check=False,
+            encoding="utf-8", errors="replace",
         )
         if applied.returncode != 0:
             raise PatchError(applied.stderr.strip() or "patch application failed")

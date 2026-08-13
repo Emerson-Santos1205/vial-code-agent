@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from vial_code_agent.model import ModelResponse
+from vial_code_agent.router import RoutingGraph
+from vial_code_agent.servers import ServerRegistry
+
+
+class RoutingGraphTests(unittest.TestCase):
+    def _graph(self, tmp: str, pool: list[str] | None = None,
+               default_model: str = "auto") -> RoutingGraph:
+        registry = ServerRegistry(Path(tmp))
+        for model in pool or []:
+            registry.pool_add(model)
+        return RoutingGraph(registry, default_model=default_model)
+
+    def test_analyze_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory)
+            decision = graph.analyze("trim trailing whitespace")
+            self.assertEqual(decision.tier, "deterministic")
+            self.assertEqual(decision.deterministic_keyword, "trim trailing whitespace")
+
+    def test_analyze_light(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory)
+            self.assertEqual(graph.analyze("explain this module").tier, "light")
+            self.assertEqual(graph.analyze("hi there").tier, "light")
+
+    def test_analyze_advanced(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory)
+            self.assertEqual(graph.analyze("implement persistence").tier, "advanced")
+
+    def test_candidates_light_prefers_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(
+                directory,
+                pool=["openai/gpt-5.6-luna", "openai/gpt-5.6-luna-fast"],
+            )
+            decision = graph.analyze("explain this")
+            candidates = graph.candidates(decision)
+            self.assertEqual(candidates[0], "openai/gpt-5.6-luna-fast")
+
+    def test_candidates_empty_pool_falls_back_to_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, default_model="openai/gpt-5.6-luna")
+            candidates = graph.candidates(graph.analyze("implement x"))
+            self.assertEqual(candidates, ["openai/gpt-5.6-luna"])
+
+    def test_model_for_explicit_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["fast/model", "slow/model"])
+            self.assertEqual(
+                graph.model_for("explain x", requested_model="slow/model"),
+                "slow/model",
+            )
+
+    def test_dispatch_deterministic_no_model_call(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["openai/gpt-5.6-luna"])
+            with patch("vial_code_agent.router.OpenCodeProvider") as provider:
+                response, decision = graph.dispatch("trim trailing whitespace")
+            provider.assert_not_called()
+            self.assertEqual(decision.tier, "deterministic")
+            self.assertEqual(response.returncode, 0)
+
+    def test_dispatch_parallel_picks_first_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast", "b/fast"])
+
+            class Fake:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    return ModelResponse("answer from a", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                response, decision = graph.dispatch("explain the parser")
+            self.assertEqual(decision.model, "a/fast")
+            self.assertIn("answer from a", response.text)
+
+    def test_dispatch_all_failed_returns_first_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast", "b/fast"])
+
+            class Failing:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    return ModelResponse("", 1, stderr="boom")
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Failing):
+                response, decision = graph.dispatch("explain the parser")
+            self.assertEqual(response.returncode, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

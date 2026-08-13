@@ -6,5 +6,8 @@ dist/
 build/
 *.egg-info/
 .coverage
+.vial.json
 .vial-cache/
+.vial-state/
+.vial-sessions/
 benchmark/results/

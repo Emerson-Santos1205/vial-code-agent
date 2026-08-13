@@ -7,7 +7,9 @@ name = "vial-code-agent"
 version = "0.2.0"
 description = "Experimental code agent built on the VIAL core"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "textual>=0.47",
+]
 
 [project.scripts]
 vial = "vial_code_agent.cli:main"
