@@ -85,6 +85,47 @@ class RoutingGraphTests(unittest.TestCase):
             self.assertEqual(decision.model, "a/fast")
             self.assertIn("answer from a", response.text)
 
+    def test_dispatch_forwards_history_to_pinned_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+            recorded: dict[str, object] = {}
+
+            class Rec:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None,
+                         history: object = None) -> ModelResponse:
+                    recorded["history"] = history
+                    return ModelResponse("ok", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Rec):
+                graph.dispatch(
+                    "explain x", requested_model="m1",
+                    history=[("user", "hi"), ("assistant", "oi")],
+                )
+            self.assertEqual(
+                recorded["history"], [("user", "hi"), ("assistant", "oi")])
+
+    def test_dispatch_forwards_history_in_parallel_pool(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast", "b/fast"])
+            received: list[object] = []
+
+            class Rec:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None,
+                         history: object = None) -> ModelResponse:
+                    received.append(history)
+                    return ModelResponse("ok", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Rec):
+                graph.dispatch(
+                    "explain the parser", history=[("user", "hello")])
+            self.assertEqual(received, [[("user", "hello")], [("user", "hello")]])
+
     def test_dispatch_all_failed_returns_first_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             graph = self._graph(directory, pool=["a/fast", "b/fast"])
@@ -99,6 +140,51 @@ class RoutingGraphTests(unittest.TestCase):
             with patch("vial_code_agent.router.OpenCodeProvider", Failing):
                 response, decision = graph.dispatch("explain the parser")
             self.assertEqual(response.returncode, 1)
+
+    def test_dispatch_escalates_tier_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(
+                directory,
+                pool=["a/fast", "b/reasoning", "c/reasoning"],
+            )
+            calls: list[str] = []
+
+            class Escalating:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    self.model = str(args[0]) if args else ""
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    calls.append(self.model)
+                    if "fast" in self.model:
+                        return ModelResponse("", 1, stderr="light failed")
+                    return ModelResponse("answer from reasoning", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Escalating):
+                response, decision = graph.dispatch("implement the feature")
+            self.assertEqual(decision.model, "b/reasoning")
+            self.assertIn("answer from reasoning", response.text)
+            self.assertEqual(calls, ["a/fast", "b/reasoning", "c/reasoning"])
+
+    def test_dispatch_light_tier_only_invokes_light_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(
+                directory,
+                pool=["a/fast", "b/reasoning"],
+            )
+            calls: list[str] = []
+
+            class Tiered:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    self.model = str(args[0]) if args else ""
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    calls.append(self.model)
+                    return ModelResponse("ok", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Tiered):
+                response, decision = graph.dispatch("explain the parser")
+            self.assertEqual(calls, ["a/fast"])
+            self.assertEqual(decision.model, "a/fast")
 
 
 if __name__ == "__main__":

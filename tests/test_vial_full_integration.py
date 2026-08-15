@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -104,7 +106,7 @@ class FullIntegrationTests(unittest.TestCase):
             entry, outcome = runtime.lookup_reuse(task)
             self.assertEqual(outcome, "hit")
             self.assertEqual(entry.outcome, "PATCH-A")
-            self.assertEqual(runtime.reuse_stats()["reuse_hits"], 0)
+            self.assertEqual(runtime.reuse_stats()["reuse_hits"], 1)
 
             source.write_text("changed\n", encoding="utf-8")
             runtime.add_workspace_fields(root, [source])
@@ -409,6 +411,139 @@ class FullIntegrationTests(unittest.TestCase):
             self.assertEqual(len(restored.decision_engine.decisions), 1)
             self.assertEqual(len(restored.coordinator.intents), 1)
             self.assertEqual(len(restored.patch_tool.audit_records), 1)
+
+    def test_reuse_stats_persist_across_processes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            root = Path(directory)
+            source = root / "a.py"
+            source.write_text("x = 1   \n", encoding="utf-8")
+            runtime = _runtime(state)
+            task = runtime.build_task(
+                "trim trailing whitespace", [source], root, op="code_transform")
+            context = runtime.build_context(
+                "trim trailing whitespace", root, [source])
+            runtime.store_reuse(task, "PATCH-A", 1.0, context)
+            entry, outcome = runtime.lookup_reuse(task)
+            self.assertEqual(outcome, "hit")
+            runtime.persist()
+
+            raw = json.loads((state / "reuse.json").read_text(encoding="utf-8"))
+            self.assertIn("_stats", raw)
+            self.assertIn("cache", raw)
+            self.assertEqual(raw["_stats"]["reuse_hits"], 1)
+            self.assertEqual(raw["_stats"]["recomputes"], 1)
+
+            restored = VialRuntime(_reference(), state)
+            self.assertEqual(restored.reuse_stats()["reuse_hits"], 1)
+            self.assertEqual(restored.reuse_stats()["recomputes"], 1)
+            self.assertEqual(restored.reuse_stats()["invalidations"], 0)
+            restored_task = restored.build_task(
+                "trim trailing whitespace", [source], root, op="code_transform")
+            self.assertEqual(restored.lookup_reuse(restored_task)[1], "hit")
+
+    def test_run_tool_enforces_command_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = _runtime(Path(directory) / "state")
+            runtime.set_workspace_root(root)
+            rejected = runtime.invoke_tool(
+                "TOOL-RUN-BUILD", {"command": "format-disk"},
+                objective="run arbitrary command")
+            self.assertEqual(rejected.status, "FAILED")
+            self.assertIn("allowlist", (rejected.error or "").lower())
+
+            allowed = runtime.invoke_tool(
+                "TOOL-RUN-BUILD",
+                {"command": [sys.executable, "-c", "print('ok')"]},
+                objective="run allowlisted command")
+            self.assertEqual(allowed.status, "SUCCESS")
+            self.assertIn("ok", allowed.output["stdout"])
+
+            unsafe = runtime.invoke_tool(
+                "TOOL-RUN-BUILD",
+                {"command": "format-disk", "unsafe": True},
+                objective="run unrestricted command")
+            self.assertEqual(unsafe.status, "FAILED")
+
+    def test_persistence_restores_deterministic_executions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            runtime = _runtime(state)
+            runtime.record_deterministic(
+                runtime.build_task("trim trailing whitespace", [], state,
+                                   op="code_transform"),
+                runtime.build_context("trim trailing whitespace", state, []),
+                "PATCH", correct=True, quality=1.0)
+            runtime.record_validation(1)
+            runtime.persist()
+
+            restored = VialRuntime(_reference(), state)
+            self.assertEqual(len(restored.executions), 1)
+            self.assertEqual(restored.executions[0]["correct"], True)
+            self.assertEqual(restored.costs()["validation"], runtime.costs()["validation"])
+
+    def test_events_and_project_state_persist_across_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            root = Path(directory)
+            source = root / "a.py"
+            source.write_text("x = 1\n", encoding="utf-8")
+            runtime = _runtime(state)
+            runtime.publish_event(
+                "RESOURCE_UPDATED", "RES-042", 17,
+                data={"hint": "API criada"})
+            runtime.capture_project(root, [source])
+            runtime.set_project_status("backend", "complete")
+            runtime.persist()
+
+            restored = VialRuntime(_reference(), state)
+            self.assertEqual(restored.events.stats()["events"], 1)
+            self.assertEqual(
+                restored.event_latest("RES-042").data["hint"], "API criada")
+            self.assertEqual(
+                restored.project.snapshot.status["backend"], "complete")
+            self.assertIn("events", restored.snapshot())
+            self.assertIn("project", restored.snapshot())
+            with self.assertRaises(PermissionError):
+                restored.publish_event("E", "RES", 1, actor="intruder")
+
+    def test_contexts_persist_and_trace_reconstructs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            root = Path(directory)
+            source = root / "a.py"
+            source.write_text("x = 1\n", encoding="utf-8")
+            runtime = _runtime(state)
+            context = runtime.build_context(
+                "trim trailing whitespace", root, [source])
+            decision = runtime.propose_patch_decision(context.context_id)
+            runtime.apply_patch(
+                PatchApplier(root), "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 1\n",
+                context.context_id)
+            runtime.persist()
+
+            restored = VialRuntime(_reference(), state)
+            self.assertIn(context.context_id, restored.contexts)
+            self.assertEqual(
+                restored.contexts[context.context_id].objective,
+                context.objective)
+            trace = restored.decision_trace(decision.id)
+            self.assertIsNotNone(trace["context"])
+            self.assertEqual(trace["context"]["context_id"], context.context_id)
+
+    def test_multi_agent_team_publishes_events(self) -> None:
+        from vial_code_agent.agents import Agent, MultiAgentTeam
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = _runtime(Path(directory))
+            team = MultiAgentTeam(
+                [Agent("reviewer", "review", lambda task: f"review:{task}"),
+                 Agent("tester", "test", lambda task: f"test:{task}")],
+                events=runtime.events, actor=runtime.actor)
+            team.run("change")
+            self.assertEqual(runtime.events.stats()["events"], 2)
+            self.assertEqual(runtime.event_latest("tester").type, "AGENT_RUN")
+            self.assertEqual(runtime.event_latest("tester").data["outcome"], "test:change")
 
     # ------------------------------------------------------------------ #
     # errors: structured VIAL error model (SDK-001 §30-31)

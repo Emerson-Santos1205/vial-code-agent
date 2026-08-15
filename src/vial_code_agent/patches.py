@@ -51,18 +51,18 @@ class PatchApplier:
                 if self.root not in candidate.parents and candidate != self.root:
                     raise PatchError(f"patch path escapes workspace: {path}")
         command = [
-            "git", "apply", "--recount", "--ignore-space-change", "--ignore-whitespace",
+            "git", "apply", "--ignore-space-change", "--ignore-whitespace",
             "--whitespace=nowarn" if reverse else "--whitespace=error",
         ]
         if reverse:
             command.append("--reverse")
         check = subprocess.run(
-            command + ["--check", "-"], input=patch, cwd=self.root,
+            command + ["--check", "-"], input=patch.encode("utf-8"), cwd=self.root,
             capture_output=True, check=False,
-            encoding="utf-8", errors="replace",
         )
         if check.returncode != 0:
-            raise PatchError(check.stderr.strip() or "patch validation failed")
+            detail = check.stderr.decode("utf-8", errors="replace").strip()
+            raise PatchError(detail or "patch validation failed")
         return command, patch
 
     def validate(self, patch: str, allowed_paths: set[str] | None = None) -> None:
@@ -77,12 +77,12 @@ class PatchApplier:
     def _run(self, patch: str, reverse: bool = False) -> None:
         command, patch = self._check(patch, reverse)
         applied = subprocess.run(
-            command + ["-"], input=patch, cwd=self.root,
+            command + ["-"], input=patch.encode("utf-8"), cwd=self.root,
             capture_output=True, check=False,
-            encoding="utf-8", errors="replace",
         )
         if applied.returncode != 0:
-            raise PatchError(applied.stderr.strip() or "patch application failed")
+            detail = applied.stderr.decode("utf-8", errors="replace").strip()
+            raise PatchError(detail or "patch application failed")
 
     def apply(self, patch: str) -> None:
         self._run(patch)

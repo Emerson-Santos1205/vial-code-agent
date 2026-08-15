@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import difflib
+import functools
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,6 +18,8 @@ class ModelRouter:
     def route(self, task: str, requested_model: str = "auto") -> str:
         if requested_model != "auto":
             return requested_model
+        if deterministic_solvable(task):
+            return "deterministic"
         lowered = task.lower()
         if any(word in lowered for word in ("explain", "document", "rename")):
             return "fast"
@@ -71,6 +75,7 @@ class RoutingGraph:
         "test", "migrate", "design", "optimize", "review", "generate",
     )
     POOL_MODEL = {"light": "fast", "advanced": "reasoning"}
+    TIER_COST = {"light": 0, "advanced": 1}
 
     def __init__(
         self,
@@ -138,11 +143,15 @@ class RoutingGraph:
         task: str,
         root: Path | None = None,
         requested_model: str = "auto",
+        history: list[tuple[str, str]] | None = None,
     ) -> tuple[ModelResponse, RouteDecision]:
         if requested_model != "auto":
             decision = RouteDecision(
                 tier="advanced", candidates=[requested_model], model=requested_model)
-            response = self._provider_for(requested_model).chat(task, root)
+            provider = self._provider_for(requested_model)
+            response = (
+                provider.chat(task, root, history=history)
+                if history else provider.chat(task, root))
             return response, decision
         decision = self.analyze(task)
         if decision.tier == "deterministic":
@@ -152,15 +161,49 @@ class RoutingGraph:
         candidates = self.candidates(decision)
         if not candidates:
             return ModelResponse("", 1, stderr="no models in routing pool"), decision
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        # Staged tier escalation (RFC-010 cost order): dispatch the cheapest
+        # tier first in parallel; only when a whole tier fails do we escalate
+        # to the next, instead of fanning every prompt out to the full pool.
+        tiered: dict[str, list[str]] = {}
+        for ref in candidates:
+            tiered.setdefault(_tier_of(ref), []).append(ref)
+        first_error: ModelResponse | None = None
+        for tier in sorted(tiered, key=lambda tier: self.TIER_COST[tier]):
+            response, ref, error_response = self._dispatch_refs(
+                task, root, tiered[tier], history)
+            if response is not None:
+                return response, RouteDecision(
+                    tier=decision.tier, candidates=candidates, model=ref)
+            if first_error is None:
+                first_error = error_response
+        return first_error or ModelResponse(
+            "", 1, stderr="all routing candidates failed"), RouteDecision(
+            tier=decision.tier, candidates=candidates, model=candidates[0])
+
+    # ------------------------------------------------------------------ #
+    # Parallel dispatch within one tier; returns the first valid response.
+    # ``error_response`` preserves the tier's first failure so a total
+    # failure can be reported without an extra model call.
+    # ------------------------------------------------------------------ #
+    def _dispatch_refs(
+        self,
+        task: str,
+        root: Path | None,
+        refs: list[str],
+        history: list[tuple[str, str]] | None,
+    ) -> tuple[ModelResponse | None, str, ModelResponse]:
         providers = [
-            (ref, self._provider_for(ref)) for ref in candidates
+            (ref, self._provider_for(ref)) for ref in refs
         ]
         results: dict[int, tuple[str, ModelResponse]] = {}
         with ThreadPoolExecutor(max_workers=max(1, len(providers))) as executor:
             futures = {
-                executor.submit(provider.chat, task, root): index
+                executor.submit(
+                    functools.partial(provider.chat, history=history)
+                    if history else provider.chat,
+                    task, root,
+                ): index
                 for index, (_, provider) in enumerate(providers)
             }
             for future in as_completed(futures):
@@ -175,15 +218,15 @@ class RoutingGraph:
         for index in sorted(results):
             ref, response = results[index]
             if response.returncode == 0 and response.text.strip():
-                return response, RouteDecision(
-                    tier=decision.tier, candidates=candidates, model=ref)
+                return response, ref, ModelResponse("", 1)
         for index in sorted(results):
             ref, response = results[index]
             if response.text.strip():
-                return response, RouteDecision(
-                    tier=decision.tier, candidates=candidates, model=ref)
-        return results[0][1], RouteDecision(
-            tier=decision.tier, candidates=candidates, model=results[0][0])
+                return response, ref, ModelResponse("", 1)
+        first_index = min(results) if results else 0
+        ref, response = results.get(
+            first_index, ("", ModelResponse("", 1, stderr="no candidates")))
+        return None, "", response
 
     # ------------------------------------------------------------------ #
     def _provider_for(self, model_ref: str):

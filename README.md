@@ -9,22 +9,24 @@ abstractions remain in the VIAL repository.
 
 ## Status
 
-Experimental foundation. The CLI selects source files, routes tasks, executes
-tests and caches results. The `opencode` adapter and patch applier are available
-behind explicit calls; model execution is never implicit. When the VIAL core is
-present, the runtime composes every official prototype surface: selective
-context, cognitive reuse, Deterministic-First routing, capability/authority
-gating, intent-logged patch application, cost accounting and persistent
-organizational state (see `docs/vial-integration.md`).
+Experimental foundation. The CLI is an opencode-style terminal interface that
+selects source files, routes tasks across a pool of models (or leaves routing
+to an automatic orchestrator), executes tests and caches results. Model
+execution is never implicit. When the VIAL core is present, the runtime
+composes every official prototype surface: selective context, cognitive reuse,
+Deterministic-First routing, capability/authority gating, intent-logged patch
+application, cost accounting and persistent organizational state (see
+`docs/vial-integration.md`).
 
-## Run
+## Install
 
 From this repository:
 
 ```text
 python -m pip install -e .
-python -m vial_code_agent --root . --include "*.py"
 ```
+
+The `vial` command is installed by the editable package install.
 
 Clone with the official VIAL core:
 
@@ -37,125 +39,100 @@ The pinned VIAL implementation is available at `vendor/vial-core`. Code
 generation uses its official selective `Context` lifecycle and patch execution
 is authorized and audited through VIAL `Decision` and `Tool` contracts.
 
-The command prints the selected files and the route chosen for the request.
+## Run
 
-Generate a patch with the locally installed `opencode` command:
-
-```text
-python -m vial_code_agent --root . --task "fix the parser" --generate
-```
-
-The default is preview-only. Apply after reviewing the diff:
+Launch the fullscreen opencode-style interface (Textual + Rich):
 
 ```text
-python -m vial_code_agent --root . --task "fix the parser" --generate --apply
+vial
+vial /path/to/project
+vial --prompt "fix the parser"
+vial --model openai/gpt-5.6-luna --agent plan
+vial -c                    # continue the last session
+vial -s <session_id>       # resume a specific session
+vial --auto                # auto-approve workspace permissions (dangerous!)
 ```
 
-Use `--yes` for automation. If a test command is supplied, failed tests roll
-the patch back automatically unless `--keep-on-failure` is used:
+The interface has a message viewport, a command input with autocomplete, a
+right-hand panel (session / agent / model / status / pool) and a footer of
+keybindings:
 
-```text
-vial --root . --task "fix the parser" --generate --apply --yes `
-  --test-command python -m unittest discover -s tests
-```
+- `Tab` switches the agent between `build` (full access) and `plan` (read-only).
+- `Ctrl+P` opens the model picker; `Enter` selects.
+- `Ctrl+C` quits.
 
-Review a patch without applying it:
+### Models and the orchestrator
 
-```text
-vial review path/to/change.patch --root .
-```
+Each prompt is routed by an orchestrator. With `--model auto` (the default)
+`RoutingGraph` analyzes the prompt text, mirrors the VIAL Deterministic-First
+chain (RFC-010), and — for implementation tasks — dispatches the prompt in
+parallel to every model in the routing pool, taking the first valid response in
+pool order. Pin a single model with `--model provider/model`; the identifier
+always uses `provider/model`, exactly as reported by `vial --models`.
 
-The agent rejects generated patches that modify files outside the selected
-context. Local telemetry is written as JSONL without prompts or file contents.
-Copy `.vial.json.example` to `.vial.json` to configure a default model and
-runtime options. The `vial` command is installed by the editable package install. The optional
-`.vial.json` file can define `model`, `cache_dir`, `test_timeout`,
-`max_context_chars`, `opencode_executable`, `opencode_agent`, `org_id`,
-`authority`, `actor`, `persist_state` and `price_table_json`; matching `VIAL_*` environment
-variables override those values.
+OpenAI-compatible servers are registered from the terminal with
+`/server add <name> <base_url> [api_key_env]` and persisted in `.vial.json`
+under the `servers` key; the API key is read from the named environment
+variable at call time, never stored in the file.
 
-Additional interfaces:
-
-```text
-vial fix "corrija o parser" --generate --apply --yes
-vial run --exec-command "python -m unittest discover -s tests"
-vial serve --port 8765
-vial chat
-vial chat --plain
-```
-
-`vial chat` opens a widget-based fullscreen terminal UI built with Textual,
-following the same component approach used by modern coding terminals: a
-message viewport, focused multiline composer, sidebar, command palette and
-model picker. Use `--plain` for the legacy line-by-line prompt in terminals
-without a compatible fullscreen UI. The fallback also remains available when
-the optional Textual dependency cannot be imported.
-
-Typing `/` inside the input raises a floating command picker that filters as
-you type. Use Up/Down to highlight a command and Enter (or Tab to complete) to
-select it — the same muscle memory as opencode.
-
-Inside `vial chat`, use OpenCode-style commands:
+### Slash commands
 
 ```text
 /models [provider]        list models (registered + opencode)
-/model provider/model     switch model (auto = route by prompt analysis)
+/model provider/model     switch model (auto = route by prompt)
 /model add server/model   add a model to a server
 /model remove server/model
+/agent build|plan         switch agent (or press Tab)
+/auto                     toggle auto-approval
 /providers                list opencode providers
 /servers                  list configured HTTP servers
-/server add <name> <base_url> [api_key_env]   add an OpenAI-compatible server
-/server remove <name>     remove a server
-/server models <name>     list a server's models
+/server add <name> <base_url> [api_key_env]
+/server remove <name>
+/server models <name>
 /pool                     show the parallel routing pool
-/pool add <model_ref>     add a model to the routing pool
+/pool add <model_ref>
 /pool remove <model_ref>
-/status                   show session, model, route and pool
+/status                   show session, model, agent, route and pool
+/trace <decision_id>      show the audit trail of a Decision
+/approve <decision_id>    approve a pending Decision
 /sessions                 list past sessions
-/resume <session_id>      resume a past session
+/resume <session_id>
 /clear                    start a new session
 /exit
 ```
 
-Prompts are routed automatically from the text alone, mirroring the VIAL
-Deterministic-First chain (RFC-010): mechanical tasks (`trim trailing
-whitespace`, `add encoding header`) resolve locally without a model call,
-explanations go to the cheapest fast model, and implementation tasks fan out
-to every model in the routing pool in parallel, taking the first valid
-response in pool order. Configure the pool with `/pool add`, or statically in
-`.vial.json` under the `pool` key.
-
-OpenAI-compatible servers are registered directly from the terminal with
-`/server add <name> <base_url> [api_key_env]` and persisted in `.vial.json`
-under the `servers` key. The API key is read from the named environment
-variable at call time, never stored in the file.
-
-Discover and select providers/models:
+### Non-interactive actions
 
 ```text
-vial providers
-vial models
-vial models --provider openai
-vial fix "corrija o parser" --model openai/gpt-5.6-luna
+vial --fix "implement persistence"                    # generate + apply + verify
+vial --fix "corrija o parser" --model openai/gpt-5.6-luna
+vial --review path/to/change.patch                    # validate a patch
+vial --status                                         # organizational snapshot
+vial --status --trace DEC-0001                        # audit trail of a decision
+vial --models --provider openai                       # list models
+vial --providers                                      # list providers
+vial --run "python -m unittest discover -s tests"     # governed command execution
 ```
 
-The model identifier always uses `provider/model`, exactly as reported by
-`vial models`. `--model auto` keeps the VIAL routing policy.
-
-The local web API exposes `GET /health` and `POST /chat`. The VS Code
-extension in `vscode-extension/` connects to that local server. Chat sessions
-are stored in `.vial-sessions/`; sequential workflows and multi-agent teams
-are available through the `workflow` and `agents` modules.
-
-The command runner is allowlisted by default. `--unsafe` is an explicit opt-in
-for trusted workspaces; unrestricted execution is never the default.
-
-Run a workspace test command, keeping it last because it consumes the remaining
-CLI arguments:
+`--fix` selects the workspace files, routes the task, generates a patch,
+applies it through the governed `TOOL-PATCH-APPLY` decision chain and runs the
+verification command if supplied. Failed verification rolls the patch back
+automatically unless `--keep-on-failure` is used:
 
 ```text
-python -m vial_code_agent --root . --test-command python -m unittest discover -s tests
+vial --fix "fix the parser" --include "*.py" `
+  --test-command python -m unittest discover -s tests
 ```
+
+`--run` executes only allowlisted commands through the governed
+`TOOL-RUN-BUILD`; unrestricted execution is never the default.
+
+Copy `.vial.json.example` to `.vial.json` to configure a default model and
+runtime options. The optional `.vial.json` file can define `model`, `cache_dir`,
+`test_timeout`, `max_context_chars`, `opencode_executable`, `opencode_agent`,
+`auto_approve`, `org_id`, `authority`, `actor`, `persist_state` and
+`price_table_json`; matching `VIAL_*` environment variables override those
+values.
 
 ## Test
 
@@ -202,17 +179,15 @@ official prototype module (`state`, `context`, `tokenizer`, `decision`,
 A mechanical task is routed without a model:
 
 ```text
-vial --root . --task "trim trailing whitespace" --generate --apply --yes
+vial --fix "trim trailing whitespace"
 ```
 
 Organizational telemetry:
 
 ```text
-vial status                           # snapshot organizacional (tools, memória, approvals)
-vial status --trace DEC-0001          # porquê de uma decisão (audit trail)
+vial --status                     # snapshot organizacional (tools, memória, approvals)
+vial --status --trace DEC-0001    # porquê de uma decisão (audit trail)
 ```
-
-The local web API exposes `GET /org` for the same organizational snapshot.
 
 See `docs/vial-integration.md` for the module-by-module mapping and evidence.
 

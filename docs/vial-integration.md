@@ -79,7 +79,7 @@ substituição do executor.
 
 ### 7. Auditabilidade (SDK-001 §46-51, SDK-005)
 Cada invocação de `Tool` produz um `AuditRecord` (invocation_id, tool_id, actor,
-decision_id, context_id, status). `vial status` e `GET /org` expõem o snapshot
+decision_id, context_id, status). `vial --status` expõe o snapshot
 organizacional completo: versão de estado, recursos, tools, reuso, coordinator,
 decisões, execuções, auditorias e custos.
 
@@ -134,12 +134,25 @@ high/critical. Approvals são persistidos em `approvals.json`.
 ### 14. Traço de auditoria (SDK-001 §46-51, RUNTIME-006 §55)
 `decision_trace(decision_id)` reconstitui o *porquê*: decision (objective,
 evidence, rationale, status, outcome), approval, `AuditRecord`s correlacionados
-e o Context usado. Exposição via `vial status --trace <DEC-...>`.
+e o Context usado. Exposição via `vial --status --trace <DEC-...>`.
 
 ### 15. Memória organizacional (RUNTIME-005)
 `memory()` expõe reuse, decisões com outcome, approvals e auditorias como a
-superfície de memória persistente (`.vial-state/`), incluída em `vial status` e
-`GET /org`.
+superfície de memória persistente (`.vial-state/`), incluída em `vial --status`.
+
+### 16. Interface opencode-style (chat + app)
+`src/vial_code_agent/chat.py` concentra o estado da sessão (modelo, agente,
+pool, sessão) e todo slash command em um `ChatController` sem framework
+(testável). `src/vial_code_agent/app.py` é a TUI Textual/Rich que renderiza o
+mesmo contrato visual do opencode: viewport de mensagens, composer com
+autocomplete, painel lateral (session/agent/model/status/pool) e footer de
+keybindings (`Tab` alterna build/plan, `Ctrl+P` seleciona modelo).
+
+A orquestração multi-LLM é o `RoutingGraph` (`router.py`): com `--model auto` a
+tarefa é analisada e despachada em paralelo para todos os modelos do pool
+(primeira resposta válida vence, prioridade determinística); `/model
+provider/model` fixa um único provedor. A governança do core é exposta na TUI
+por `/trace <id>` e `/approve <id>` (via `VialRuntime`).
 
 ## Configuração relevante (`.vial.json` + `VIAL_*`)
 
@@ -169,10 +182,13 @@ python -m unittest discover -s tests -v
 ## Comandos
 
 ```text
-vial status                          # snapshot organizacional completo
-vial --task "trim trailing whitespace" --generate --apply --yes   # rota determinística
-vial fix "implement persistence" --generate --apply --yes         # rota de modelo (custo)
-vial serve --port 8765               # GET /org expõe o estado organizacional
+vial                                   # TUI fullscreen opencode-style
+vial --status                          # snapshot organizacional completo
+vial --status --trace DEC-0001         # porquê de uma decisão (audit trail)
+vial --fix "trim trailing whitespace"  # rota determinística (sem modelo)
+vial --fix "implement persistence"     # rota de modelo (custo) via orquestrador
+vial --model openai/gpt-5.6-luna       # seleção explícita de LLM
+vial --providers / --models            # descoberta de provedores/modelos
 ```
 
 ## Fronteira com o VIAL

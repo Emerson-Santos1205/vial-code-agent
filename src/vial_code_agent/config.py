@@ -15,7 +15,8 @@ class AgentConfig:
     test_timeout: int = 120
     max_context_chars: int = 6_000
     opencode_executable: str = "opencode"
-    opencode_agent: str = "plan"
+    opencode_agent: str = "build"
+    auto_approve: bool = False
     telemetry_file: str = ".vial-cache/events.jsonl"
     org_id: str = ORG_ID
     authority: str = AUTHORITY
@@ -47,7 +48,9 @@ def load_config(root: Path) -> AgentConfig:
         opencode_executable=os.environ.get(
             "VIAL_OPENCODE_EXECUTABLE", str(values.get("opencode_executable", "opencode"))
         ),
-        opencode_agent=os.environ.get("VIAL_OPENCODE_AGENT", str(values.get("opencode_agent", "plan"))),
+        opencode_agent=os.environ.get("VIAL_OPENCODE_AGENT", str(values.get("opencode_agent", "build"))),
+        auto_approve=_as_bool(
+            os.environ.get("VIAL_AUTO_APPROVE"), values.get("auto_approve", False)),
         telemetry_file=os.environ.get(
             "VIAL_TELEMETRY_FILE", str(values.get("telemetry_file", ".vial-cache/events.jsonl"))
         ),

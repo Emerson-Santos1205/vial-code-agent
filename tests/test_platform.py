@@ -5,11 +5,9 @@ import unittest
 from pathlib import Path
 
 from vial_code_agent.agents import Agent, MultiAgentTeam
+from vial_code_agent.chat import ChatController
 from vial_code_agent.command_runner import CommandRunner
 from vial_code_agent.session import SessionStore
-from vial_code_agent.tui import (
-    TerminalChatUI, _command_palette, _cursor_position, _wrap_input,
-)
 from vial_code_agent.workflow import SequentialWorkflow
 
 
@@ -46,50 +44,63 @@ class PlatformTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 CommandRunner(Path(directory)).run(["format-disk"])
 
-    def test_terminal_chat_commands(self) -> None:
-        class Provider:
-            def list_models(self, provider: str | None = None) -> str:
-                return "openai/test\n"
+    def _controller(self, directory: str) -> ChatController:
+        root = Path(directory)
+        store = SessionStore(root / "sessions")
+        session = store.create()
+        return ChatController(
+            root, store, session, _Provider(), "openai/test", "opencode",
+            False, "plan",
+        )
 
-            def list_providers(self) -> str:
-                return "openai\n"
-
+    def test_chat_controller_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = SessionStore(root / "sessions")
-            session = store.create()
-            ui = TerminalChatUI(root, store, session, Provider(), "openai/test", "opencode", False, "plan")
-            self.assertIn("session:", ui.handle_command("/status").output)
-            self.assertEqual(ui.handle_command("/models").output, "openai/test")
-            changed = ui.handle_command("/model openai/other")
+            controller = self._controller(directory)
+            self.assertIn("session:", controller.handle("/status").output)
+            self.assertEqual(controller.handle("/models").output, "openai/test")
+            changed = controller.handle("/model openai/other")
             self.assertEqual(changed.new_model, "openai/other")
-            cleared = ui.handle_command("/clear")
+            agent = controller.handle("/agent plan")
+            self.assertEqual(agent.new_agent, "plan")
+            toggled = controller.handle("/auto")
+            self.assertIn("auto-approve", toggled.output)
+            cleared = controller.handle("/clear")
             self.assertTrue(cleared.new_session_id)
-            self.assertTrue(ui.handle_command("/exit").exit)
+            self.assertTrue(controller.handle("/exit").exit)
 
-    def test_terminal_input_wrapping_helpers(self) -> None:
-        self.assertEqual(_wrap_input("", 20), [""])
-        self.assertEqual(_wrap_input("abcdef", 12), ["abcdef"])
-        self.assertEqual(_wrap_input("abc\ndef", 20), ["abc", "def"])
-        self.assertEqual(_cursor_position("abcdef", 3, 12), (1, 11))
-        self.assertEqual(_cursor_position("abc\ndef", 5, 20), (2, 9))
-
-    def test_command_autocomplete_matches_filtered(self) -> None:
+    def test_chat_controller_autocomplete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = SessionStore(root / "sessions")
-            session = store.create()
-            ui = TerminalChatUI(root, store, session, None, "auto", "opencode", False, "plan")
-            self.assertEqual(ui._command_matches(list("/ex")), ["/exit"])
-            self.assertEqual(ui._command_matches(list("/model a")), ["/model add"])
-            self.assertEqual(ui._command_matches(list("/po")), ["/pool", "/pool add", "/pool remove"])
-            self.assertEqual(ui._command_matches(list("hello")), [])
-            self.assertEqual(ui._command_matches(list("/nope")), [])
+            controller = self._controller(directory)
+            self.assertEqual(controller.command_matches("/ex"), ["/exit"])
+            self.assertEqual(controller.command_matches("/model a"), ["/model add"])
+            self.assertEqual(controller.command_matches("/po"), ["/pool", "/pool add", "/pool set", "/pool remove"])
+            self.assertEqual(controller.command_matches("hello"), [])
+            self.assertEqual(controller.command_matches("/nope"), [])
 
-    def test_command_palette_renders_selection(self) -> None:
-        palette = _command_palette(["/model", "/model add"], 1, 120)
-        self.assertEqual(len(palette), 3)
-        self.assertIn("Commands", palette[0])
-        self.assertIn("/model", palette[1])
-        self.assertIn("/model add", palette[2])
-        self.assertIn("add a model", palette[2])
+    def test_chat_controller_governance_commands_need_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            self.assertIn("runtime unavailable", controller.handle("/trace DEC-1").output)
+            self.assertIn("runtime unavailable", controller.handle("/approve DEC-1").output)
+
+    def test_copy_command_returns_last_assistant_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            store = controller.store
+            store.append(controller.session_id, "user", "hi")
+            store.append(controller.session_id, "assistant", "first reply")
+            store.append(controller.session_id, "user", "again")
+            store.append(controller.session_id, "assistant", "second reply")
+            self.assertEqual(controller.last_assistant(), "second reply")
+            result = controller.handle("/copy")
+            self.assertTrue(result.handled)
+            self.assertEqual(result.clipboard, "second reply")
+            self.assertEqual(result.output, "")
+
+
+class _Provider:
+    def list_models(self, provider: str | None = None) -> str:
+        return "openai/test\n"
+
+    def list_providers(self) -> str:
+        return "openai\n"

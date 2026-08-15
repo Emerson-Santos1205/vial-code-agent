@@ -60,6 +60,16 @@ class ServerRegistryTests(unittest.TestCase):
             registry.pool_remove("a/model")
             self.assertEqual(registry.pool, ["b/model"])
 
+    def test_pool_set_replaces_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = self._registry(directory)
+            registry.pool_add("a/model")
+            registry.pool_add("b/model")
+            registry.pool_set(["b/model"])
+            self.assertEqual(registry.pool, ["b/model"])
+            self.assertEqual(ServerRegistry(root).pool, ["b/model"])
+
     def test_provider_kind(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             registry = self._registry(directory)

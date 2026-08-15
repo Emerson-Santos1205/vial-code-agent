@@ -10,6 +10,29 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+# Prior-turn context is injected into the prompt; capped to stay under the
+# Windows ~32k command-line limit for ``opencode run <prompt>``.
+_MAX_CONTEXT_CHARS = 28_000
+
+
+def _with_history(prompt: str, history: list[tuple[str, str]]) -> str:
+    """Prepend prior ``(role, content)`` turns to ``prompt``."""
+    lines = [f"{role}: {content}" for role, content in history]
+    context = "\n".join(lines)
+    if len(context) > _MAX_CONTEXT_CHARS:
+        context = context[-_MAX_CONTEXT_CHARS:]
+        first_newline = context.find("\n")
+        if first_newline >= 0:
+            context = context[first_newline + 1:]
+    return f"{context}\nuser: {prompt}"
+
+
+def _trim_messages(messages: list[dict[str, str]]) -> None:
+    """Drop oldest messages until the payload fits the context cap."""
+    total = sum(len(message["content"]) for message in messages)
+    while total > _MAX_CONTEXT_CHARS and len(messages) > 1:
+        total -= len(messages.pop(0)["content"])
+
 
 @dataclass(frozen=True)
 class ModelResponse:
@@ -103,12 +126,24 @@ class OpenCodeProvider:
         return ModelResponse(
             text="".join(text_parts),
             returncode=process.returncode,
-            stderr=process.stderr,
+            stderr=_extract_error(process),
             **usage,
         )
 
-    def chat(self, prompt: str, directory: Path | None = None, timeout_seconds: int = 180) -> ModelResponse:
-        """Return a conversational response without forcing diff extraction."""
+    def chat(
+        self,
+        prompt: str,
+        directory: Path | None = None,
+        timeout_seconds: int = 180,
+        history: list[tuple[str, str]] | None = None,
+    ) -> ModelResponse:
+        """Return a conversational response without forcing diff extraction.
+
+        ``history`` is an optional list of prior ``(role, content)`` turns,
+        prepended to the prompt so follow-up prompts keep the session context.
+        """
+        if history:
+            prompt = _with_history(prompt, history)
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)
@@ -124,7 +159,7 @@ class OpenCodeProvider:
             for line in process.stdout.splitlines()
             if _is_text_event(line)
         )
-        return ModelResponse(text, process.returncode, process.stderr)
+        return ModelResponse(text, process.returncode, _extract_error(process))
 
     def list_models(self, provider: str | None = None) -> str:
         executable = _resolve_executable(self.executable)
@@ -202,10 +237,18 @@ class HttpModelProvider:
         prompt: str,
         directory: Path | None = None,
         timeout_seconds: int = 180,
+        history: list[tuple[str, str]] | None = None,
     ) -> ModelResponse:
+        messages = [
+            {"role": role, "content": content}
+            for role, content in history or []
+            if role in ("system", "user", "assistant")
+        ]
+        messages.append({"role": "user", "content": prompt})
+        _trim_messages(messages)
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "stream": False,
         }
         try:
@@ -295,6 +338,36 @@ def _is_text_event(line: str) -> bool:
     except json.JSONDecodeError:
         return False
     return event.get("type") == "text"
+
+
+def _extract_error(process: subprocess.CompletedProcess) -> str:
+    """Surface an opencode ``error`` event so failures aren't silent.
+
+    ``opencode run --format json`` reports failures as a JSON ``error`` event
+    on stdout (not stderr) with a non-zero exit code; without this the UI can
+    only show ``model exited with code N``.
+    """
+    if process.stderr and process.stderr.strip():
+        return process.stderr.strip()
+    for line in process.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "error":
+            continue
+        error = event.get("error") or {}
+        if isinstance(error, dict):
+            message = error.get("message")
+            data = error.get("data") or {}
+            if isinstance(data, dict) and not message:
+                message = data.get("message")
+            ref = data.get("ref") if isinstance(data, dict) else None
+            if message:
+                return f"{str(message)}{f' (ref {ref})' if ref else ''}"
+        if event.get("error"):
+            return str(event.get("error"))
+    return ""
 
 
 def _resolve_executable(executable: str) -> str:

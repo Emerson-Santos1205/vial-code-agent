@@ -146,6 +146,11 @@ class ServerRegistry:
             self.pool.remove(model_ref)
             self.save()
 
+    def pool_set(self, model_refs: list[str]) -> None:
+        """Replace the routing pool with exactly the given model refs."""
+        self.pool = [ref for ref in model_refs if ref]
+        self.save()
+
     # ------------------------------------------------------------------ #
     # Discovery
     # ------------------------------------------------------------------ #

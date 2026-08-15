@@ -37,6 +37,8 @@ from typing import Any, Callable
 
 from .core import VialCoreReference
 from .errors import VialRuntimeError
+from .events import EventStore, VialEvent
+from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 
 # Organizational identity defaults (SDK-002 §4).
 ORG_ID = "ORG-VIAL-CODE-AGENT"
@@ -177,6 +179,12 @@ class VialRuntime:
         self.contexts: dict[str, Any] = {}
         self.approvals: dict[str, ApprovalRecord] = {}
         self.workspace_root: Path | None = None
+
+        # --- event/ΔState bus + materialized project state (agent coordination) ---
+        self.events = EventStore()
+        self.events.configure({self.actor, self.authority})
+        self.project = ProjectStateStore()
+        self.project.configure({self.actor, self.authority})
 
         self._register_default_resources()
         self._register_default_tools()
@@ -481,16 +489,27 @@ class VialRuntime:
     # ------------------------------------------------------------------ #
     def build_task(self, task_text: str, files: list[Path], root: Path,
                    op: str = "code_generation", args: Any = None) -> Any:
-        """Build an official Task with a deterministic relevance descriptor."""
+        """Build an official Task with a deterministic relevance descriptor.
+
+        ``args`` defaults to a descriptor that includes the operation text and
+        the sorted set of files the operation acts on, so the RFC-008 reuse
+        signature changes when the workspace file set changes (otherwise a
+        cached patch would silently omit newly added files).
+        """
         required = [file_field_key(path.relative_to(root).as_posix())
                     for path in files]
+        if args is None:
+            args = {
+                "task": task_text,
+                "files": sorted(required),
+            }
         return self._context.Task(
             id=f"TASK-{uuid.uuid4().hex[:12]}",
             prompt=task_text,
             required=required,
             expected=None,
             op=op,
-            args=args if args is not None else task_text,
+            args=args,
         )
 
     def build_context(self, task_text: str, root: Path,
@@ -511,12 +530,21 @@ class VialRuntime:
     # Cognitive reuse (RFC-008)
     # ------------------------------------------------------------------ #
     def lookup_reuse(self, task: Any) -> tuple[Any | None, str]:
-        """Return ``(cached_result, outcome)``; stale entries are invalidated."""
-        return self.reuse_engine.lookup(task)
+        """Return ``(cached_result, outcome)``; stale entries are invalidated.
+
+        The reference ``ReuseEngine`` never bumps its own hit/rebuild
+        counters (vendor behavior), so we account for observable hits here
+        (RFC-008 §2.3) without modifying the vendored core.
+        """
+        entry, outcome = self.reuse_engine.lookup(task)
+        if outcome == "hit":
+            self.reuse_engine.reuse_hits += 1
+        return entry, outcome
 
     def store_reuse(self, task: Any, outcome: Any, quality: float,
                     context: Any) -> Any:
         """Store validated cognition keyed by a deterministic signature."""
+        self.reuse_engine.recomputes += 1
         return self.reuse_engine.store(
             task, outcome, quality, context,
             provenance=f"org:{self.org_id}:runtime",
@@ -749,6 +777,7 @@ class VialRuntime:
 
         resolved = self.coordinator.resolve(op_id)
         if resolved is not None and resolved.status == self._coordinator.COMMITTED:
+            self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_SUCCESS,
                 output="patch already committed (idempotent replay)",
@@ -757,6 +786,7 @@ class VialRuntime:
                 provenance=f"intent:{op_id}",
             )
         if resolved is not None and resolved.status == self._coordinator.ABORTED:
+            self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_FAILED,
                 error=f"operation {op_id} was previously aborted",
@@ -864,13 +894,28 @@ class VialRuntime:
                 op_id: self._intent_to_dict(intent)
                 for op_id, intent in self.coordinator.intents.items()})
             self.repository.save("reuse.json", {
-                sig: self._reuse_to_dict(entry)
-                for sig, entry in self.reuse_engine.cache.items()})
+                "_stats": {
+                    "reuse_hits": self.reuse_engine.reuse_hits,
+                    "recomputes": self.reuse_engine.recomputes,
+                    "invalidations": self.reuse_engine.invalidations,
+                },
+                "cache": {
+                    sig: self._reuse_to_dict(entry)
+                    for sig, entry in self.reuse_engine.cache.items()},
+            })
             self.repository.save("audit.json", [
                 record.__dict__ for record in self.patch_tool.audit_records])
             self.repository.save("approvals.json", [
                 record.__dict__ for record in self.approvals.values()])
             self.repository.save("cost.json", self._costs.to_dict())
+            self.repository.save("executions.json", self.executions)
+            self.repository.save("events.json", self.events.to_list())
+            self.repository.save("contexts.json", {
+                context_id: self._context_to_dict(context)
+                for context_id, context in self.contexts.items()})
+            if self.project.snapshot is not None:
+                self.repository.save(
+                    "project.json", self.project.snapshot.to_dict())
         except Exception:
             # Persistence is best-effort for the local reference runtime.
             pass
@@ -901,9 +946,13 @@ class VialRuntime:
                     for op_id, intent in data.items()}
             if (self.state_root / "reuse.json").is_file():
                 data = self.repository.load("reuse.json")
+                stats = data.get("_stats", {})
+                self.reuse_engine.reuse_hits = stats.get("reuse_hits", 0)
+                self.reuse_engine.recomputes = stats.get("recomputes", 0)
+                self.reuse_engine.invalidations = stats.get("invalidations", 0)
                 self.reuse_engine.cache = {
                     sig: self._reuse.CachedResult(**entry)
-                    for sig, entry in data.items()}
+                    for sig, entry in data.get("cache", data).items()}
             if (self.state_root / "audit.json").is_file():
                 data = self.repository.load("audit.json")
                 self.patch_tool.audit_records = [
@@ -923,6 +972,21 @@ class VialRuntime:
                     construction=data.get("construction", 0.0),
                     validation=data.get("validation", 0.0),
                 )
+            if (self.state_root / "executions.json").is_file():
+                self.executions = list(self.repository.load("executions.json"))
+            if (self.state_root / "events.json").is_file():
+                self.events = EventStore.from_list(
+                    self.repository.load("events.json"))
+                self.events.configure({self.actor, self.authority})
+            if (self.state_root / "project.json").is_file():
+                self.project.restore(ProjectSnapshot.from_dict(
+                    self.repository.load("project.json")))
+                self.project.configure({self.actor, self.authority})
+            if (self.state_root / "contexts.json").is_file():
+                self.contexts = {
+                    context_id: self._context_from_dict(data)
+                    for context_id, data
+                    in self.repository.load("contexts.json").items()}
         except Exception:
             # A corrupt/partial state dir should never crash the application.
             pass
@@ -965,6 +1029,27 @@ class VialRuntime:
         authority = self._decision.Authority(**d["authority"])
         fields = {k: v for k, v in d.items() if k != "authority"}
         return self._decision.Decision(**fields, authority=authority)
+
+    @staticmethod
+    def _context_to_dict(context: Any) -> dict[str, Any]:
+        return {
+            "context_id": context.context_id,
+            "task_id": context.task_id,
+            "organization_id": context.organization_id,
+            "body": context.body,
+            "mode": context.mode,
+            "state_version": context.state_version,
+            "tokens": context.tokens,
+            "references": list(context.references),
+            "objective": context.objective,
+            "scope": context.scope,
+            "status": context.status,
+            "version": context.version,
+            "created_at": context.created_at,
+        }
+
+    def _context_from_dict(self, d: dict[str, Any]) -> Any:
+        return self._context.Context(**d)
 
     @staticmethod
     def _intent_to_dict(intent: Any) -> dict[str, Any]:
@@ -1036,6 +1121,50 @@ class VialRuntime:
             "contexts": len(self.contexts),
             "costs": self.costs(),
             "memory": self.memory(),
+            "events": self.events.stats(),
+            "project": (self.project.snapshot.to_dict()
+                        if self.project.snapshot is not None else None),
             "persisted": self.persist_state,
             "state_root": str(self.state_root),
         }
+
+    # ------------------------------------------------------------------ #
+    # Event/ΔState bus + materialized project state (agent coordination)
+    #
+    # These are organizational-state surfaces (like RFC-003 State), NOT
+    # workspace-mutating Tools, so they do not require a Decision: publishing
+    # is gated on an authorized actor only and stays fully deterministic.
+    # ------------------------------------------------------------------ #
+    def publish_event(self, event_type: str, resource: str, version: int,
+                      data: dict[str, Any] | None = None,
+                      actor: str | None = None) -> VialEvent:
+        """Publish a small, versioned event to the hub (idempotent)."""
+        event = self.events.publish(
+            event_type, resource, version, actor or self.actor, data=data)
+        self.persist()
+        return event
+
+    def event_delta(self, after_event_id: str = "") -> list[VialEvent]:
+        """Events published since a cursor (or all when no cursor)."""
+        return self.events.delta(after_event_id)
+
+    def event_latest(self, resource: str | None = None,
+                     event_type: str | None = None) -> VialEvent | None:
+        return self.events.latest(resource, event_type)
+
+    def capture_project(self, root: Path, files: list[Path]) -> ProjectSnapshot:
+        """Materialize the project snapshot from deterministic file facts."""
+        snapshot = self.project.capture(root, files)
+        self.project.restore(snapshot)
+        self.persist()
+        return snapshot
+
+    def project_delta(self, root: Path, files: list[Path]) -> ProjectDelta | None:
+        """ΔState since the last capture (None on first/baseline capture)."""
+        return self.project.delta_from(root, files)
+
+    def set_project_status(self, module: str, value: str,
+                           actor: str | None = None) -> None:
+        """Record an authorized materialized status (e.g. backend: complete)."""
+        self.project.set_status(module, value, actor or self.actor)
+        self.persist()

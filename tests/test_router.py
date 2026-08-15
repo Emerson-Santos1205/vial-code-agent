@@ -14,3 +14,9 @@ class ModelRouterTests(unittest.TestCase):
 
     def test_explicit_model_wins(self) -> None:
         self.assertEqual(ModelRouter().route("implement persistence", "local"), "local")
+
+    def test_mechanical_task_routes_deterministic(self) -> None:
+        self.assertEqual(ModelRouter().route("trim trailing whitespace"), "deterministic")
+        self.assertEqual(
+            ModelRouter().route("add encoding header", "reasoning"), "reasoning")
+

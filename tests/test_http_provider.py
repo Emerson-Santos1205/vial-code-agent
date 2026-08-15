@@ -28,7 +28,8 @@ class FakeUrlOpen:
         self.requests: list[tuple[str, bytes]] = []
 
     def __call__(self, request: object, timeout: int | None = None) -> FakeResponse:
-        self.requests.append(("", b""))
+        body = getattr(request, "data", b"") or b""
+        self.requests.append((request, body))
         if isinstance(self.payload, Exception):
             raise self.payload
         return FakeResponse(json.dumps(self.payload).encode("utf-8"))
@@ -67,6 +68,26 @@ class HttpModelProviderTests(unittest.TestCase):
             response = provider.chat("hi")
         self.assertEqual(response.returncode, 1)
         self.assertIn("401", response.stderr)
+
+    def test_chat_with_history_builds_messages(self) -> None:
+        provider = HttpModelProvider("https://api.example.com/v1", "key", "m1")
+        fake = FakeUrlOpen({"choices": [{"message": {"content": "ok"}}], "usage": {}})
+        with unittest.mock.patch(
+            "vial_code_agent.model.urllib.request.urlopen", fake
+        ):
+            response = provider.chat(
+                "current", history=[("user", "first"), ("assistant", "resp")]
+            )
+        self.assertEqual(response.returncode, 0)
+        body = json.loads(fake.requests[0][1].decode("utf-8"))
+        self.assertEqual(
+            body["messages"],
+            [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "resp"},
+                {"role": "user", "content": "current"},
+            ],
+        )
 
     def test_list_models(self) -> None:
         provider = HttpModelProvider("https://api.example.com/v1", "key", "m1")

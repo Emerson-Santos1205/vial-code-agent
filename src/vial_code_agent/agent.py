@@ -96,10 +96,10 @@ class CodeAgent:
         task_obj = None
         ctx = None
         runtime = runtime or self.runtime
+        det = deterministic_solvable(task)
 
         if runtime is not None:
             runtime.add_workspace_fields(root, files)
-            det = deterministic_solvable(task)
             route = runtime.select_route(task, "auto", deterministic=det)
             task_obj = runtime.build_task(
                 task, files, root,
@@ -129,6 +129,7 @@ class CodeAgent:
                 if patch is not None:
                     record = runtime.record_deterministic(task_obj, ctx, patch)
                     quality = record["quality"]
+                    runtime.record_validation(1)
                     runtime.store_reuse(task_obj, patch, quality, ctx)
                     return GenerationResult(
                         response=ModelResponse("deterministic code transform", 0),
@@ -153,6 +154,18 @@ class CodeAgent:
                     tokens=token_usage,
                 )
         else:
+            if det:
+                # Deterministic-First even without a VIAL runtime (RFC-010):
+                # resolve the mechanical transform and never invoke a model.
+                patch = resolve_deterministic(task, root, files)
+                if patch is not None:
+                    return GenerationResult(
+                        response=ModelResponse("deterministic code transform", 0),
+                        patch=patch, route="deterministic", quality=1.0)
+                return GenerationResult(
+                    response=ModelResponse(
+                        "deterministic no-op: nothing to change", 0),
+                    patch=None, route="deterministic", quality=1.0)
             if vial is not None and vial.exists():
                 context = vial.build_context(task, root, files)
                 context_id = context.context_id
@@ -172,6 +185,7 @@ class CodeAgent:
                 response=response, patch=patch, context_id=context_id,
                 route=route or "auto", reused=False, reuse_outcome=reuse_outcome,
                 tokens=token_usage,
+                workspace_changed=self._workspace_changed(before),
             )
         for path, original in before.items():
             if not path.is_file():
@@ -197,3 +211,13 @@ class CodeAgent:
             response=response, patch=None, context_id=context_id,
             route=route or "auto", reuse_outcome=reuse_outcome, tokens=token_usage,
         )
+
+    @staticmethod
+    def _workspace_changed(before: dict[Path, bytes]) -> bool:
+        """True when any selected file changed on disk during generation."""
+        for path, original in before.items():
+            if not path.is_file():
+                continue
+            if path.read_bytes() != original:
+                return True
+        return False
