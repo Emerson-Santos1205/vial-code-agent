@@ -1,0 +1,3 @@
+[submodule "vendor/vial-core"]
+	path = vendor/vial-core
+	url = https://github.com/Emerson-Santos1205/ViIAL-Project.git

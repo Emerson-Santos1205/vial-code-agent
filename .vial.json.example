@@ -1,0 +1,28 @@
+{
+  "model": "openai/gpt-5.6-luna",
+  "opencode_agent": "build",
+  "auto_approve": false,
+  "test_timeout": 120,
+  "max_context_chars": 6000,
+  "cache_dir": ".vial-cache",
+  "telemetry_file": ".vial-cache/events.jsonl",
+  "org_id": "ORG-VIAL-CODE-AGENT",
+  "authority": "org-root",
+  "actor": "vial-code-agent",
+  "persist_state": true,
+  "price_table_json": "{\"tokens_per_1k\":0.002,\"inference_input_per_1k\":0.0,\"inference_output_per_1k\":0.01,\"latency_per_second\":0.001,\"retrieval_per_op\":0.0005,\"construction_per_context\":0.0002,\"validation_per_op\":0.001}",
+  "servers": [
+    {
+      "name": "my-server",
+      "base_url": "https://api.example.com/v1",
+      "api_key_env": "MY_API_KEY",
+      "models": ["model-a", "model-b"]
+    }
+  ],
+  "pool": [
+    "openai/gpt-5.6-luna-fast",
+    "openai/gpt-5.6-luna",
+    "my-server/model-a"
+  ]
+}
+
