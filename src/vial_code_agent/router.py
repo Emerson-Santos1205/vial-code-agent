@@ -5,10 +5,23 @@ import functools
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from itertools import combinations
 from pathlib import Path
 
 from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
 from .vial_runtime import VialRuntime
+
+
+def _stream_error(response: ModelResponse | None) -> str:
+    """Turn an empty model stream into an actionable UI message."""
+    if response is None:
+        return "error: model returned an empty response; no process result was available"
+    detail = response.stderr.strip() if response.stderr else ""
+    if detail:
+        return f"error: model exited with code {response.returncode}: {detail}"
+    if response.returncode:
+        return f"error: model exited with code {response.returncode} without output"
+    return "error: model completed successfully but returned an empty response"
 
 
 class ModelRouter:
@@ -255,18 +268,26 @@ class RoutingGraph:
         if requested_model != "auto":
             provider = self._provider_for(requested_model)
             self._active_provider = provider
+            emitted = False
             try:
                 for chunk in provider.chat_stream(task, root, history=history):
+                    emitted = emitted or bool(chunk)
                     yield chunk
             finally:
                 self._active_provider = None
+            if not emitted:
+                response = getattr(provider, "last_response", None)
+                yield _stream_error(response)
             return
         decision = self.analyze(task)
         if decision.tier == "deterministic":
             yield f"deterministic: {decision.deterministic_keyword}"
             return
         response, _decision = self.dispatch(task, root, requested_model, history)
-        yield response.text
+        if response.returncode != 0 or not response.text.strip():
+            yield _stream_error(response)
+        else:
+            yield response.text
 
     def cancel_active(self) -> None:
         """Terminate the model subprocess currently streaming, if any."""
@@ -274,6 +295,121 @@ class RoutingGraph:
         if provider is not None:
             provider.cancel()
             self._active_provider = None
+
+    # ------------------------------------------------------------------ #
+    # Cross-model consensus: safety layer independent of ``dispatch``.
+    #
+    # ``dispatch`` optimizes for cost/latency (cheapest tier, first valid
+    # response wins) and never compares model outputs to each other. That is
+    # the right default for routine work, but it means "safe" only ever
+    # covers *who is allowed to act* (the AuthorizationGate), never *whether
+    # the action's content is trustworthy*. For higher-risk tasks, a single
+    # model's output should not be the sole basis for an authorized action.
+    #
+    # ``dispatch_consensus`` asks >=2 independent models for the same task
+    # and requires their answers to agree above a threshold before treating
+    # the result as usable. Disagreement is not an error to hide or retry
+    # silently -- it is signal that a human should look at the task before
+    # any Decision derived from it is authorized. Callers are expected to
+    # gate ``Decision.approve``/``authorize`` on ``ConsensusResult.agreed``
+    # rather than always feeding the winning response straight through.
+    # ------------------------------------------------------------------ #
+    def dispatch_consensus(
+        self,
+        task: str,
+        root: Path | None = None,
+        models: list[str] | None = None,
+        quorum: int = 2,
+        min_agreement: float = 0.6,
+        history: list[tuple[str, str]] | None = None,
+    ) -> tuple["ConsensusResult", RouteDecision]:
+        """Dispatch to >=``quorum`` independent models and require agreement.
+
+        Returns a :class:`ConsensusResult` carrying every raw response (for
+        audit/human review) plus the pairwise agreement ratio, and a
+        :class:`RouteDecision` describing which models were consulted.
+        """
+        decision = self.analyze(task)
+        candidates = list(models) if models else self.candidates(decision)
+        if not candidates and self.default_model and self.default_model != "auto":
+            candidates = [self.default_model]
+        chosen = candidates[:max(quorum, 2)] if len(candidates) >= 2 else candidates
+
+        responses: dict[str, ModelResponse] = {}
+        if chosen:
+            providers = [(ref, self._provider_for(ref)) for ref in chosen]
+            with ThreadPoolExecutor(max_workers=max(1, len(providers))) as executor:
+                futures = {
+                    executor.submit(
+                        functools.partial(provider.chat, history=history)
+                        if history else provider.chat,
+                        task, root,
+                    ): ref
+                    for ref, provider in providers
+                }
+                for future in as_completed(futures):
+                    ref = futures[future]
+                    try:
+                        responses[ref] = future.result()
+                    except (OSError, RuntimeError) as error:
+                        responses[ref] = ModelResponse("", 1, stderr=str(error))
+
+        valid = {
+            ref: response for ref, response in responses.items()
+            if response.returncode == 0 and response.text.strip()
+        }
+        if len(valid) < 2:
+            # Cannot compute agreement with fewer than two valid answers.
+            # Surface what happened without ever claiming consensus.
+            if valid:
+                ref, response = next(iter(valid.items()))
+                note = "insufficient candidates for consensus"
+            else:
+                ref = ""
+                response = next(
+                    iter(responses.values()),
+                    ModelResponse("", 1, stderr="no candidates"))
+                note = "all consensus candidates failed"
+            return ConsensusResult(False, response, 0.0, responses), RouteDecision(
+                tier=decision.tier, candidates=chosen, model=ref, note=note)
+
+        (ref_a, resp_a), (ref_b, resp_b) = max(
+            combinations(valid.items(), 2),
+            key=lambda pair: _agreement_ratio(pair[0][1], pair[1][1]),
+        )
+        ratio = _agreement_ratio(resp_a, resp_b)
+        agreed = ratio >= min_agreement
+        winner_ref, winner_response = (ref_a, resp_a)
+        return ConsensusResult(agreed, winner_response, ratio, responses), RouteDecision(
+            tier=decision.tier, candidates=chosen, model=winner_ref,
+            note=f"consensus={agreed} ratio={ratio:.2f}")
+
+
+def _agreement_ratio(a: ModelResponse, b: ModelResponse) -> float:
+    """Textual similarity between two model responses, in [0, 1].
+
+    A simple, dependency-free proxy for "did independent models converge on
+    the same answer". It does not understand code semantics -- two correct
+    but differently-worded patches can score low -- so ``min_agreement``
+    should be tuned per use, and a low ratio should route to a human, not to
+    an automatic rejection.
+    """
+    return difflib.SequenceMatcher(None, a.text, b.text).ratio()
+
+
+@dataclass(frozen=True)
+class ConsensusResult:
+    """Outcome of :meth:`RoutingGraph.dispatch_consensus`.
+
+    ``responses`` keeps every raw, per-model answer (not just the winner) so
+    a disagreement can be handed to a human with full context instead of
+    only the router's pick.
+    """
+
+    agreed: bool
+    response: ModelResponse
+    agreement_ratio: float
+    responses: dict[str, ModelResponse] = field(default_factory=dict)
 
 
 def _tier_of(model_ref: str) -> str:

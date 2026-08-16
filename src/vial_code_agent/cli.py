@@ -17,7 +17,9 @@ from .errors import (ERR_INVALID_CONFIG, ERR_INVALID_USAGE,
                      VialRuntimeError, wrap)
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
-from .router import ModelRouter, VialRouter
+from .router import (
+    ConsensusResult, ModelRouter, RouteDecision, RoutingGraph, VialRouter,
+)
 from .servers import ServerRegistry
 from .command_runner import CommandRunner
 from .session import SessionStore
@@ -82,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="print the organizational snapshot")
     parser.add_argument("--trace", metavar="DECISION_ID",
                         help="print the audit trail for a Decision")
+    parser.add_argument("--decisions", action="store_true",
+                        help="list Decisions awaiting consensus or approval")
+    parser.add_argument("--approve", metavar="DECISION_ID",
+                        help="record human approval for a pending Decision")
+    parser.add_argument("--note", default="",
+                        help="note attached to an --approve action")
     parser.add_argument("--review", metavar="PATCH_FILE",
                         help="validate and print a patch")
     parser.add_argument("--fix", metavar="TASK",
@@ -102,6 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-command", nargs=argparse.REMAINDER,
                         help="command to verify a change; keep this option last")
     parser.add_argument("--test-timeout", type=int, default=120)
+    parser.add_argument("--no-consensus", action="store_true",
+                        help="skip the cross-model consensus gate with an explicit audit note")
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep changes when verification fails")
     return parser
@@ -168,6 +178,27 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --trace requires --status", file=sys.stderr)
         return 2
 
+    if args.decisions:
+        if runtime is None:
+            print("vial_core: unavailable", file=sys.stderr)
+            return 1
+        print(json.dumps(runtime.pending_decisions(), indent=2, ensure_ascii=False))
+        return 0
+
+    if args.approve:
+        if runtime is None:
+            print("vial_core: unavailable", file=sys.stderr)
+            return 1
+        try:
+            record = runtime.approve_decision(
+                args.approve, config.authority, note=args.note or "")
+        except (KeyError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        runtime.persist()
+        print(f"approved: {record.decision_id} by {record.approver}")
+        return 0
+
     if args.review:
         return _run_review(root, args, telemetry)
 
@@ -228,6 +259,30 @@ def _run_governed(root: Path, config: AgentConfig, vial: VialCoreReference | Non
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
     return result.returncode
+
+
+def _run_fix_consensus(root: Path, config: AgentConfig, args, task: str,
+                       model: str, executable: str, auto_approve: bool,
+                       agent: str) -> ConsensusResult | None:
+    """Run cross-model consensus for a mutation-classified ``--fix`` task.
+
+    Only the configured routing pool is used as the candidate set, so a
+    consensus is only ever attempted with >=2 independent models. Returns
+    ``None`` when the pool has fewer than two candidates (or dispatch fails)
+    so ``--fix`` records no consensus and the AuthorizationGate decides.
+    """
+    registry = ServerRegistry(root)
+    pool = list(registry.pool)
+    if len(pool) < 2:
+        return None
+    graph = RoutingGraph(
+        registry, default_model=model, executable=executable,
+        auto_approve=auto_approve, agent=agent)
+    try:
+        result, _ = graph.dispatch_consensus(task, root, models=pool)
+    except (OSError, RuntimeError):
+        return None
+    return result
 
 
 def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
@@ -302,11 +357,56 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         if generated.workspace_changed:
             print("patch: already applied by opencode")
         elif runtime is not None:
+            decision = runtime.propose_patch_decision(generated.context_id)
+            consensus = None
+            if args.no_consensus:
+                runtime.approve_decision(
+                    decision.id, "operator",
+                    note="consensus skipped by operator flag --no-consensus")
+                print("consensus: skipped by operator (--no-consensus)")
+            else:
+                consensus = _run_fix_consensus(
+                    root, config, args, args.fix, model, executable,
+                    auto_approve, agent)
+                if consensus is None:
+                    print(
+                        "error: no model pool (>=2 models) configured; "
+                        "cross-model consensus cannot be verified for this "
+                        "mutation", file=sys.stderr)
+                    print(
+                        "hint: configure a pool or re-run with --no-consensus "
+                        "to authorize as operator", file=sys.stderr)
+                    return 1
+                runtime.record_consensus(
+                    decision.id, consensus.agreed, consensus.agreement_ratio,
+                    models=list(consensus.responses),
+                    responses={ref: response.text
+                               for ref, response in consensus.responses.items()})
+                status = "agreed" if consensus.agreed else "disagreed"
+                print(f"consensus: {status} "
+                      f"(ratio={consensus.agreement_ratio:.2f}, "
+                      f"models={len(consensus.responses)})")
+                if not consensus.agreed:
+                    print(f"decision_id: {decision.id}", file=sys.stderr)
+                    for ref, response in consensus.responses.items():
+                        print(f"candidate from {ref}:", file=sys.stderr)
+                        print(response.text, file=sys.stderr)
             result = runtime.apply_patch(
                 PatchApplier(root), generated.patch, generated.context_id,
                 allowed_paths={path.relative_to(root).as_posix() for path in files},
+                decision=decision,
             )
             if not result.ok():
+                error_code = result.metadata.get("error_code", "")
+                if error_code in {"CONSENSUS_REQUIRED", "APPROVAL_REQUIRED"}:
+                    print(
+                        f"error: {result.error or result.status} "
+                        f"({error_code})", file=sys.stderr)
+                    print(
+                        f"hint: run 'vial --root {root} --decisions' to inspect, "
+                        f"then 'vial --root {root} --approve {decision.id}'",
+                        file=sys.stderr)
+                    return 1
                 raise PatchError(result.error or "VIAL tool rejected patch")
         else:
             PatchApplier(root).apply(generated.patch)
