@@ -90,15 +90,23 @@ class ToolCatalogTests(unittest.TestCase):
             import subprocess
             subprocess.run(["git", "init", "-q"], cwd=root, check=False)
 
-            rejected = runtime.invoke_tool(
+            no_consensus = runtime.invoke_tool(
                 "TOOL-RUN-GIT", {"args": ["status"]}, objective="git status")
-            self.assertEqual(rejected.status, "REJECTED")
-            self.assertIn("APPROVAL_REQUIRED",
-                          rejected.metadata.get("error_code", ""))
+            self.assertEqual(no_consensus.status, "REJECTED")
+            self.assertIn("CONSENSUS_REQUIRED",
+                          no_consensus.metadata.get("error_code", ""))
 
             decision = runtime.propose_decision(
                 "git status", "run_git", policy="development",
                 risk=RISK_HIGH)
+            runtime.record_consensus(decision.id, True, 1.0)
+            rejected = runtime.invoke_tool(
+                "TOOL-RUN-GIT", {"args": ["status"]}, objective="git status",
+                decision=decision)
+            self.assertEqual(rejected.status, "REJECTED")
+            self.assertIn("APPROVAL_REQUIRED",
+                          rejected.metadata.get("error_code", ""))
+
             runtime.approve_decision(decision.id, runtime.authority,
                                      note="operator approved")
             approved = runtime.invoke_tool(
@@ -114,9 +122,11 @@ class ToolCatalogTests(unittest.TestCase):
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
             context = runtime.build_context("update value", root, [source])
+            decision = runtime.propose_patch_decision(context.context_id)
+            runtime.record_consensus(decision.id, True, 1.0)
             runtime.apply_patch(PatchApplier(root), PATCH,
-                                context_id=context.context_id)
-            decision = next(iter(runtime.decision_engine.decisions.values()))
+                                context_id=context.context_id,
+                                decision=decision)
             trace = runtime.decision_trace(decision.id)
             self.assertTrue(trace["found"])
             self.assertEqual(trace["status"], "COMPLETED")

@@ -451,6 +451,21 @@ class _FakeRuntime:
             raise KeyError(decision_id)
         return self.approval
 
+    def pending_decisions(self) -> list[dict]:
+        return [
+            {
+                "decision_id": "DEC-1",
+                "objective": "apply patch",
+                "risk": "medium",
+                "requires_consensus": True,
+                "consensus": None,
+                "approval": None,
+            },
+        ]
+
+    def persist(self) -> None:
+        return None
+
 
 class ChatRuntimeCommandTests(unittest.TestCase):
     def _controller(self, directory: str) -> ChatController:
@@ -490,6 +505,33 @@ class ChatRuntimeCommandTests(unittest.TestCase):
             self.assertIn("approved by tester", ok.output)
             missing = controller.handle("/approve DEC-MISSING")
             self.assertIn("error:", missing.output)
+
+    def test_decisions_lists_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            ok = controller.handle("/decisions")
+            self.assertIn("DEC-1", ok.output)
+            self.assertIn("consensus=missing", ok.output)
+
+    def test_consensus_shows_missing_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            ok = controller.handle("/consensus")
+            self.assertIn("DEC-1", ok.output)
+            self.assertIn("missing", ok.output)
+
+    def test_decisions_without_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = SessionStore(root / "sessions")
+            controller = ChatController(
+                root, store, store.create(),
+                OpenCodeProvider("openai/gpt-5.6-luna-fast"),
+                "auto", "opencode", False, "plan", runtime=None)
+            missing = controller.handle("/decisions")
+            self.assertIn("unavailable", missing.output)
+            consensus = controller.handle("/consensus")
+            self.assertIn("unavailable", consensus.output)
 
 
 class ChatEdgeTests(unittest.TestCase):

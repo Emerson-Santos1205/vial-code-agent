@@ -13,6 +13,7 @@ from vial_code_agent.cli import main
 from vial_code_agent.core import VialCoreReference
 from vial_code_agent.model import ModelResponse
 from vial_code_agent.patches import PatchError
+from vial_code_agent.router import ConsensusResult
 from vial_code_agent.session import SessionStore
 from vial_code_agent.vial_runtime import VialRuntime
 
@@ -32,10 +33,11 @@ def _runtime(root: Path) -> VialRuntime:
 
 
 class _FakeToolResult:
-    def __init__(self, status="SUCCESS", output=None, error=""):
+    def __init__(self, status="SUCCESS", output=None, error="", metadata=None):
         self.status = status
         self.output = output or {}
         self.error = error
+        self.metadata = metadata or {}
 
     def ok(self) -> bool:
         return self.status == "SUCCESS"
@@ -49,6 +51,8 @@ class _FakeRuntime:
         self.workspace_root: Path | None = None
         self._trace = {"id": "DEC-1"}
         self._snapshot = {"organization_id": "org-1"}
+        self.decision_ids: list[str] = []
+        self._approvals: list[str] = []
 
     def set_workspace_root(self, root: Path) -> None:
         self.workspace_root = root
@@ -61,6 +65,25 @@ class _FakeRuntime:
         if decision_id == "DEC-MISSING":
             raise KeyError(decision_id)
         return self._trace
+
+    def propose_patch_decision(self, context_id: str = ""):
+        decision_id = f"DEC-FAKE-{len(self.decision_ids) + 1}"
+        self.decision_ids.append(decision_id)
+        return type("_FakeDecision", (), {"id": decision_id})()
+
+    def record_consensus(self, decision_id: str, agreed: bool,
+                         agreement_ratio: float = 0.0, models=None,
+                         responses=None) -> None:
+        return None
+
+    def pending_decisions(self) -> list[dict]:
+        return [{"decision_id": did, "requires_consensus": False}
+                for did in self.decision_ids]
+
+    def approve_decision(self, decision_id: str, approver: str,
+                         note: str = "") -> None:
+        self._approvals.append(decision_id)
+        return None
 
     def invoke_tool(self, tool_id: str, arguments: dict, **kwargs):
         self.invoke_tool_calls.append((tool_id, arguments))
@@ -132,14 +155,21 @@ class CliIntegrationTests(unittest.TestCase):
                     return generated
 
             with patch("vial_code_agent.cli.CodeAgent", FakeAgent):
-                result = main(
-                    [
-                        "--fix", "change old to new", "--root", str(root),
-                        "--vial-root", str(VENDOR),
-                        "--include", "source.txt",
-                        "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
-                    ]
-                )
+                with patch(
+                    "vial_code_agent.cli._run_fix_consensus",
+                    return_value=ConsensusResult(
+                        True, ModelResponse("same", 0), 1.0,
+                        {"a/x": ModelResponse("same", 0),
+                         "b/y": ModelResponse("same", 0)}),
+                ):
+                    result = main(
+                        [
+                            "--fix", "change old to new", "--root", str(root),
+                            "--vial-root", str(VENDOR),
+                            "--include", "source.txt",
+                            "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
+                        ]
+                    )
 
             self.assertEqual(result, 1)
             self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
@@ -165,15 +195,22 @@ class CliIntegrationTests(unittest.TestCase):
                     return generated
 
             with patch("vial_code_agent.cli.CodeAgent", FakeAgent):
-                result = main(
-                    [
-                        "--fix", "change old to new", "--root", str(root),
-                        "--vial-root", str(VENDOR),
-                        "--include", "source.txt",
-                        "--keep-on-failure",
-                        "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
-                    ]
-                )
+                with patch(
+                    "vial_code_agent.cli._run_fix_consensus",
+                    return_value=ConsensusResult(
+                        True, ModelResponse("same", 0), 1.0,
+                        {"a/x": ModelResponse("same", 0),
+                         "b/y": ModelResponse("same", 0)}),
+                ):
+                    result = main(
+                        [
+                            "--fix", "change old to new", "--root", str(root),
+                            "--vial-root", str(VENDOR),
+                            "--include", "source.txt",
+                            "--keep-on-failure",
+                            "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
+                        ]
+                    )
 
             self.assertEqual(result, 1)
             self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
@@ -698,3 +735,112 @@ class CliIntegrationTests(unittest.TestCase):
                         )
             self.assertEqual(result, 1)
             self.assertEqual((root / "source.txt").read_text(encoding="utf-8"), "old\n")
+
+
+class ConsensusCliTests(unittest.TestCase):
+    def test_decisions_without_runtime_returns_1(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = main(["--decisions", "--root", directory])
+            self.assertEqual(result, 1)
+
+    def test_decisions_lists_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = _runtime(root)
+            decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(decision.id, False, 0.3)
+            runtime.persist()
+            with patch("vial_code_agent.cli._build_runtime",
+                       return_value=runtime):
+                with patch("sys.stdout"):
+                    result = main(["--decisions", "--root", str(root)])
+            self.assertEqual(result, 0)
+
+    def test_approve_without_runtime_returns_1(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = main(
+                ["--approve", "DEC-1", "--root", directory])
+            self.assertEqual(result, 1)
+
+    def test_approve_pending_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = _runtime(root)
+            decision = runtime.propose_patch_decision("")
+            with patch("vial_code_agent.cli._build_runtime",
+                       return_value=runtime):
+                with patch("sys.stdout"):
+                    result = main(
+                        ["--approve", decision.id, "--root", str(root)])
+            self.assertEqual(result, 0)
+            self.assertTrue(
+                runtime.decision_trace(decision.id)["approval"] is not None)
+
+    def test_approve_unknown_decision_returns_1(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = _runtime(root)
+            runtime.persist()
+            with patch("vial_code_agent.cli._build_runtime",
+                       return_value=runtime):
+                result = main(["--approve", "DEC-MISSING", "--root", str(root)])
+            self.assertEqual(result, 1)
+
+    def test_fix_pool_under_two_blocks_without_consensus(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.txt").write_text("old\n", encoding="utf-8")
+            generated = GenerationResult(ModelResponse("", 0), PATCH)
+
+            class _FakeAgent:
+                def __init__(self, provider: object, runtime=None) -> None:
+                    pass
+
+                def generate(self, *args: object, **kwargs: object) -> GenerationResult:
+                    return generated
+
+            with patch("vial_code_agent.cli.CodeAgent", _FakeAgent):
+                with patch("sys.stdout"):
+                    result = main(
+                        [
+                            "--fix", "change", "--root", str(root),
+                            "--vial-root", str(VENDOR),
+                            "--include", "source.txt",
+                        ]
+                    )
+            self.assertEqual(result, 1)
+            self.assertEqual(
+                (root / "source.txt").read_text(encoding="utf-8"), "old\n")
+
+    def test_fix_disagreement_prints_approval_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.txt").write_text("old\n", encoding="utf-8")
+            generated = GenerationResult(ModelResponse("", 0), PATCH)
+
+            class _FakeAgent:
+                def __init__(self, provider: object, runtime=None) -> None:
+                    pass
+
+                def generate(self, *args: object, **kwargs: object) -> GenerationResult:
+                    return generated
+
+            with patch("vial_code_agent.cli.CodeAgent", _FakeAgent):
+                with patch(
+                    "vial_code_agent.cli._run_fix_consensus",
+                    return_value=ConsensusResult(
+                        False, ModelResponse("other", 0), 0.25,
+                        {"a/x": ModelResponse("one", 0),
+                         "b/y": ModelResponse("other", 0)}),
+                ):
+                    with patch("sys.stdout"):
+                        result = main(
+                            [
+                                "--fix", "change", "--root", str(root),
+                                "--vial-root", str(VENDOR),
+                                "--include", "source.txt",
+                            ]
+                        )
+            self.assertEqual(result, 1)
+            self.assertEqual(
+                (root / "source.txt").read_text(encoding="utf-8"), "old\n")

@@ -587,6 +587,8 @@ class VialTUI(App[str]):
             f"  [b]/pool[/b] auto candidates\n"
             f"  [b]/agent[/b] build|plan\n"
             f"  [b]/clear[/b] new session\n"
+            f"  [b]/decisions[/b] consensus/approval queue\n"
+            f"  [b]/approve[/b] approve a pending decision\n"
             f"  [b]Ctrl+S[/b] resume session\n"
             f"  [b]Ctrl+K[/b] cancel model\n"
             f"  [b]Ctrl+J[/b] new line\n\n"

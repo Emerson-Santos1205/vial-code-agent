@@ -39,6 +39,8 @@ COMMANDS = [
     ("/status", "show session, model, agent, route and pool"),
     ("/trace", "show the audit trail for a decision (/trace <id>)"),
     ("/approve", "approve a pending decision (/approve <id>)"),
+    ("/decisions", "list decisions awaiting consensus or approval"),
+    ("/consensus", "show consensus status of pending decisions"),
     ("/clear", "start a new session"),
     ("/sessions", "list past sessions"),
     ("/resume", "resume a past session"),
@@ -112,6 +114,10 @@ class ChatController:
             return self._handle_trace(value)
         if command == "/approve":
             return self._handle_approve(value)
+        if command == "/decisions":
+            return self._handle_decisions(value)
+        if command == "/consensus":
+            return self._handle_consensus(value)
         if command == "/clear":
             return ChatCommandResult(True, "new session", new_session_id=self.store.create())
         if command == "/sessions":
@@ -398,8 +404,51 @@ class ChatController:
                 note="approved from terminal")
         except (KeyError, ValueError) as error:
             return ChatCommandResult(True, f"error: {error}")
+        self.runtime.persist()
         return ChatCommandResult(
             True, f"approved by {approved.approver}: {approved.decision_id}")
+
+    def _handle_decisions(self, value: str) -> ChatCommandResult:
+        if self.runtime is None:
+            return ChatCommandResult(True, "governed runtime unavailable; pass --vial-root")
+        pending = self.runtime.pending_decisions()
+        if not pending:
+            return ChatCommandResult(True, "no decisions awaiting consensus or approval")
+        lines = ["pending decisions:"]
+        for row in pending:
+            consensus = row.get("consensus")
+            consensus_status = (
+                f"agreed (ratio={consensus['agreement_ratio']:.2f})"
+                if consensus and consensus["agreed"]
+                else "disagreed" if consensus
+                else "missing")
+            lines.append(
+                f"  {row['decision_id']}  {row['objective']}"
+                f"  risk={row['risk']}"
+                f"  consensus={consensus_status}"
+                f"  approval={'yes' if row['approval'] else 'no'}")
+        return ChatCommandResult(True, "\n".join(lines))
+
+    def _handle_consensus(self, value: str) -> ChatCommandResult:
+        if self.runtime is None:
+            return ChatCommandResult(True, "governed runtime unavailable; pass --vial-root")
+        pending = self.runtime.pending_decisions()
+        needing = [
+            row for row in pending if row.get("requires_consensus")]
+        if not needing:
+            return ChatCommandResult(
+                True, "no decisions require cross-model consensus")
+        lines = ["decisions requiring consensus:"]
+        for row in needing:
+            consensus = row.get("consensus")
+            status = (
+                f"agreed (ratio={consensus['agreement_ratio']:.2f})"
+                if consensus and consensus["agreed"]
+                else "disagreed" if consensus
+                else "missing")
+            lines.append(
+                f"  {row['decision_id']}  {row['objective']}  {status}")
+        return ChatCommandResult(True, "\n".join(lines))
 
     # ------------------------------------------------------------------ #
     # Discovery helpers (used by the TUI picker and tests)
@@ -546,6 +595,8 @@ Commands:
 /delta                        capture/compare the materialized project state
 /status                       show session status
 /trace <decision_id>          show the audit trail of a Decision
+/decisions                    list Decisions awaiting consensus or approval
+/consensus                    show consensus status of pending Decisions
 /approve <decision_id>        approve a pending Decision
 /sessions                     list past sessions
 /resume <session_id>          resume a past session

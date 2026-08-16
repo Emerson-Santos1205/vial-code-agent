@@ -93,6 +93,23 @@ class ApprovalRecord:
     timestamp: float = field(default_factory=time.time)
 
 
+@dataclass
+class ConsensusRecord:
+    """A recorded cross-model consensus outcome for a Decision.
+
+    Stores every raw per-model answer (not just the winner) so a divergence
+    can be handed to a human reviewer with full context. ``agreed`` is the
+    verdict used by the consensus gate; ``agreement_ratio`` is the textual
+    similarity that produced it (``router._agreement_ratio``).
+    """
+    decision_id: str
+    agreed: bool
+    agreement_ratio: float = 0.0
+    models: list[str] = field(default_factory=list)
+    responses: dict[str, str] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
+
+
 def file_field_key(relative: str) -> str:
     return f"file:{relative}"
 
@@ -178,6 +195,7 @@ class VialRuntime:
         self.tools = self._tool.ToolRegistry(self.org_id)
         self.contexts: dict[str, Any] = {}
         self.approvals: dict[str, ApprovalRecord] = {}
+        self.consensus_records: dict[str, ConsensusRecord] = {}
         self.workspace_root: Path | None = None
 
         # --- event/ΔState bus + materialized project state (agent coordination) ---
@@ -685,10 +703,75 @@ class VialRuntime:
                          note: str = "") -> ApprovalRecord:
         """Record an explicit Approval distinct from Decision/Authorization
         (SDK-005 §350, RUNTIME-006 §8)."""
+        if decision_id not in self.decision_engine.decisions:
+            raise KeyError(decision_id)
         record = ApprovalRecord(decision_id=decision_id,
                                 approver=approver, note=note)
         self.approvals[decision_id] = record
         return record
+
+    # ------------------------------------------------------------------ #
+    # Cross-model consensus gate (TOOLS-001 side-effect classification)
+    #
+    # ``dispatch_consensus`` in the router asks >=2 independent models the
+    # same question and requires textual agreement above a threshold. Any
+    # Tool classified as ``mutation`` (today TOOL-PATCH-APPLY and
+    # TOOL-RUN-GIT) must carry a ConsensusRecord for its Decision before it
+    # may run: a mutation whose content no model verified is not authorized
+    # by a Decision alone. Divergent consensus escalates to the same human
+    # approval gate high-risk Decisions already use, instead of opening a
+    # second, parallel approval path.
+    # ------------------------------------------------------------------ #
+    def requires_consensus(self, tool: Any) -> bool:
+        """Whether a Tool needs a cross-model consensus before invocation."""
+        return getattr(tool, "side_effect_classification", "none") == "mutation"
+
+    def record_consensus(
+        self,
+        decision_id: str,
+        agreed: bool,
+        agreement_ratio: float = 0.0,
+        models: list[str] | None = None,
+        responses: dict[str, str] | None = None,
+    ) -> ConsensusRecord:
+        """Record the outcome of a cross-model consensus for a Decision."""
+        record = ConsensusRecord(
+            decision_id=decision_id,
+            agreed=agreed,
+            agreement_ratio=agreement_ratio,
+            models=list(models or []),
+            responses=dict(responses or {}),
+        )
+        self.consensus_records[decision_id] = record
+        return record
+
+    def _consensus_gate(self, tool: Any, decision: Any) -> Any | None:
+        """Enforce the cross-model consensus gate ahead of the approval gate.
+
+        Returns a rejected ``ToolResult`` when the gate blocks, or ``None``
+        so the normal authorization/approval pipeline continues.
+        """
+        if not self.requires_consensus(tool):
+            return None
+        record = self.consensus_records.get(decision.id)
+        if record is None:
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_REJECTED,
+                error=f"Decision '{decision.id}' requires cross-model consensus "
+                      "before invocation",
+                metadata={"tool_id": tool.tool_id, "error_code": "CONSENSUS_REQUIRED",
+                          "decision_id": decision.id})
+        if record.agreed:
+            return None
+        if decision.id in self.approvals:
+            return None
+        return self._tool.ToolResult(
+            status=self._tool.STATUS_REJECTED,
+            error=f"models disagreed on Decision '{decision.id}'; "
+                  "human approval required",
+            metadata={"tool_id": tool.tool_id, "error_code": "APPROVAL_REQUIRED",
+                      "decision_id": decision.id,
+                      "agreement_ratio": record.agreement_ratio})
 
     def risk_rank(self, risk: str) -> int:
         return RISK_ORDER.get(risk, RISK_ORDER[RISK_MEDIUM])
@@ -712,6 +795,9 @@ class VialRuntime:
         policy = tool.security_policy.get("required_policy", POLICY_DEVELOPMENT)
         decision = decision or self.propose_decision(
             objective, capability, policy, context_id, risk=tool.risk_classification)
+        consensus = self._consensus_gate(tool, decision)
+        if consensus is not None:
+            return consensus
         if (require_approval or self.decision_requires_approval(decision)) \
                 and decision.id not in self.approvals:
             return self._tool.ToolResult(
@@ -752,6 +838,8 @@ class VialRuntime:
         trace["found"] = True
         trace["approval"] = self.approvals.get(decision_id).__dict__ \
             if decision_id in self.approvals else None
+        trace["consensus"] = self.consensus_records.get(decision_id).__dict__ \
+            if decision_id in self.consensus_records else None
         trace["audit_records"] = [
             record.__dict__ for tool in self.tools.list()
             for record in tool.audit_records
@@ -759,6 +847,39 @@ class VialRuntime:
         trace["context"] = self.contexts.get(decision.context_id).to_row() \
             if decision.context_id in self.contexts else None
         return trace
+
+    def pending_decisions(self) -> list[dict[str, Any]]:
+        """Decisions awaiting consensus or human approval, with their status.
+
+        Used by ``vial --decisions`` and the ``/decisions`` slash command so
+        an operator can review which Decisions are blocked on the consensus
+        gate or the approval gate and act on them.
+        """
+        pending: list[dict[str, Any]] = []
+        for decision in self.decision_engine.decisions.values():
+            if getattr(decision, "status", "") == "COMPLETED":
+                continue
+            approval = self.approvals.get(decision.id)
+            consensus = self.consensus_records.get(decision.id)
+            tool = None
+            try:
+                decision_type = getattr(decision, "type", "")
+                tool = next(
+                    (t for t in self.tools.list() if t.capability == decision_type),
+                    None)
+            except Exception:
+                tool = None
+            pending.append({
+                "decision_id": decision.id,
+                "objective": getattr(decision, "objective", ""),
+                "status": getattr(decision, "status", ""),
+                "risk": getattr(decision, "risk", RISK_MEDIUM),
+                "requires_consensus": self.requires_consensus(tool)
+                if tool is not None else False,
+                "consensus": consensus.__dict__ if consensus is not None else None,
+                "approval": approval.__dict__ if approval is not None else None,
+            })
+        return pending
 
     # ------------------------------------------------------------------ #
     # Coordinator: atomic, idempotent patch application (RFC-009)
@@ -805,6 +926,11 @@ class VialRuntime:
 
         decision = decision or self.propose_patch_decision(context_id)
         patch_digest = op_id
+
+        tool = self.tools.get(PATCH_TOOL_ID)
+        consensus = self._consensus_gate(tool, decision)
+        if consensus is not None:
+            return consensus
 
         if intent is None:
             try:
@@ -907,6 +1033,8 @@ class VialRuntime:
                 record.__dict__ for record in self.patch_tool.audit_records])
             self.repository.save("approvals.json", [
                 record.__dict__ for record in self.approvals.values()])
+            self.repository.save("consensus.json", [
+                record.__dict__ for record in self.consensus_records.values()])
             self.repository.save("cost.json", self._costs.to_dict())
             self.repository.save("executions.json", self.executions)
             self.repository.save("events.json", self.events.to_list())
@@ -961,6 +1089,11 @@ class VialRuntime:
                 data = self.repository.load("approvals.json")
                 self.approvals = {
                     record["decision_id"]: ApprovalRecord(**record)
+                    for record in data}
+            if (self.state_root / "consensus.json").is_file():
+                data = self.repository.load("consensus.json")
+                self.consensus_records = {
+                    record["decision_id"]: ConsensusRecord(**record)
                     for record in data}
             if (self.state_root / "cost.json").is_file():
                 data = self.repository.load("cost.json")
@@ -1097,6 +1230,8 @@ class VialRuntime:
                 for d in self.decision_engine.history(self.org_id)],
             "audit_records": len(self.patch_tool.audit_records),
             "approvals": [record.__dict__ for record in self.approvals.values()],
+            "consensus_records": [
+                record.__dict__ for record in self.consensus_records.values()],
             "state_root": str(self.state_root),
         }
 
