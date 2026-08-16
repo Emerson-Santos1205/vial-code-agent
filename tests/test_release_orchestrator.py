@@ -28,10 +28,10 @@ def _commit(root: Path, message: str) -> None:
     _git(root, "commit", "-m", message)
 
 
-TEST_MODULE = """from unittest import TestCase
+TEST_MODULE = """import unittest
 
 
-class SampleTests(TestCase):
+class SampleTests(unittest.TestCase):
     def test_ok(self):
         self.assertTrue(True)
 """
