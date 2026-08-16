@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 vial = "vial_code_agent.cli:main"
+release-orchestrator = "release_orchestrator.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

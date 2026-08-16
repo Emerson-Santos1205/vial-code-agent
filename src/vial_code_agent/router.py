@@ -12,6 +12,18 @@ from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
 from .vial_runtime import VialRuntime
 
 
+def _stream_error(response: ModelResponse | None) -> str:
+    """Turn an empty model stream into an actionable UI message."""
+    if response is None:
+        return "error: model returned an empty response; no process result was available"
+    detail = response.stderr.strip() if response.stderr else ""
+    if detail:
+        return f"error: model exited with code {response.returncode}: {detail}"
+    if response.returncode:
+        return f"error: model exited with code {response.returncode} without output"
+    return "error: model completed successfully but returned an empty response"
+
+
 class ModelRouter:
     """Small deterministic routing policy for the first application slice."""
 
@@ -256,18 +268,26 @@ class RoutingGraph:
         if requested_model != "auto":
             provider = self._provider_for(requested_model)
             self._active_provider = provider
+            emitted = False
             try:
                 for chunk in provider.chat_stream(task, root, history=history):
+                    emitted = emitted or bool(chunk)
                     yield chunk
             finally:
                 self._active_provider = None
+            if not emitted:
+                response = getattr(provider, "last_response", None)
+                yield _stream_error(response)
             return
         decision = self.analyze(task)
         if decision.tier == "deterministic":
             yield f"deterministic: {decision.deterministic_keyword}"
             return
         response, _decision = self.dispatch(task, root, requested_model, history)
-        yield response.text
+        if response.returncode != 0 or not response.text.strip():
+            yield _stream_error(response)
+        else:
+            yield response.text
 
     def cancel_active(self) -> None:
         """Terminate the model subprocess currently streaming, if any."""

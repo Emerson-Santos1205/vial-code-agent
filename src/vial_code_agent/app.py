@@ -17,7 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.selection import Selection
 from textual.widgets import (
     Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
@@ -177,7 +177,32 @@ class SessionPicker(ModalScreen[str]):
         self.dismiss(self._visible[index][0])
 
 
-class PromptArea(TextArea):
+class _NonSelectableMixin:
+    """Keep screen-level drag selection scoped to the output log."""
+
+    ALLOW_SELECT = False
+
+    def get_selection(self, selection: Selection) -> None:
+        return None
+
+
+class _NonSelectableStatic(_NonSelectableMixin, Static):
+    pass
+
+
+class _NonSelectableListView(_NonSelectableMixin, ListView):
+    pass
+
+
+class _NonSelectableLoadingIndicator(_NonSelectableMixin, LoadingIndicator):
+    pass
+
+
+class _NonSelectableHeader(_NonSelectableMixin, Header):
+    pass
+
+
+class PromptArea(_NonSelectableMixin, TextArea):
     """Multi-line prompt; Enter submits, Ctrl+J inserts a newline."""
 
     BINDINGS = [
@@ -217,11 +242,26 @@ class SelectableLog(RichLog):
         return selection.extract(text), "\n"
 
 
+class VialScreen(Screen):
+    """Main screen that prevents selection highlights outside the output log."""
+
+    def _watch__select_state(self, select_state) -> None:
+        super()._watch__select_state(select_state)
+        if select_state is not None and self.selections:
+            self.selections = {
+                widget: selection
+                for widget, selection in self.selections.items()
+                if isinstance(widget, SelectableLog)
+            }
+
+
 class VialTUI(App[str]):
     """Fullscreen opencode-style interface for the VIAL runtime."""
 
     TITLE = "vial"
     SUB_TITLE = f"opencode-style terminal · {__version__}"
+    ENABLE_SELECT_AUTO_SCROLL = True
+    SELECT_AUTO_SCROLL_LINES = 6
     CSS = """
     #layout { height: 1fr; }
     #main { width: 3fr; }
@@ -264,16 +304,19 @@ class VialTUI(App[str]):
     # ------------------------------------------------------------------ #
     # Layout
     # ------------------------------------------------------------------ #
+    def get_default_screen(self) -> Screen:
+        return VialScreen(id="_default")
+
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield _NonSelectableHeader(show_clock=True)
         with Horizontal(id="layout"):
             with Vertical(id="main"):
                 yield SelectableLog(id="log", markup=True, highlight=True, wrap=True)
-            yield Static("", id="side")
+            yield _NonSelectableStatic("", id="side")
         with Vertical(id="bottom"):
-            yield LoadingIndicator(id="spinner")
-            yield Static("", id="stream")
-            yield ListView(id="command-menu")
+            yield _NonSelectableLoadingIndicator(id="spinner")
+            yield _NonSelectableStatic("", id="stream")
+            yield _NonSelectableListView(id="command-menu")
             yield PromptArea(
                 placeholder='Ask anything... "Fix a TODO in the codebase"',
                 id="prompt",
@@ -349,6 +392,7 @@ class VialTUI(App[str]):
             self.controller.routing.agent = result.new_agent
         if result.new_session_id:
             self.controller.session_id = result.new_session_id
+            self.query_one("#log", RichLog).clear()
         if result.handled:
             if result.clipboard:
                 copied = self._copy_to_clipboard(result.clipboard)
@@ -383,7 +427,9 @@ class VialTUI(App[str]):
                     joined = "".join(self._stream_buffer)
                     self._safe_update_stream(joined)
             except Exception as error:  # noqa: BLE001 - surface model errors in the TUI
-                self._safe_update_stream(f"error: {error}")
+                error_text = f"error: {error}"
+                self._stream_buffer.append(error_text)
+                self._safe_update_stream(error_text)
             finally:
                 done.set()
 
@@ -395,7 +441,9 @@ class VialTUI(App[str]):
         if not self._cancelled:
             text = "".join(self._stream_buffer).strip()
             self._hide_stream()
-            self._log_assistant(text or "(empty response)")
+            self._log_assistant(
+                text or "error: model returned no response or output"
+            )
         self._set_busy(False)
         self._worker = None
 

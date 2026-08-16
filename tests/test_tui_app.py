@@ -178,6 +178,23 @@ class TuiAppTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_clear_starts_clean_visual_session(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    log = app.query_one("#log")
+                    log.write("old session output")
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "/clear"
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertNotIn("old session output", "\n".join(str(line) for line in log.lines))
+                    self.assertEqual(controller.history, [])
+
+        asyncio.run(run())
+
     def test_log_selection_is_box_scoped(self) -> None:
         async def run() -> None:
             from textual.events import MouseMove
@@ -193,6 +210,10 @@ class TuiAppTests(unittest.TestCase):
                 async with app.run_test() as pilot:
                     log = app.query_one("#log", SelectableLog)
                     self.assertTrue(log.allow_select)
+                    self.assertFalse(app.query_one("#side").allow_select)
+                    self.assertFalse(app.query_one("#stream").allow_select)
+                    self.assertFalse(app.query_one("#prompt").allow_select)
+                    self.assertFalse(app.query_one("#command-menu").allow_select)
                     log.write("alpha beta gamma")
                     await pilot.pause()
                     direct = log.get_selection(Selection(Offset(0, 0), Offset(9, 0)))

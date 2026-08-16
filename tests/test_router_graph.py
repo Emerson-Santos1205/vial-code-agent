@@ -228,6 +228,45 @@ class RoutingGraphTests(unittest.TestCase):
                 chunks = list(graph.dispatch_stream("explain the parser"))
             self.assertEqual("".join(chunks), "pooled answer")
 
+    def test_dispatch_stream_auto_reports_empty_model_response(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+
+            class Fake:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    return ModelResponse("", 1, stderr="provider unavailable")
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                chunks = list(graph.dispatch_stream("build the release tool"))
+            self.assertEqual(
+                chunks,
+                ["error: model exited with code 1: provider unavailable"],
+            )
+
+    def test_dispatch_stream_pinned_reports_empty_model_response(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+
+            class Fake:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    self.last_response = ModelResponse("", 1, stderr="provider failed")
+
+                def chat_stream(self, prompt: str, root: Path | None = None,
+                                history: object = None):
+                    if False:
+                        yield "unreachable"
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                chunks = list(graph.dispatch_stream(
+                    "build the release tool", requested_model="m1"))
+            self.assertEqual(
+                chunks,
+                ["error: model exited with code 1: provider failed"],
+            )
+
     def test_cancel_active_terminates_streaming_provider(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             graph = self._graph(directory, pool=["a/fast"])

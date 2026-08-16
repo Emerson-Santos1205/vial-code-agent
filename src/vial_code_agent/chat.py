@@ -119,6 +119,7 @@ class ChatController:
         if command == "/consensus":
             return self._handle_consensus(value)
         if command == "/clear":
+            self.history.clear()
             return ChatCommandResult(True, "new session", new_session_id=self.store.create())
         if command == "/sessions":
             return self._handle_sessions()
