@@ -147,8 +147,7 @@ class ReleaseOrchestratorTests(unittest.TestCase):
             (root / "README.md").write_text("readme\n", encoding="utf-8")
             tests_dir = root / "tests"
             tests_dir.mkdir()
-            (tests_dir / "test_sample.py").write_text(
-                "def test_ok():\n    assert True\n", encoding="utf-8")
+            (tests_dir / "test_sample.py").write_text(TEST_MODULE, encoding="utf-8")
             _commit(root, "feat: initial commit")
             _git(root, "tag", release_tag("0.1.0"))
 
@@ -163,8 +162,7 @@ class ReleaseOrchestratorTests(unittest.TestCase):
             (root / "README.md").write_text("readme\n", encoding="utf-8")
             tests_dir = root / "tests"
             tests_dir.mkdir()
-            (tests_dir / "test_sample.py").write_text(
-                "def test_ok():\n    assert True\n", encoding="utf-8")
+            (tests_dir / "test_sample.py").write_text(TEST_MODULE, encoding="utf-8")
             _commit(root, "feat: initial commit")
             _git(root, "tag", release_tag("0.1.0"))
 
@@ -181,8 +179,7 @@ class ReleaseOrchestratorTests(unittest.TestCase):
             (root / "VERSION").write_text("0.1.0\n", encoding="utf-8")
             tests_dir = root / "tests"
             tests_dir.mkdir()
-            (tests_dir / "test_sample.py").write_text(
-                "def test_ok():\n    assert True\n", encoding="utf-8")
+            (tests_dir / "test_sample.py").write_text(TEST_MODULE, encoding="utf-8")
             _commit(root, "feat: initial commit")
 
             env = os.environ.copy()
