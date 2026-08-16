@@ -48,6 +48,8 @@ jobs:
 
   vial-core-conformance:
     runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: vendor/vial-core
     steps:
       - uses: actions/checkout@v4
         with:

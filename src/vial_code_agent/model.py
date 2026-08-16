@@ -436,11 +436,13 @@ def _resolve_executable(executable: str) -> str:
     resolved = shutil.which(executable)
     if resolved:
         return resolved
-    if os.name == "nt":
-        for candidate in (
-            Path.home() / "AppData" / "Roaming" / "npm" / f"{executable}.cmd",
-            Path.home() / "AppData" / "Roaming" / "npm" / f"{executable}.ps1",
-        ):
-            if candidate.is_file():
-                return str(candidate)
+    home = Path.home()
+    for candidate in (
+        home / "AppData" / "Roaming" / "npm" / f"{executable}.cmd",
+        home / "AppData" / "Roaming" / "npm" / f"{executable}.ps1",
+        home / ".npm-global" / "bin" / executable,
+        home / ".local" / "bin" / executable,
+    ):
+        if candidate.is_file():
+            return str(candidate)
     return executable

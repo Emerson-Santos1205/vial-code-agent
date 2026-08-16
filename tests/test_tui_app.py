@@ -7,19 +7,52 @@ from pathlib import Path
 
 from vial_code_agent.app import ModelPicker, SessionPicker, VialTUI
 from vial_code_agent.chat import ChatController
-from vial_code_agent.model import OpenCodeProvider
+from vial_code_agent.model import ModelResponse, OpenCodeProvider
 from vial_code_agent.session import SessionStore
+
+
+class _FakeProvider:
+    """In-memory provider so TUI tests never spawn the ``opencode`` CLI."""
+
+    MODEL_ALIASES = OpenCodeProvider.MODEL_ALIASES
+
+    def __init__(self, model: str = "openai/gpt-5.6-luna-fast") -> None:
+        self.model = self.MODEL_ALIASES.get(model, model)
+        self.executable = "opencode"
+        self.auto_approve = False
+        self.agent = "plan"
+        self._active_proc = None
+        self.last_response: ModelResponse | None = None
+
+    def chat(self, prompt, directory=None, timeout_seconds=180, history=None) -> ModelResponse:
+        return ModelResponse(f"fake response: {prompt}", 0)
+
+    def chat_stream(self, prompt, directory=None, timeout_seconds=180, history=None):
+        for chunk in ("fake ", "response"):
+            yield chunk
+        self.last_response = ModelResponse("fake response", 0)
+
+    def list_models(self, provider=None) -> str:
+        return "opencode/deepseek-v4-flash-free\nmy-llm/gpt-4o\n"
+
+    def list_providers(self) -> str:
+        return "provider: openai\nprovider: my-llm\n"
+
+    def cancel(self) -> None:
+        pass
 
 
 def _controller(directory: str) -> ChatController:
     root = Path(directory)
     store = SessionStore(root / "sessions")
     session = store.create()
-    return ChatController(
-        root, store, session,
-        OpenCodeProvider("openai/gpt-5.6-luna-fast"),
+    provider = _FakeProvider("openai/gpt-5.6-luna-fast")
+    controller = ChatController(
+        root, store, session, provider,
         "openai/gpt-5.6-luna-fast", "opencode", False, "plan",
     )
+    controller.routing._provider_for = lambda ref: provider
+    return controller
 
 
 class TuiAppTests(unittest.TestCase):
