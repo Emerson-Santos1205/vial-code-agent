@@ -178,6 +178,7 @@ class ReleaseOrchestratorTests(unittest.TestCase):
             root = Path(directory)
             _init_repo(root)
             (root / "README.md").write_text("readme\n", encoding="utf-8")
+            (root / "VERSION").write_text("0.1.0\n", encoding="utf-8")
             tests_dir = root / "tests"
             tests_dir.mkdir()
             (tests_dir / "test_sample.py").write_text(
