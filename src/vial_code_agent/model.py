@@ -63,6 +63,8 @@ class OpenCodeProvider:
         self.executable = executable
         self.auto_approve = auto_approve
         self.agent = agent
+        self._active_proc: subprocess.Popen[str] | None = None
+        self.last_response: ModelResponse | None = None
 
     def generate(
         self,
@@ -160,6 +162,66 @@ class OpenCodeProvider:
             if _is_text_event(line)
         )
         return ModelResponse(text, process.returncode, _extract_error(process))
+
+    def chat_stream(
+        self,
+        prompt: str,
+        directory: Path | None = None,
+        timeout_seconds: int = 180,
+        history: list[tuple[str, str]] | None = None,
+    ):
+        """Yield text chunks as the model streams them (JSON events on stdout).
+
+        Sets ``self.last_response`` once the process finishes so the caller can
+        inspect the final return code / error. Cancellation is cooperative: call
+        :meth:`cancel` to terminate the active subprocess, which ends iteration.
+        """
+        if history:
+            prompt = _with_history(prompt, history)
+        executable = self.executable
+        if not os.path.dirname(executable):
+            executable = _resolve_executable(executable)
+        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model, prompt]
+        if self.auto_approve:
+            command.insert(2, "--auto")
+        process = subprocess.Popen(
+            command, cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        self._active_proc = process
+        text_parts: list[str] = []
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "text":
+                    chunk = event.get("part", {}).get("text", "")
+                    if chunk:
+                        text_parts.append(chunk)
+                        yield chunk
+        finally:
+            self._active_proc = None
+        stderr = ""
+        if process.stderr is not None:
+            stderr = process.stderr.read()
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        self.last_response = ModelResponse(
+            text="".join(text_parts),
+            returncode=process.returncode,
+            stderr=stderr.strip(),
+        )
+
+    def cancel(self) -> None:
+        """Terminate the subprocess currently streaming, if any."""
+        proc = self._active_proc
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
 
     def list_models(self, provider: str | None = None) -> str:
         executable = _resolve_executable(self.executable)

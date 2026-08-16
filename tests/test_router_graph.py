@@ -186,6 +186,71 @@ class RoutingGraphTests(unittest.TestCase):
             self.assertEqual(calls, ["a/fast"])
             self.assertEqual(decision.model, "a/fast")
 
+    def test_dispatch_stream_pinned_yields_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+
+            class Streamer:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat_stream(self, prompt: str, root: Path | None = None,
+                                history: object = None):
+                    for chunk in ("one ", "two"):
+                        yield chunk
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Streamer):
+                chunks = list(graph.dispatch_stream(
+                    "explain x", requested_model="m1",
+                    history=[("user", "hi")]))
+            self.assertEqual("".join(chunks), "one two")
+
+    def test_dispatch_stream_deterministic_yields_plain_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+            with patch("vial_code_agent.router.OpenCodeProvider") as provider:
+                chunks = list(graph.dispatch_stream("trim trailing whitespace"))
+            provider.assert_not_called()
+            self.assertEqual(chunks, ["deterministic: trim trailing whitespace"])
+
+    def test_dispatch_stream_auto_falls_back_to_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+
+            class Fake:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None) -> ModelResponse:
+                    return ModelResponse("pooled answer", 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                chunks = list(graph.dispatch_stream("explain the parser"))
+            self.assertEqual("".join(chunks), "pooled answer")
+
+    def test_cancel_active_terminates_streaming_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            graph = self._graph(directory, pool=["a/fast"])
+            cancelled = []
+
+            class Cancellable:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    pass
+
+                def chat_stream(self, prompt: str, root: Path | None = None,
+                                history: object = None):
+                    yield "pending"
+
+                def cancel(self) -> None:
+                    cancelled.append(True)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Cancellable):
+                iterator = graph.dispatch_stream("explain x", requested_model="m1")
+                next(iterator)
+                graph.cancel_active()
+            self.assertEqual(cancelled, [True])
+            graph.cancel_active()  # no-op with no active provider
+
 
 if __name__ == "__main__":
     unittest.main()

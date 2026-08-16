@@ -92,6 +92,7 @@ class RoutingGraph:
         self.auto_approve = auto_approve
         self.agent = agent
         self.timeout_seconds = timeout_seconds
+        self._active_provider = None
 
     # ------------------------------------------------------------------ #
     # Prompt analysis -> tier decision
@@ -238,6 +239,41 @@ class RoutingGraph:
                 server.base_url, api_key, model, self.timeout_seconds)
         return OpenCodeProvider(
             model_ref, self.executable, self.auto_approve, self.agent)
+
+    # ------------------------------------------------------------------ #
+    # Streaming dispatch: pinned-model chat yields chunks as they stream.
+    # The pool / deterministic paths fall back to the blocking dispatch and
+    # yield the whole text at once (deterministic has no model call).
+    # ------------------------------------------------------------------ #
+    def dispatch_stream(
+        self,
+        task: str,
+        root: Path | None = None,
+        requested_model: str = "auto",
+        history: list[tuple[str, str]] | None = None,
+    ):
+        if requested_model != "auto":
+            provider = self._provider_for(requested_model)
+            self._active_provider = provider
+            try:
+                for chunk in provider.chat_stream(task, root, history=history):
+                    yield chunk
+            finally:
+                self._active_provider = None
+            return
+        decision = self.analyze(task)
+        if decision.tier == "deterministic":
+            yield f"deterministic: {decision.deterministic_keyword}"
+            return
+        response, _decision = self.dispatch(task, root, requested_model, history)
+        yield response.text
+
+    def cancel_active(self) -> None:
+        """Terminate the model subprocess currently streaming, if any."""
+        provider = self._active_provider
+        if provider is not None:
+            provider.cancel()
+            self._active_provider = None
 
 
 def _tier_of(model_ref: str) -> str:

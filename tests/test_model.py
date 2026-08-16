@@ -149,6 +149,93 @@ class OpenCodeProviderTests(unittest.TestCase):
             provider.chat("hi")
         self.assertEqual(captured["command"][2], "--auto")
 
+    def test_chat_stream_yields_chunks_and_records_last_response(self) -> None:
+        provider = OpenCodeProvider("fast", executable="opencode")
+        events = (
+            '{"type":"text","part":{"text":"stream "}}\n'
+            '{"type":"text","part":{"text":"reply"}}\n'
+            '{"type":"step_finish","part":{}}\n'
+        )
+
+        class _FakeStream:
+            def read(self) -> str:
+                return ""
+
+            def __iter__(self):
+                return iter(events.splitlines())
+
+        class _FakePopen:
+            def __init__(self, command, **kwargs) -> None:
+                self.command = command
+                self.stdout = _FakeStream()
+                self.stderr = _FakeStream()
+                self.returncode = 0
+                self._lines = iter(events.splitlines())
+
+            def __iter__(self) -> "_FakePopen":
+                return self
+
+            def __next__(self) -> str:
+                return next(self._lines)
+
+            def wait(self, timeout: int | None = None) -> int:
+                return 0
+
+        with unittest.mock.patch(
+            "vial_code_agent.model.subprocess.Popen", side_effect=_FakePopen
+        ):
+            chunks = list(provider.chat_stream("hi"))
+        self.assertEqual("".join(chunks), "stream reply")
+        self.assertIsNotNone(provider.last_response)
+        self.assertEqual(provider.last_response.text, "stream reply")
+        self.assertEqual(provider.last_response.returncode, 0)
+
+    def test_chat_stream_injects_history(self) -> None:
+        provider = OpenCodeProvider("fast", executable="opencode")
+        captured: dict[str, object] = {}
+
+        class _FakeStream:
+            def read(self) -> str:
+                return ""
+
+            def __iter__(self):
+                return iter(())
+
+        class _FakePopen:
+            def __init__(self, command, **kwargs) -> None:
+                captured["command"] = command
+                self.stdout = _FakeStream()
+                self.stderr = _FakeStream()
+                self.returncode = 0
+
+            def wait(self, timeout: int | None = None) -> int:
+                return 0
+
+        with unittest.mock.patch(
+            "vial_code_agent.model.subprocess.Popen", side_effect=_FakePopen
+        ):
+            list(provider.chat_stream("follow up", history=[("user", "first")]))
+        prompt = captured["command"][-1]
+        self.assertIn("first", prompt)
+        self.assertTrue(prompt.endswith("user: follow up"))
+
+    def test_cancel_terminates_active_process(self) -> None:
+        provider = OpenCodeProvider("fast", executable="opencode")
+        terminated = []
+
+        class _FakeProc:
+            def poll(self):
+                return None
+
+            def terminate(self) -> None:
+                terminated.append(True)
+
+        provider._active_proc = _FakeProc()
+        provider.cancel()
+        self.assertEqual(terminated, [True])
+        provider._active_proc = None
+        provider.cancel()  # no-op without an active process
+
     def test_generate_builds_command_and_parses(self) -> None:
         provider = OpenCodeProvider(
             "fast", executable="opencode", auto_approve=True, agent="build")

@@ -166,6 +166,28 @@ class ChatController:
         self.store.append(self.session_id, "assistant", text)
         return text, self.route
 
+    def respond_stream(self, message: str):
+        """Yield text chunks of the response; persists the turns on completion.
+
+        Complements :meth:`respond` for the TUI: the assistant text is written
+        to the session store once the stream finishes (same durable behaviour).
+        """
+        self.history.append(message)
+        self.store.append(self.session_id, "user", message)
+        self.route = self.routing.model_for(message, self.model) or self.route
+        chunks: list[str] = []
+        for chunk in self.routing.dispatch_stream(
+            message, self.root, requested_model=self.model,
+            history=self._prior_turns()):
+            chunks.append(chunk)
+            yield chunk
+        text = "".join(chunks).strip()
+        self.store.append(self.session_id, "assistant", text)
+
+    def cancel_stream(self) -> None:
+        """Terminate any model subprocess currently streaming."""
+        self.routing.cancel_active()
+
     def _prior_turns(self, limit: int = 20) -> list[tuple[str, str]]:
         """Recent ``(role, content)`` turns of the current session.
 
@@ -403,6 +425,28 @@ class ChatController:
             return []
         matches = [name for name, _ in COMMANDS if name.startswith(text)]
         return sorted(matches, key=lambda name: (name != text, len(name)))
+
+    def session_previews(self, limit: int = 50) -> list[tuple[str, str]]:
+        """``(session_id, preview)`` for the TUI session picker.
+
+        Preview shows the first user message so a session can be recognised
+        without opening it. Returns most recent sessions first.
+        """
+        previews: list[tuple[str, str]] = []
+        for session_id in self.store.list():
+            try:
+                messages = self.store.messages(session_id)
+            except (OSError, FileNotFoundError, json.JSONDecodeError):
+                continue
+            first_user = next(
+                (m.content for m in messages if m.role == "user"), "")
+            preview = " ".join(first_user.split())[:64] or "(empty)"
+            count = len(messages)
+            label = f"{preview}  ·  {count} msg"
+            previews.append((session_id, label))
+            if len(previews) >= limit:
+                break
+        return previews
 
     def last_assistant(self) -> str:
         """Plain text of the most recent assistant message (for clipboard)."""

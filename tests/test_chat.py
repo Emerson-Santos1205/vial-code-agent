@@ -30,6 +30,17 @@ class _FakeRouting:
         self.calls.append((task, history))
         return ModelResponse("answer", 0), self.decision
 
+    def model_for(self, task, requested_model="auto"):
+        return requested_model
+
+    def dispatch_stream(self, task, root=None, requested_model="auto", history=None):
+        self.calls.append((task, history))
+        for chunk in ("streamed", " ", "answer"):
+            yield chunk
+
+    def cancel_active(self) -> None:
+        self.cancelled = True
+
 
 class ChatMemoryTests(unittest.TestCase):
     def _controller(self, directory: str) -> tuple[ChatController, _FakeRouting]:
@@ -74,6 +85,44 @@ class ChatMemoryTests(unittest.TestCase):
             resumed.respond("what did I ask?")
             self.assertEqual(
                 routing.calls[-1][1][0], ("user", "remember this phrase"))
+
+    def test_respond_stream_yields_chunks_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller, routing = self._controller(directory)
+            chunks = list(controller.respond_stream("explain the bank"))
+            self.assertEqual("".join(chunks), "streamed answer")
+            messages = controller.store.messages(controller.session_id)
+            self.assertEqual(messages[0].role, "user")
+            self.assertEqual(messages[0].content, "explain the bank")
+            self.assertEqual(messages[1].role, "assistant")
+            self.assertEqual(messages[1].content, "streamed answer")
+
+    def test_cancel_stream_delegates_to_routing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller, routing = self._controller(directory)
+            self.assertFalse(getattr(routing, "cancelled", False))
+            controller.cancel_stream()
+            self.assertTrue(routing.cancelled)
+
+    def test_session_previews_lists_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller, _routing = self._controller(directory)
+            controller.respond("show account balances")
+            other = ChatController(
+                Path(directory), controller.store, controller.store.create(),
+                OpenCodeProvider("openai/gpt-5.6-luna-fast"),
+                "auto", "opencode", False, "plan",
+            )
+            other.respond("refactor the transfer method")
+            previews = controller.session_previews()
+            self.assertEqual(len(previews), 2)
+            first_preview = next(
+                (preview for sid, preview in previews if sid == other.session_id),
+                None,
+            )
+            self.assertIsNotNone(first_preview)
+            self.assertIn("refactor", first_preview)
+            self.assertIn("2 msg", first_preview)
 
 
 class ChatCommandTests(unittest.TestCase):

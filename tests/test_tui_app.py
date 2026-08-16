@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vial_code_agent.app import ModelPicker, VialTUI
+from vial_code_agent.app import ModelPicker, SessionPicker, VialTUI
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import OpenCodeProvider
 from vial_code_agent.session import SessionStore
@@ -207,6 +207,151 @@ class TuiAppTests(unittest.TestCase):
                     await pilot.pause()
                     self.assertFalse(menu.display)
                     self.assertEqual(app.query_one("#prompt").text, "")
+
+        asyncio.run(run())
+
+    def test_ctrl_j_inserts_newline_in_prompt(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "first"
+                    await pilot.press("ctrl+j")
+                    await pilot.pause()
+                    self.assertIn("\n", prompt.text)
+
+        asyncio.run(run())
+
+    def test_ctrl_s_opens_session_picker(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                controller.respond("list account balances")
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    await pilot.press("ctrl+s")
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, SessionPicker)
+                    await pilot.press("escape")
+                    await pilot.pause()
+
+        asyncio.run(run())
+
+    def test_session_picker_filter_and_select(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                controller.respond("list account balances")
+                first_id = controller.session_id
+                controller.session_id = controller.store.create()
+                controller.respond("refactor the transfer method")
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    await pilot.press("ctrl+s")
+                    await pilot.pause()
+                    picker = app.screen
+                    self.assertIsInstance(picker, SessionPicker)
+                    filter_input = picker.query_one("#session-filter")
+                    filter_input.value = "balances"
+                    await pilot.pause()
+                    list_view = picker.query_one("#session-list")
+                    self.assertEqual(len(list_view.children), 1)
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertEqual(controller.session_id, first_id)
+
+        asyncio.run(run())
+
+    def test_ctrl_k_when_idle_deletes_to_end_of_line(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "delete me"
+                    prompt.cursor = (0, 6)
+                    await pilot.press("ctrl+k")
+                    await pilot.pause()
+                    self.assertNotIn("delete me", prompt.text)
+
+        asyncio.run(run())
+
+    def test_streaming_updates_stream_widget_and_hides_when_done(self) -> None:
+        async def run() -> None:
+            from textual.widgets import LoadingIndicator, RichLog, Static
+
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+
+                def fake_stream(message: str, root=None, requested_model="auto", history=None):
+                    for chunk in ("hello ", "world"):
+                        import time
+                        time.sleep(0.2)
+                        yield chunk
+
+                controller.routing.dispatch_stream = fake_stream
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    stream = app.query_one("#stream", Static)
+                    self.assertFalse(stream.display)
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "stream this"
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertTrue(app._busy)
+                    self.assertTrue(app.query_one("#spinner", LoadingIndicator).display)
+                    for _ in range(50):
+                        if not app._busy:
+                            break
+                        await pilot.pause(0.05)
+                    await pilot.pause()
+                    self.assertFalse(stream.display)
+                    self.assertFalse(app.query_one("#spinner", LoadingIndicator).display)
+                    joined = "\n".join(
+                        str(line) for line in app.query_one("#log", RichLog).lines
+                    )
+                    self.assertIn("hello world", joined)
+                    messages = controller.store.messages(controller.session_id)
+                    self.assertEqual(messages[1].content, "hello world")
+
+        asyncio.run(run())
+
+    def test_ctrl_k_cancels_active_stream(self) -> None:
+        async def run() -> None:
+            from textual.widgets import RichLog, Static
+
+            import threading
+
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                release = threading.Event()
+
+                def slow_stream(message: str):
+                    while not release.is_set():
+                        yield "."
+                        release.wait(0.02)
+                    yield "finished"
+
+                controller.respond_stream = slow_stream
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "cancel me"
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertTrue(app._busy)
+                    await pilot.press("ctrl+k")
+                    await pilot.pause()
+                    self.assertFalse(app._busy)
+                    joined = "\n".join(
+                        str(line) for line in app.query_one("#log", RichLog).lines
+                    )
+                    self.assertIn("task cancelled", joined)
+                    self.assertFalse(app.query_one("#stream", Static).display)
+                    release.set()
 
         asyncio.run(run())
 

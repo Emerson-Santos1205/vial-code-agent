@@ -7,8 +7,10 @@ and every opencode-style slash command is handled by ``ChatController``.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import threading
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -17,7 +19,10 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.selection import Selection
-from textual.widgets import Footer, Header, ListItem, ListView, RichLog, Static, TextArea
+from textual.widgets import (
+    Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
+    Static, TextArea,
+)
 
 from . import __version__
 from .chat import ChatController
@@ -114,11 +119,70 @@ class PoolPicker(ModalScreen[list[str] | None]):
         self.dismiss([m for m in self._models if m in self._selected])
 
 
+class SessionPicker(ModalScreen[str]):
+    """Modal session list with a filter input; returns the selected session id."""
+
+    BINDINGS = [Binding("escape", "dismiss_picker", "cancel")]
+
+    def __init__(self, sessions: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self._sessions = sessions
+        self._visible: list[tuple[str, str]] = list(sessions)
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "Resume a session (type to filter · enter = resume · esc = cancel)",
+            classes="picker-title",
+        )
+        yield Input(placeholder="filter sessions...", id="session-filter")
+        yield ListView(
+            *[ListItem(Static(label)) for _, label in self._sessions],
+            id="session-list",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#session-filter", Input).focus()
+
+    def action_dismiss_picker(self) -> None:
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def _submitted(self, event: Input.Submitted) -> None:
+        if self._visible:
+            self.dismiss(self._visible[0][0])
+        else:
+            self.dismiss(None)
+
+    @on(Input.Changed)
+    def _filter(self, event: Input.Changed) -> None:
+        needle = event.value.strip().lower()
+        self._visible = [
+            (session_id, label)
+            for session_id, label in self._sessions
+            if not needle or needle in label.lower()
+        ]
+        list_view = self.query_one("#session-list", ListView)
+        list_view.clear()
+        for _, label in self._visible:
+            list_view.append(ListItem(Static(label)))
+        list_view.index = 0
+
+    @on(ListView.Selected)
+    def _selected(self, event: ListView.Selected) -> None:
+        list_view = self.query_one("#session-list", ListView)
+        index = list_view.index
+        if index is None or not (0 <= index < len(self._visible)):
+            self.dismiss(None)
+            return
+        self.dismiss(self._visible[index][0])
+
+
 class PromptArea(TextArea):
-    """Single-logical-line prompt that soft-wraps long input."""
+    """Multi-line prompt; Enter submits, Ctrl+J inserts a newline."""
 
     BINDINGS = [
         Binding("enter", "submit_prompt", "send", priority=True),
+        Binding("ctrl+j", "insert_line_break", "new line"),
         Binding("up", "menu_up", "menu up"),
         Binding("down", "menu_down", "menu down"),
     ]
@@ -130,6 +194,9 @@ class PromptArea(TextArea):
 
     def action_submit_prompt(self) -> None:
         self.app.prompt_enter()
+
+    def action_insert_line_break(self) -> None:
+        self.insert("\n")
 
     def action_menu_up(self) -> None:
         self.app.menu_move(-1)
@@ -160,14 +227,17 @@ class VialTUI(App[str]):
     #main { width: 3fr; }
     #log { height: 1fr; border: round $primary; }
     #bottom { dock: bottom; height: auto; }
+    #stream { height: auto; max-height: 10; padding: 0 1; display: none; }
+    #spinner { height: 1; display: none; margin: 0 1; }
     #prompt { margin: 0 1 1 1; height: auto; max-height: 8; }
     #command-menu { height: auto; max-height: 12; border: round $primary; display: none; }
     #command-menu ListItem { padding: 0 2; }
     #command-menu ListItem.-highlight { color: $text; background: $primary 30%; }
     #side { width: 1fr; border: round $panel-lighten-2; padding: 1 1; color: $text-muted; }
     #side .key { color: $primary; }
-    ModelPicker, PoolPicker { background: $surface; }
+    ModelPicker, PoolPicker, SessionPicker { background: $surface; }
     .picker-title { padding: 1 2; text-style: bold; }
+    #session-filter { margin: 0 2 1 2; }
     """
 
     BINDINGS = [
@@ -175,8 +245,10 @@ class VialTUI(App[str]):
         Binding("tab", "switch_agent", "agent", priority=True),
         Binding("ctrl+p", "pick_model", "model", priority=True),
         Binding("ctrl+b", "pick_pool", "pool", priority=True),
+        Binding("ctrl+s", "pick_session", "sessions", priority=True),
         Binding("ctrl+y", "copy_last", "copy", priority=True),
         Binding("ctrl+u", "focus_prompt", "prompt", priority=True),
+        Binding("ctrl+k", "cancel_task", "cancel", priority=True),
     ]
 
     def __init__(self, controller: ChatController, prompt: str = "") -> None:
@@ -184,7 +256,10 @@ class VialTUI(App[str]):
         self.controller = controller
         self._initial_prompt = prompt
         self._busy = False
+        self._cancelled = False
         self._menu_matches: list[str] = []
+        self._worker = None
+        self._stream_buffer: list[str] = []
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -196,6 +271,8 @@ class VialTUI(App[str]):
                 yield SelectableLog(id="log", markup=True, highlight=True, wrap=True)
             yield Static("", id="side")
         with Vertical(id="bottom"):
+            yield LoadingIndicator(id="spinner")
+            yield Static("", id="stream")
             yield ListView(id="command-menu")
             yield PromptArea(
                 placeholder='Ask anything... "Fix a TODO in the codebase"',
@@ -290,25 +367,79 @@ class VialTUI(App[str]):
                 self.exit("")
             return
         self._log_user(message)
-        self._busy = True
-        self.refresh_side()
-        self.run_worker(self._dispatch(message), group="model", exclusive=True)
+        self._set_busy(True)
+        self._show_stream()
+        self._worker = self.run_worker(
+            self._dispatch(message), group="model", exclusive=True)
 
     async def _dispatch(self, message: str) -> None:
-        try:
-            text, _route = await self._run_dispatch(message)
-            self._log_assistant(text)
-        except Exception as error:  # noqa: BLE001 - surface model errors in the TUI
-            self._log_assistant(f"error: {error}")
-        finally:
-            self._busy = False
-            self.refresh_side()
+        self._stream_buffer = []
+        done = threading.Event()
 
-    async def _run_dispatch(self, message: str) -> tuple[str, str]:
-        # Model calls are blocking (subprocess / HTTP); run them in the worker
-        # pool so the UI stays responsive.
-        import asyncio
-        return await asyncio.to_thread(self.controller.respond, message)
+        def consume() -> None:
+            try:
+                for chunk in self.controller.respond_stream(message):
+                    self._stream_buffer.append(chunk)
+                    joined = "".join(self._stream_buffer)
+                    self._safe_update_stream(joined)
+            except Exception as error:  # noqa: BLE001 - surface model errors in the TUI
+                self._safe_update_stream(f"error: {error}")
+            finally:
+                done.set()
+
+        thread = threading.Thread(target=consume, daemon=True)
+        thread.start()
+        while not done.is_set() and not self._cancelled:
+            await asyncio.sleep(0.05)
+        thread.join(timeout=5)
+        if not self._cancelled:
+            text = "".join(self._stream_buffer).strip()
+            self._hide_stream()
+            self._log_assistant(text or "(empty response)")
+        self._set_busy(False)
+        self._worker = None
+
+    async def action_cancel_task(self) -> None:
+        """Ctrl+K: cancel the running model stream; otherwise delegate to
+        the prompt's delete-to-end-of-line action."""
+        if not self._busy:
+            await self.query_one("#prompt", PromptArea).action_delete_to_end_of_line_or_delete_line()
+            return
+        self._cancelled = True
+        self.controller.cancel_stream()
+        if self._worker is not None:
+            self._worker.cancel()
+        self._hide_stream()
+        self._log_assistant("task cancelled")
+        self._set_busy(False)
+        self._worker = None
+
+    def _set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        self.query_one("#spinner", LoadingIndicator).display = busy
+        self.refresh_side()
+
+    def _show_stream(self) -> None:
+        self.query_one("#stream", Static).update("")
+        self.query_one("#stream", Static).display = True
+
+    def _hide_stream(self) -> None:
+        self.query_one("#stream", Static).update("")
+        self.query_one("#stream", Static).display = False
+
+    def _update_stream(self, text: str) -> None:
+        self.query_one("#stream", Static).update(
+            f"[bold][magenta]VIAL[/magenta][/bold] {text}")
+
+    def _safe_update_stream(self, text: str) -> None:
+        """Update the stream widget from the worker thread; ignores calls
+        issued after the app has stopped (e.g. a cancelled worker)."""
+        try:
+            if not self.is_running:
+                return
+            self.call_from_thread(self._update_stream, text)
+        except Exception:  # noqa: BLE001 - worker may outlive the app
+            pass
 
     # ------------------------------------------------------------------ #
     # Actions / keybindings
@@ -353,8 +484,24 @@ class VialTUI(App[str]):
 
         self.push_screen(PoolPicker(models, current), done)
 
+    def action_pick_session(self) -> None:
+        sessions = self.controller.session_previews()
+        if not sessions:
+            self._log_assistant("no sessions to resume")
+            return
+
+        def done(selected: str | None) -> None:
+            if not selected:
+                return
+            result = self.controller.handle(f"/resume {selected}")
+            self.controller.session_id = result.new_session_id or self.controller.session_id
+            self._log_assistant(result.output or f"resumed session: {selected}")
+            self.refresh_side()
+
+        self.push_screen(SessionPicker(sessions), done)
+
     def action_focus_prompt(self) -> None:
-        self.query_one("#prompt", Input).focus()
+        self.query_one("#prompt", TextArea).focus()
 
     def action_copy_last(self) -> None:
         selection = self.screen.get_selected_text()
@@ -439,7 +586,10 @@ class VialTUI(App[str]):
             f"  [b]/model[/b] switch\n"
             f"  [b]/pool[/b] auto candidates\n"
             f"  [b]/agent[/b] build|plan\n"
-            f"  [b]/clear[/b] new session\n\n"
+            f"  [b]/clear[/b] new session\n"
+            f"  [b]Ctrl+S[/b] resume session\n"
+            f"  [b]Ctrl+K[/b] cancel model\n"
+            f"  [b]Ctrl+J[/b] new line\n\n"
             f"[dim]vial {__version__}[/dim]"
         )
         self.query_one("#side", Static).update(panel)
