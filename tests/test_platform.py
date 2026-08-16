@@ -44,6 +44,20 @@ class PlatformTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 CommandRunner(Path(directory)).run(["format-disk"])
 
+    def test_command_runner_allowlists_python_and_python3(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CommandRunner(Path(directory))
+            self.assertIn("python", runner.allowed)
+            self.assertIn("python.exe", runner.allowed)
+            self.assertIn("python3", runner.allowed)
+
+    def test_command_runner_rejects_python3_without_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CommandRunner(
+                Path(directory), allowed={"python", "python.exe", "pytest"})
+            with self.assertRaises(PermissionError):
+                runner.run(["python3", "-c", "print('x')"])
+
     def _controller(self, directory: str) -> ChatController:
         root = Path(directory)
         store = SessionStore(root / "sessions")

@@ -19,7 +19,7 @@ class CommandRunner:
 
     def __init__(self, root: Path, allowed: set[str] | None = None, unsafe: bool = False) -> None:
         self.root = root.resolve()
-        self.allowed = allowed or {"python", "python.exe", "pytest", "unittest", "git", "npm", "node"}
+        self.allowed = allowed or {"python", "python.exe", "python3", "pytest", "unittest", "git", "npm", "node"}
         self.unsafe = unsafe
 
     def run(self, command: list[str], timeout: int = 120) -> CommandResult:
