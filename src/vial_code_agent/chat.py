@@ -40,7 +40,7 @@ COMMANDS = [
     ("/trace", "show the audit trail for a decision (/trace <id>)"),
     ("/approve", "approve a pending decision (/approve <id>)"),
     ("/decisions", "list decisions awaiting consensus or approval"),
-    ("/consensus", "show consensus status of pending decisions"),
+    ("/consensus", "run cross-model consensus on a task, or show pending status"),
     ("/clear", "start a new session"),
     ("/sessions", "list past sessions"),
     ("/resume", "resume a past session"),
@@ -430,6 +430,8 @@ class ChatController:
         return ChatCommandResult(True, "\n".join(lines))
 
     def _handle_consensus(self, value: str) -> ChatCommandResult:
+        if value:
+            return self._dispatch_consensus(value)
         if self.runtime is None:
             return ChatCommandResult(True, "governed runtime unavailable; pass --vial-root")
         pending = self.runtime.pending_decisions()
@@ -448,6 +450,24 @@ class ChatController:
                 else "missing")
             lines.append(
                 f"  {row['decision_id']}  {row['objective']}  {status}")
+        return ChatCommandResult(True, "\n".join(lines))
+
+    def _dispatch_consensus(self, task: str) -> ChatCommandResult:
+        """Run a real cross-model consensus dispatch for a task."""
+        pool = list(self.registry.pool)
+        if len(pool) < 2:
+            return ChatCommandResult(
+                True, "consensus requires >=2 models in the pool; use /pool add")
+        try:
+            result, _ = self.routing.dispatch_consensus(task, self.root, models=pool)
+        except (OSError, RuntimeError) as error:
+            return ChatCommandResult(True, f"error: {error}")
+        status = "agreed" if result.agreed else "disagreed"
+        lines = [f"consensus: {status} "
+                 f"(ratio={result.agreement_ratio:.2f}, "
+                 f"models={len(result.responses)})"]
+        for ref, response in result.responses.items():
+            lines.append(f"  {ref}: {response.text.strip()[:200]}")
         return ChatCommandResult(True, "\n".join(lines))
 
     # ------------------------------------------------------------------ #
@@ -596,7 +616,7 @@ Commands:
 /status                       show session status
 /trace <decision_id>          show the audit trail of a Decision
 /decisions                    list Decisions awaiting consensus or approval
-/consensus                    show consensus status of pending Decisions
+/consensus                    run consensus on a task, or show pending status
 /approve <decision_id>        approve a pending Decision
 /sessions                     list past sessions
 /resume <session_id>          resume a past session

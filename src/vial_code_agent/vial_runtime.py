@@ -108,6 +108,7 @@ class ConsensusRecord:
     models: list[str] = field(default_factory=list)
     responses: dict[str, str] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    note: str = ""
 
 
 def file_field_key(relative: str) -> str:
@@ -708,6 +709,7 @@ class VialRuntime:
         record = ApprovalRecord(decision_id=decision_id,
                                 approver=approver, note=note)
         self.approvals[decision_id] = record
+        self.persist()
         return record
 
     # ------------------------------------------------------------------ #
@@ -733,16 +735,24 @@ class VialRuntime:
         agreement_ratio: float = 0.0,
         models: list[str] | None = None,
         responses: dict[str, str] | None = None,
+        note: str = "",
     ) -> ConsensusRecord:
-        """Record the outcome of a cross-model consensus for a Decision."""
+        """Record the outcome of a cross-model consensus for a Decision.
+
+        The record is persisted immediately so a CLI invocation that records
+        consensus and then stops (e.g. because a later gate rejected the
+        patch) still leaves the consensus durable for ``--decisions``.
+        """
         record = ConsensusRecord(
             decision_id=decision_id,
             agreed=agreed,
             agreement_ratio=agreement_ratio,
             models=list(models or []),
             responses=dict(responses or {}),
+            note=note,
         )
         self.consensus_records[decision_id] = record
+        self.persist()
         return record
 
     def _consensus_gate(self, tool: Any, decision: Any) -> Any | None:
@@ -755,6 +765,7 @@ class VialRuntime:
             return None
         record = self.consensus_records.get(decision.id)
         if record is None:
+            self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_REJECTED,
                 error=f"Decision '{decision.id}' requires cross-model consensus "
@@ -765,6 +776,7 @@ class VialRuntime:
             return None
         if decision.id in self.approvals:
             return None
+        self.persist()
         return self._tool.ToolResult(
             status=self._tool.STATUS_REJECTED,
             error=f"models disagreed on Decision '{decision.id}'; "
@@ -800,6 +812,7 @@ class VialRuntime:
             return consensus
         if (require_approval or self.decision_requires_approval(decision)) \
                 and decision.id not in self.approvals:
+            self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_REJECTED,
                 error=f"Decision '{decision.id}' requires approval before invocation",

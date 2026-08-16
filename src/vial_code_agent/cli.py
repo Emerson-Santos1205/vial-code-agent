@@ -110,6 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-command", nargs=argparse.REMAINDER,
                         help="command to verify a change; keep this option last")
     parser.add_argument("--test-timeout", type=int, default=120)
+    parser.add_argument("--no-consensus", action="store_true",
+                        help="skip the cross-model consensus gate with an explicit audit note")
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep changes when verification fails")
     return parser
@@ -356,19 +358,38 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             print("patch: already applied by opencode")
         elif runtime is not None:
             decision = runtime.propose_patch_decision(generated.context_id)
-            consensus = _run_fix_consensus(
-                root, config, args, args.fix, model, executable,
-                auto_approve, agent)
-            if consensus is not None:
+            consensus = None
+            if args.no_consensus:
                 runtime.record_consensus(
-                    decision.id, consensus.agreed, consensus.agreement_ratio,
-                    models=list(consensus.responses),
-                    responses={ref: response.text
-                               for ref, response in consensus.responses.items()})
-                status = "agreed" if consensus.agreed else "disagreed"
-                print(f"consensus: {status} "
-                      f"(ratio={consensus.agreement_ratio:.2f}, "
-                      f"models={len(consensus.responses)})")
+                    decision.id, True, 0.0, note="consensus skipped by operator "
+                    "flag --no-consensus")
+                print("consensus: skipped (--no-consensus)")
+            else:
+                consensus = _run_fix_consensus(
+                    root, config, args, args.fix, model, executable,
+                    auto_approve, agent)
+                if consensus is None:
+                    runtime.record_consensus(
+                        decision.id, True, 0.0,
+                        note="no independent model pool configured; "
+                             "consensus not independently verified")
+                    print("consensus: not independently verified "
+                          "(no model pool)")
+                else:
+                    runtime.record_consensus(
+                        decision.id, consensus.agreed, consensus.agreement_ratio,
+                        models=list(consensus.responses),
+                        responses={ref: response.text
+                                   for ref, response in consensus.responses.items()})
+                    status = "agreed" if consensus.agreed else "disagreed"
+                    print(f"consensus: {status} "
+                          f"(ratio={consensus.agreement_ratio:.2f}, "
+                          f"models={len(consensus.responses)})")
+                    if not consensus.agreed:
+                        print(f"decision_id: {decision.id}", file=sys.stderr)
+                        for ref, response in consensus.responses.items():
+                            print(f"candidate from {ref}:", file=sys.stderr)
+                            print(response.text, file=sys.stderr)
             result = runtime.apply_patch(
                 PatchApplier(root), generated.patch, generated.context_id,
                 allowed_paths={path.relative_to(root).as_posix() for path in files},

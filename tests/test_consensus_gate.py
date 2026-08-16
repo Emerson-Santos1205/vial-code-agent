@@ -176,6 +176,43 @@ class ConsensusPersistenceTests(unittest.TestCase):
             self.assertEqual(len(record.responses), 0)
             self.assertGreater(record.timestamp, 0)
 
+    def test_consensus_note_persists_across_restarts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            runtime = _runtime(state)
+            decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(
+                decision.id, True, 0.0,
+                note="consensus skipped by operator flag --no-consensus")
+            runtime.persist()
+
+            restored = VialRuntime(_reference(), state)
+            record = restored.consensus_records.get(decision.id)
+            self.assertIsNotNone(record)
+            self.assertIn(
+                "skipped by operator flag",
+                record.note)
+
+    def test_consensus_rejection_persists_decision_and_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            runtime = _runtime(state)
+            decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(decision.id, False, 0.1)
+            root = Path(directory) / "work"
+            root.mkdir()
+            source = root / "value.txt"
+            source.write_text("old\n", encoding="utf-8")
+            result = runtime.apply_patch(
+                PatchApplier(root), PATCH, decision=decision)
+            self.assertEqual(result.status, "REJECTED")
+            self.assertIn("APPROVAL_REQUIRED",
+                          result.metadata.get("error_code", ""))
+
+            restored = VialRuntime(_reference(), state)
+            self.assertIn(decision.id, restored.decision_engine.decisions)
+            self.assertIn(decision.id, restored.consensus_records)
+
 
 if __name__ == "__main__":
     unittest.main()

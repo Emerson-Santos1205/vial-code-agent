@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sys
 import tempfile
@@ -53,6 +54,7 @@ class _FakeRuntime:
         self._snapshot = {"organization_id": "org-1"}
         self.decision_ids: list[str] = []
         self._approvals: list[str] = []
+        self._consensus_notes: dict[str, str] = {}
 
     def set_workspace_root(self, root: Path) -> None:
         self.workspace_root = root
@@ -73,7 +75,8 @@ class _FakeRuntime:
 
     def record_consensus(self, decision_id: str, agreed: bool,
                          agreement_ratio: float = 0.0, models=None,
-                         responses=None) -> None:
+                         responses=None, note: str = "") -> None:
+        self._consensus_notes[decision_id] = note
         return None
 
     def pending_decisions(self) -> list[dict]:
@@ -786,7 +789,7 @@ class ConsensusCliTests(unittest.TestCase):
                 result = main(["--approve", "DEC-MISSING", "--root", str(root)])
             self.assertEqual(result, 1)
 
-    def test_fix_pool_under_two_blocks_without_consensus(self) -> None:
+    def test_fix_without_pool_falls_back_gracefully(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "source.txt").write_text("old\n", encoding="utf-8")
@@ -808,11 +811,11 @@ class ConsensusCliTests(unittest.TestCase):
                             "--include", "source.txt",
                         ]
                     )
-            self.assertEqual(result, 1)
+            self.assertEqual(result, 0)
             self.assertEqual(
-                (root / "source.txt").read_text(encoding="utf-8"), "old\n")
+                (root / "source.txt").read_text(encoding="utf-8"), "new\n")
 
-    def test_fix_disagreement_prints_approval_hint(self) -> None:
+    def test_fix_no_consensus_flag_records_note(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "source.txt").write_text("old\n", encoding="utf-8")
@@ -826,21 +829,57 @@ class ConsensusCliTests(unittest.TestCase):
                     return generated
 
             with patch("vial_code_agent.cli.CodeAgent", _FakeAgent):
+                with patch("sys.stdout"):
+                    result = main(
+                        [
+                            "--fix", "change", "--root", str(root),
+                            "--vial-root", str(VENDOR),
+                            "--include", "source.txt",
+                            "--no-consensus",
+                        ]
+                    )
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                (root / "source.txt").read_text(encoding="utf-8"), "new\n")
+            runtime = _runtime(root)
+            record = next(iter(runtime.consensus_records.values()))
+            self.assertIn("skipped by operator flag --no-consensus", record.note)
+
+    def test_fix_disagreement_prints_candidates_to_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.txt").write_text("old\n", encoding="utf-8")
+            generated = GenerationResult(ModelResponse("", 0), PATCH)
+
+            class _FakeAgent:
+                def __init__(self, provider: object, runtime=None) -> None:
+                    pass
+
+                def generate(self, *args: object, **kwargs: object) -> GenerationResult:
+                    return generated
+
+            stderr = io.StringIO()
+            with patch("vial_code_agent.cli.CodeAgent", _FakeAgent):
                 with patch(
                     "vial_code_agent.cli._run_fix_consensus",
                     return_value=ConsensusResult(
                         False, ModelResponse("other", 0), 0.25,
-                        {"a/x": ModelResponse("one", 0),
-                         "b/y": ModelResponse("other", 0)}),
+                        {"a/x": ModelResponse("one answer", 0),
+                         "b/y": ModelResponse("other answer", 0)}),
                 ):
                     with patch("sys.stdout"):
-                        result = main(
-                            [
-                                "--fix", "change", "--root", str(root),
-                                "--vial-root", str(VENDOR),
-                                "--include", "source.txt",
-                            ]
-                        )
+                        with patch("sys.stderr", stderr):
+                            result = main(
+                                [
+                                    "--fix", "change", "--root", str(root),
+                                    "--vial-root", str(VENDOR),
+                                    "--include", "source.txt",
+                                ]
+                            )
             self.assertEqual(result, 1)
+            self.assertIn("candidate from a/x", stderr.getvalue())
+            self.assertIn("one answer", stderr.getvalue())
+            self.assertIn("candidate from b/y", stderr.getvalue())
+            self.assertIn("decision_id:", stderr.getvalue())
             self.assertEqual(
                 (root / "source.txt").read_text(encoding="utf-8"), "old\n")

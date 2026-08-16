@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from vial_code_agent.chat import ChatController, _friendly_model_error, _models_output
-from vial_code_agent.model import ModelResponse, OpenCodeProvider
+from vial_code_agent.model import ModelResponse
+from vial_code_agent.router import ConsensusResult, OpenCodeProvider
 from vial_code_agent.session import SessionStore
 
 
@@ -40,6 +41,14 @@ class _FakeRouting:
 
     def cancel_active(self) -> None:
         self.cancelled = True
+
+    def dispatch_consensus(self, task, root=None, models=None,
+                           quorum=2, min_agreement=0.6, history=None):
+        self.calls.append((task, history))
+        return ConsensusResult(
+            True, ModelResponse("same", 0), 1.0,
+            {"a/x": ModelResponse("same", 0),
+             "b/y": ModelResponse("same", 0)}), _FakeDecision()
 
 
 class ChatMemoryTests(unittest.TestCase):
@@ -519,6 +528,22 @@ class ChatRuntimeCommandTests(unittest.TestCase):
             ok = controller.handle("/consensus")
             self.assertIn("DEC-1", ok.output)
             self.assertIn("missing", ok.output)
+
+    def test_consensus_task_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            controller.routing = _FakeRouting()
+            controller.registry.pool_add("openai/gpt-5.6-luna-fast")
+            controller.registry.pool_add("openai/gpt-4o-mini")
+            ok = controller.handle("/consensus fix the build")
+            self.assertIn("consensus: agreed", ok.output)
+            self.assertIn("a/x", ok.output)
+
+    def test_consensus_task_requires_two_models(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            ok = controller.handle("/consensus fix the build")
+            self.assertIn(">=2 models", ok.output)
 
     def test_decisions_without_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
