@@ -18,7 +18,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
-from textual.selection import Selection
+from textual.selection import SELECT_ALL, Selection
 from textual.widgets import (
     Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
     Static, TextArea,
@@ -246,13 +246,38 @@ class VialScreen(Screen):
     """Main screen that prevents selection highlights outside the output log."""
 
     def _watch__select_state(self, select_state) -> None:
-        super()._watch__select_state(select_state)
-        if select_state is not None and self.selections:
-            self.selections = {
-                widget: selection
-                for widget, selection in self.selections.items()
-                if isinstance(widget, SelectableLog)
-            }
+        if select_state is None:
+            self._selecting = False
+            self.selections = {}
+            self.refresh()
+            return
+        self._selecting = True
+        if select_state.end is None:
+            return
+        if not select_state.is_attached_to_dom:
+            self._select_state = None
+            return
+        if select_state.is_single_content_widget:
+            start_index, end_offset = select_state.content_offsets
+            widget = select_state.start.content_widget
+            if isinstance(widget, SelectableLog):
+                self.selections = {
+                    widget: Selection.from_offsets(start_index, end_offset + (1, 0))
+                }
+            else:
+                self.selections = {}
+            return
+        selections = {
+            widget: SELECT_ALL
+            for widget in select_state._walk_selected_widgets()
+            if isinstance(widget, SelectableLog)
+        }
+        select_state._apply_content_selections(selections)
+        self.selections = {
+            widget: selection
+            for widget, selection in selections.items()
+            if isinstance(widget, SelectableLog)
+        }
 
 
 class VialTUI(App[str]):

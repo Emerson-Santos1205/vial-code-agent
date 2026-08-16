@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vial_code_agent.app import ModelPicker, SessionPicker, VialTUI
+from vial_code_agent.app import ModelPicker, SelectableLog, SessionPicker, VialTUI
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import ModelResponse, OpenCodeProvider
 from vial_code_agent.session import SessionStore
@@ -228,6 +228,36 @@ class TuiAppTests(unittest.TestCase):
                     selected = app.screen.get_selected_text()
                     self.assertIsNotNone(selected)
                     self.assertIn("alpha", selected)
+
+        asyncio.run(run())
+
+    def test_log_selection_ignores_external_endpoint(self) -> None:
+        async def run() -> None:
+            from textual.events import MouseMove
+
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    log = app.query_one("#log", SelectableLog)
+                    side = app.query_one("#side")
+                    log.write("log line one\nlog line two")
+                    side.update("side panel text")
+                    await pilot.pause()
+                    await pilot.mouse_down(widget=log, offset=(0, 0))
+                    app.post_message(MouseMove(
+                        widget=side, x=0, y=0, delta_x=1, delta_y=1,
+                        button=0, shift=False, meta=False, ctrl=False,
+                    ))
+                    await pilot.pause()
+                    await pilot.mouse_up(widget=side, offset=(0, 0))
+                    await pilot.pause()
+                    self.assertTrue(all(
+                        isinstance(widget, SelectableLog)
+                        for widget in app.screen.selections
+                    ))
+                    selected = app.screen.get_selected_text()
+                    self.assertNotIn("side panel text", selected or "")
 
         asyncio.run(run())
 
