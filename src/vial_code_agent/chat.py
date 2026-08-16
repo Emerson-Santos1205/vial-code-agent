@@ -84,6 +84,7 @@ class ChatController:
         agent: str,
         registry: ServerRegistry | None = None,
         runtime=None,
+        model_timeout: int = 180,
     ) -> None:
         self.root = root
         self.store = store
@@ -95,9 +96,11 @@ class ChatController:
         self.agent = agent
         self.registry = registry or ServerRegistry(root)
         self.runtime = runtime
+        self.model_timeout = model_timeout
         self.routing = RoutingGraph(
             self.registry, default_model=model,
             executable=executable, auto_approve=auto_approve, agent=agent,
+            timeout_seconds=model_timeout,
         )
         self.route = "auto"
         self.history: list[str] = []

@@ -494,10 +494,11 @@ def _run_tui(root: Path, config: AgentConfig, runtime: VialRuntime | None, args)
     if runtime is not None:
         runtime.set_workspace_root(root)
     registry = ServerRegistry(root)
-    provider = OpenCodeProvider(model, executable, auto_approve, agent)
+    provider = OpenCodeProvider(model, executable, auto_approve, agent, config.model_timeout)
     controller = ChatController(
         root, store, session_id, provider, model, executable,
         auto_approve, agent, registry=registry, runtime=runtime,
+        model_timeout=config.model_timeout,
     )
     controller.test_timeout = config.test_timeout
     app = VialTUI(controller, prompt=args.prompt or "")

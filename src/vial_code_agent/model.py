@@ -63,11 +63,13 @@ class OpenCodeProvider:
         executable: str = "opencode",
         auto_approve: bool = False,
         agent: str = "plan",
+        timeout_seconds: int = 180,
     ) -> None:
         self.model = self.MODEL_ALIASES.get(model, model)
         self.executable = executable
         self.auto_approve = auto_approve
         self.agent = agent
+        self.timeout_seconds = timeout_seconds
         self._active_proc: subprocess.Popen[str] | None = None
         self.last_response: ModelResponse | None = None
 
@@ -79,6 +81,7 @@ class OpenCodeProvider:
         task: str | None = None,
         files: list[Path] | None = None,
     ) -> ModelResponse:
+        timeout_seconds = self.timeout_seconds
         instruction = f"{prompt} Return only a unified diff."
         executable = self.executable
         if not os.path.dirname(executable):
@@ -154,6 +157,7 @@ class OpenCodeProvider:
         """
         if history:
             prompt = _with_history(prompt, history)
+        timeout_seconds = self.timeout_seconds
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)
@@ -190,6 +194,7 @@ class OpenCodeProvider:
         """
         if history:
             prompt = _with_history(prompt, history)
+        timeout_seconds = self.timeout_seconds
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)

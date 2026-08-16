@@ -251,7 +251,8 @@ class RoutingGraph:
             return HttpModelProvider(
                 server.base_url, api_key, model, self.timeout_seconds)
         return OpenCodeProvider(
-            model_ref, self.executable, self.auto_approve, self.agent)
+            model_ref, self.executable, self.auto_approve, self.agent,
+            self.timeout_seconds)
 
     # ------------------------------------------------------------------ #
     # Streaming dispatch: pinned-model chat yields chunks as they stream.
