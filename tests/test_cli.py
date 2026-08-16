@@ -482,14 +482,21 @@ class CliIntegrationTests(unittest.TestCase):
                     runtime = _FakeRuntime()
                     runtime.apply_patch_result = _FakeToolResult()
                     build.return_value = runtime
-                    with patch("sys.stdout"):
-                        result = main(
-                            [
-                                "--fix", "change", "--root", str(root),
-                                "--include", "source.txt",
-                                "--test-command", sys.executable, "-c", "print(1)",
-                            ]
-                        )
+                    with patch(
+                        "vial_code_agent.cli._run_fix_consensus",
+                        return_value=ConsensusResult(
+                            True, ModelResponse("same", 0), 1.0,
+                            {"a/x": ModelResponse("same", 0),
+                             "b/y": ModelResponse("same", 0)}),
+                    ):
+                        with patch("sys.stdout"):
+                            result = main(
+                                [
+                                    "--fix", "change", "--root", str(root),
+                                    "--include", "source.txt",
+                                    "--test-command", sys.executable, "-c", "print(1)",
+                                ]
+                            )
             self.assertEqual(result, 1)
             self.assertEqual(runtime.invoke_tool_calls[-1][0], "TOOL-RUN-TEST")
 
@@ -789,7 +796,7 @@ class ConsensusCliTests(unittest.TestCase):
                 result = main(["--approve", "DEC-MISSING", "--root", str(root)])
             self.assertEqual(result, 1)
 
-    def test_fix_without_pool_falls_back_gracefully(self) -> None:
+    def test_fix_without_pool_blocks_with_hint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "source.txt").write_text("old\n", encoding="utf-8")
@@ -802,20 +809,24 @@ class ConsensusCliTests(unittest.TestCase):
                 def generate(self, *args: object, **kwargs: object) -> GenerationResult:
                     return generated
 
+            stderr = io.StringIO()
             with patch("vial_code_agent.cli.CodeAgent", _FakeAgent):
                 with patch("sys.stdout"):
-                    result = main(
-                        [
-                            "--fix", "change", "--root", str(root),
-                            "--vial-root", str(VENDOR),
-                            "--include", "source.txt",
-                        ]
-                    )
-            self.assertEqual(result, 0)
+                    with patch("sys.stderr", stderr):
+                        result = main(
+                            [
+                                "--fix", "change", "--root", str(root),
+                                "--vial-root", str(VENDOR),
+                                "--include", "source.txt",
+                            ]
+                        )
+            self.assertEqual(result, 1)
+            self.assertIn("no model pool", stderr.getvalue())
+            self.assertIn("--no-consensus", stderr.getvalue())
             self.assertEqual(
-                (root / "source.txt").read_text(encoding="utf-8"), "new\n")
+                (root / "source.txt").read_text(encoding="utf-8"), "old\n")
 
-    def test_fix_no_consensus_flag_records_note(self) -> None:
+    def test_fix_no_consensus_flag_records_operator_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "source.txt").write_text("old\n", encoding="utf-8")
@@ -842,8 +853,9 @@ class ConsensusCliTests(unittest.TestCase):
             self.assertEqual(
                 (root / "source.txt").read_text(encoding="utf-8"), "new\n")
             runtime = _runtime(root)
-            record = next(iter(runtime.consensus_records.values()))
-            self.assertIn("skipped by operator flag --no-consensus", record.note)
+            approval = next(iter(runtime.approvals.values()))
+            self.assertEqual(approval.approver, "operator")
+            self.assertIn("skipped by operator flag --no-consensus", approval.note)
 
     def test_fix_disagreement_prints_candidates_to_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

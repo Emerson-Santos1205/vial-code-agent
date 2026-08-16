@@ -134,6 +134,22 @@ class ConsensusGateTests(unittest.TestCase):
             self.assertIn("APPROVAL_REQUIRED",
                           result.metadata.get("error_code", ""))
 
+    def test_operator_approval_substitutes_for_consensus(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("old\n", encoding="utf-8")
+            runtime = _runtime(Path(directory) / "state")
+            decision = runtime.propose_patch_decision("")
+            runtime.approve_decision(
+                decision.id, "operator",
+                note="consensus skipped by operator flag --no-consensus")
+            result = runtime.apply_patch(
+                PatchApplier(root), PATCH, decision=decision)
+            self.assertTrue(result.ok())
+            self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
+            self.assertNotIn(decision.id, runtime.consensus_records)
+
 
 class ConsensusPersistenceTests(unittest.TestCase):
     def test_consensus_records_persist_across_restarts(self) -> None:
@@ -183,14 +199,14 @@ class ConsensusPersistenceTests(unittest.TestCase):
             decision = runtime.propose_patch_decision("")
             runtime.record_consensus(
                 decision.id, True, 0.0,
-                note="consensus skipped by operator flag --no-consensus")
+                note="documented review outcome")
             runtime.persist()
 
             restored = VialRuntime(_reference(), state)
             record = restored.consensus_records.get(decision.id)
             self.assertIsNotNone(record)
             self.assertIn(
-                "skipped by operator flag",
+                "documented review outcome",
                 record.note)
 
     def test_consensus_rejection_persists_decision_and_record(self) -> None:

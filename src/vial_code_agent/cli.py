@@ -360,36 +360,37 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             decision = runtime.propose_patch_decision(generated.context_id)
             consensus = None
             if args.no_consensus:
-                runtime.record_consensus(
-                    decision.id, True, 0.0, note="consensus skipped by operator "
-                    "flag --no-consensus")
-                print("consensus: skipped (--no-consensus)")
+                runtime.approve_decision(
+                    decision.id, "operator",
+                    note="consensus skipped by operator flag --no-consensus")
+                print("consensus: skipped by operator (--no-consensus)")
             else:
                 consensus = _run_fix_consensus(
                     root, config, args, args.fix, model, executable,
                     auto_approve, agent)
                 if consensus is None:
-                    runtime.record_consensus(
-                        decision.id, True, 0.0,
-                        note="no independent model pool configured; "
-                             "consensus not independently verified")
-                    print("consensus: not independently verified "
-                          "(no model pool)")
-                else:
-                    runtime.record_consensus(
-                        decision.id, consensus.agreed, consensus.agreement_ratio,
-                        models=list(consensus.responses),
-                        responses={ref: response.text
-                                   for ref, response in consensus.responses.items()})
-                    status = "agreed" if consensus.agreed else "disagreed"
-                    print(f"consensus: {status} "
-                          f"(ratio={consensus.agreement_ratio:.2f}, "
-                          f"models={len(consensus.responses)})")
-                    if not consensus.agreed:
-                        print(f"decision_id: {decision.id}", file=sys.stderr)
-                        for ref, response in consensus.responses.items():
-                            print(f"candidate from {ref}:", file=sys.stderr)
-                            print(response.text, file=sys.stderr)
+                    print(
+                        "error: no model pool (>=2 models) configured; "
+                        "cross-model consensus cannot be verified for this "
+                        "mutation", file=sys.stderr)
+                    print(
+                        "hint: configure a pool or re-run with --no-consensus "
+                        "to authorize as operator", file=sys.stderr)
+                    return 1
+                runtime.record_consensus(
+                    decision.id, consensus.agreed, consensus.agreement_ratio,
+                    models=list(consensus.responses),
+                    responses={ref: response.text
+                               for ref, response in consensus.responses.items()})
+                status = "agreed" if consensus.agreed else "disagreed"
+                print(f"consensus: {status} "
+                      f"(ratio={consensus.agreement_ratio:.2f}, "
+                      f"models={len(consensus.responses)})")
+                if not consensus.agreed:
+                    print(f"decision_id: {decision.id}", file=sys.stderr)
+                    for ref, response in consensus.responses.items():
+                        print(f"candidate from {ref}:", file=sys.stderr)
+                        print(response.text, file=sys.stderr)
             result = runtime.apply_patch(
                 PatchApplier(root), generated.patch, generated.context_id,
                 allowed_paths={path.relative_to(root).as_posix() for path in files},

@@ -764,6 +764,8 @@ class VialRuntime:
         if not self.requires_consensus(tool):
             return None
         record = self.consensus_records.get(decision.id)
+        if decision.id in self.approvals:
+            return None
         if record is None:
             self.persist()
             return self._tool.ToolResult(
@@ -773,8 +775,6 @@ class VialRuntime:
                 metadata={"tool_id": tool.tool_id, "error_code": "CONSENSUS_REQUIRED",
                           "decision_id": decision.id})
         if record.agreed:
-            return None
-        if decision.id in self.approvals:
             return None
         self.persist()
         return self._tool.ToolResult(
