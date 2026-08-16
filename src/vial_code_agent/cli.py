@@ -499,6 +499,7 @@ def _run_tui(root: Path, config: AgentConfig, runtime: VialRuntime | None, args)
         root, store, session_id, provider, model, executable,
         auto_approve, agent, registry=registry, runtime=runtime,
     )
+    controller.test_timeout = config.test_timeout
     app = VialTUI(controller, prompt=args.prompt or "")
     app.run()
     return 0

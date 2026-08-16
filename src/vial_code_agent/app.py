@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
+import subprocess
 import sys
 import threading
 
@@ -23,6 +25,7 @@ from textual.widgets import (
     Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
     Static, TextArea,
 )
+from rich.markup import escape
 
 from . import __version__
 from .chat import ChatController
@@ -224,10 +227,16 @@ class PromptArea(_NonSelectableMixin, TextArea):
         self.insert("\n")
 
     def action_menu_up(self) -> None:
-        self.app.menu_move(-1)
+        if self.app.command_menu_visible():
+            self.app.menu_move(-1)
+        else:
+            self.app.history_move(-1)
 
     def action_menu_down(self) -> None:
-        self.app.menu_move(1)
+        if self.app.command_menu_visible():
+            self.app.menu_move(1)
+        else:
+            self.app.history_move(1)
 
 
 class SelectableLog(RichLog):
@@ -325,6 +334,8 @@ class VialTUI(App[str]):
         self._menu_matches: list[str] = []
         self._worker = None
         self._stream_buffer: list[str] = []
+        self._prompt_history: list[str] = []
+        self._history_index: int | None = None
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -407,6 +418,8 @@ class VialTUI(App[str]):
         if not message:
             prompt_widget.text = ""
             return
+        self._prompt_history.append(message)
+        self._history_index = None
         prompt_widget.text = ""
         result = self.controller.handle(message)
         if result.new_model:
@@ -502,7 +515,7 @@ class VialTUI(App[str]):
 
     def _update_stream(self, text: str) -> None:
         self.query_one("#stream", Static).update(
-            f"[bold][magenta]VIAL[/magenta][/bold] {text}")
+            f"[bold][magenta]VIAL[/magenta][/bold] {escape(str(text))}")
 
     def _safe_update_stream(self, text: str) -> None:
         """Update the stream widget from the worker thread; ignores calls
@@ -603,9 +616,6 @@ class VialTUI(App[str]):
         swallowed by the mouse capture. Returns a confirmation string, or None
         when no clipboard tool is available.
         """
-        import shutil
-        import subprocess
-
         if os.name == "nt":
             tool = "clip.exe"
         elif sys.platform == "darwin":
@@ -628,10 +638,24 @@ class VialTUI(App[str]):
     # Rendering helpers
     # ------------------------------------------------------------------ #
     def _log_user(self, message: str) -> None:
-        self.query_one("#log", RichLog).write(f"[bold][cyan]You[/cyan][/bold] {message}")
+        self.query_one("#log", RichLog).write(
+            f"[bold][cyan]You[/cyan][/bold] {escape(str(message))}")
 
     def _log_assistant(self, message: str) -> None:
-        self.query_one("#log", RichLog).write(f"[bold][magenta]VIAL[/magenta][/bold] {message}")
+        self.query_one("#log", RichLog).write(
+            f"[bold][magenta]VIAL[/magenta][/bold] {escape(str(message))}")
+
+    def history_move(self, delta: int) -> None:
+        if not self._prompt_history:
+            return
+        if self._history_index is None:
+            self._history_index = len(self._prompt_history)
+        self._history_index = max(0, min(
+            len(self._prompt_history), self._history_index + delta))
+        prompt = self.query_one("#prompt", PromptArea)
+        prompt.text = (self._prompt_history[self._history_index]
+                       if self._history_index < len(self._prompt_history) else "")
+        prompt.cursor = (0, len(prompt.text))
 
     def refresh_side(self) -> None:
         controller = self.controller
@@ -651,6 +675,8 @@ class VialTUI(App[str]):
             f"[b]Model[/b]\n  {controller.model}\n\n"
             f"[b]Routing[/b]\n  {routing}\n\n"
             f"[b]Status[/b]\n  {status}\n\n"
+            f"[b]Runtime[/b]\n  {'available' if controller.runtime is not None else 'unavailable'}\n"
+            f"  root: {escape(str(controller.root))}\n\n"
             f"[b]{pool_label}[/b]\n  {pool}\n\n"
             f"[b]Commands[/b]\n"
             f"  [b]/[/b] command menu\n"
