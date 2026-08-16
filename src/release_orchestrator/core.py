@@ -1,167 +1,284 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
-import subprocess
-import sys
 from pathlib import Path
+from subprocess import CompletedProcess
+import sys
+from typing import Sequence
+
+from .domain import (
+    CATEGORIES,
+    Commit,
+    ReleaseChanges,
+    calculate_release_changes,
+    categorize_commits,
+    categorize_commit_subject,
+    release_tag,
+    validate_release_transition,
+    validate_rollback_transition,
+    validate_semver,
+)
+from .git import (
+    commits_since,
+    create_annotated_tag,
+    current_branch,
+    delete_tag,
+    has_dirty_tree,
+    is_git_repo,
+    last_commit,
+    latest_tag,
+    modified_files,
+    run_git,
+    tag_exists,
+)
+from .storage import atomic_write_text
 
 
-TAG_PREFIX = "release-orchestrator-v"
-SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-CONVENTIONAL_RE = re.compile(r"^(feat|fix|docs|test)(\([^)]+\))?:\s*(.+)$")
+SECRET_FILENAMES = (".env", "credentials.json")
+CHANGELOG_OVERWRITE_ISSUE = "CHANGELOG.md already exists; use --force to overwrite"
 
 
 @dataclass(frozen=True)
-class Commit:
-    sha: str
-    subject: str
+class ScanReport:
+    is_git_repo: bool
+    branch: str
+    last_commit: str
+    modified_files: tuple[str, ...]
+    dirty: bool
 
 
-def run_git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=check,
-    )
+@dataclass(frozen=True)
+class CheckReport:
+    issues: tuple[str, ...]
+    readme_exists: bool
+    tests_found: int
+    tests_ran: bool
+    tests_passed: bool
+    suite_returncode: int
+    suite_stdout: str
+    suite_stderr: str
 
 
-def is_git_repo(root: Path) -> bool:
-    result = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-    )
-    return result.returncode == 0 and result.stdout.strip() == "true"
+@dataclass(frozen=True)
+class ChangelogReport:
+    issues: tuple[str, ...]
+    version: str
+    since_tag: str
+    path: str
+    content: str
+    counts: dict[str, int]
+    written: bool
 
 
-def current_branch(root: Path) -> str:
-    result = run_git(root, "branch", "--show-current", check=False)
-    branch = result.stdout.strip()
-    if branch:
-        return branch
-    head = run_git(root, "rev-parse", "--short", "HEAD").stdout.strip()
-    return f"HEAD ({head})"
+@dataclass(frozen=True)
+class ReleaseReport:
+    issues: tuple[str, ...]
+    version: str
+    tag: str
+    version_path: str
+    changelog_path: str
+    dry_run: bool
+    written: bool
+    tag_created: bool
+    changes: ReleaseChanges
 
 
-def last_commit(root: Path) -> str:
-    result = run_git(root, "log", "-1", "--pretty=format:%h %s", check=False)
-    text = result.stdout.strip()
-    return text or "no commits yet"
-
-
-def modified_files(root: Path) -> list[str]:
-    result = run_git(root, "status", "--porcelain")
-    files: list[str] = []
-    for line in result.stdout.splitlines():
-        if len(line) < 4:
-            continue
-        path = line[3:]
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        files.append(path)
-    return files
-
-
-def has_dirty_tree(root: Path) -> bool:
-    return bool(modified_files(root))
-
-
-def existing_tag(root: Path, version: str) -> str:
-    return f"{TAG_PREFIX}{version}"
-
-
-def tag_exists(root: Path, version: str) -> bool:
-    result = subprocess.run(
-        ["git", "tag", "--list", existing_tag(root, version)],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    return existing_tag(root, version) in {line.strip() for line in result.stdout.splitlines()}
-
-
-def latest_tag(root: Path) -> str | None:
-    result = run_git(root, "tag", "--list", f"{TAG_PREFIX}*", "--sort=-version:refname", check=False)
-    tags = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return tags[0] if tags else None
-
-
-def commits_since(root: Path, since_tag: str | None) -> list[Commit]:
-    args = ["log", "--pretty=format:%H%x00%s"]
-    if since_tag:
-        args.append(f"{since_tag}..HEAD")
-    result = run_git(root, *args, check=False)
-    commits: list[Commit] = []
-    for line in reversed([line for line in result.stdout.splitlines() if line.strip()]):
-        sha, subject = line.split("\x00", 1)
-        commits.append(Commit(sha=sha, subject=subject))
-    return commits
-
-
-def categorize_commits(commits: list[Commit]) -> dict[str, list[Commit]]:
-    grouped: dict[str, list[Commit]] = {"feat": [], "fix": [], "docs": [], "test": [], "other": []}
-    for commit in commits:
-        match = CONVENTIONAL_RE.match(commit.subject)
-        category = match.group(1) if match else "other"
-        grouped[category].append(commit)
-    return grouped
-
-
-def render_changelog(version: str, commits: list[Commit], since_tag: str) -> str:
-    grouped = categorize_commits(commits)
-    lines = ["# Changelog", "", f"## {version}", f"_Changes since {since_tag}_", ""]
-    for category in ("feat", "fix", "docs", "test", "other"):
-        items = grouped[category]
-        if not items:
-            continue
-        lines.append(f"### {category}")
-        for commit in items:
-            lines.append(f"- {commit.sha[:7]} {commit.subject}")
-        lines.append("")
-    if lines[-1] == "":
-        lines.pop()
-    return "\n".join(lines) + "\n"
-
-
-def write_text(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+@dataclass(frozen=True)
+class RollbackReport:
+    issues: tuple[str, ...]
+    version: str
+    tag: str
+    dry_run: bool
+    removed: bool
 
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def validate_semver(version: str) -> bool:
-    return bool(SEMVER_RE.fullmatch(version))
+def write_text(path: Path, text: str) -> None:
+    atomic_write_text(path, text)
 
 
-def release_tag(version: str) -> str:
-    return f"{TAG_PREFIX}{version}"
+def existing_tag(version: str) -> str:
+    return release_tag(version)
+
+
+def render_changelog(version: str, commits: Sequence[Commit], since_tag: str) -> str:
+    return calculate_release_changes(version, commits, since_tag).content
 
 
 def secret_files(root: Path) -> list[Path]:
-    findings = []
-    for name in (".env", "credentials.json"):
-        findings.extend(root.rglob(name))
+    findings: list[Path] = []
+    for name in SECRET_FILENAMES:
+        findings.extend(path for path in root.rglob(name) if path.is_file())
     return findings
+
+
+def has_readme(root: Path) -> bool:
+    return (root / "README.md").is_file()
 
 
 def test_files(root: Path) -> list[Path]:
     tests_dir = root / "tests"
-    if not tests_dir.exists():
+    if not tests_dir.is_dir():
         return []
-    return [path for path in tests_dir.rglob("test*.py") if path.is_file()]
+    files: list[Path] = []
+    for pattern in ("test*.py", "*_test.py"):
+        files.extend(path for path in tests_dir.rglob(pattern) if path.is_file())
+    return sorted({path for path in files}, key=str)
 
 
-def run_test_suite(root: Path) -> subprocess.CompletedProcess[str]:
+def repo_health_issues(root: Path, *, allow_dirty: bool = False) -> list[str]:
+    issues: list[str] = []
+    if not is_git_repo(root):
+        issues.append("not a git repository")
+    if not has_readme(root):
+        issues.append("missing README.md")
+    if not test_files(root):
+        issues.append("no tests found")
+    secrets = secret_files(root)
+    if secrets:
+        issues.append("secret files present: " + ", ".join(sorted(str(path.relative_to(root)) for path in secrets)))
+    if not allow_dirty and is_git_repo(root) and has_dirty_tree(root):
+        issues.append("working tree is dirty")
+    return issues
+
+
+def run_test_suite(root: Path) -> CompletedProcess[str]:
+    import subprocess
+    import os
+
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+
     return subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
         cwd=root,
         text=True,
         capture_output=True,
+        check=False,
+        env=env,
     )
+
+
+def scan_repository(root: Path) -> ScanReport:
+    repo = is_git_repo(root)
+    return ScanReport(
+        is_git_repo=repo,
+        branch=current_branch(root) if repo else "",
+        last_commit=last_commit(root) if repo else "",
+        modified_files=tuple(modified_files(root)) if repo else tuple(),
+        dirty=has_dirty_tree(root) if repo else False,
+    )
+
+
+def build_changelog(
+    root: Path,
+    since_tag: str,
+    *,
+    version: str | None = None,
+    force: bool = False,
+) -> ChangelogReport:
+    output = root / "CHANGELOG.md"
+    issues: list[str] = []
+    if not tag_exists(root, since_tag):
+        issues.append(f"tag {since_tag} not found")
+    if output.exists() and not force:
+        issues.append(CHANGELOG_OVERWRITE_ISSUE)
+    effective_version = version or since_tag
+    changes = calculate_release_changes(effective_version, commits_since(root, since_tag), since_tag)
+    return ChangelogReport(
+        issues=tuple(issues),
+        version=effective_version,
+        since_tag=since_tag,
+        path=str(output),
+        content=changes.content,
+        counts=changes.counts,
+        written=False,
+    )
+
+
+def check_repository(root: Path, *, allow_dirty: bool = False) -> CheckReport:
+    issues = repo_health_issues(root, allow_dirty=allow_dirty)
+    tests = test_files(root)
+    suite = run_test_suite(root)
+    ran_tests = "Ran 0 tests" not in suite.stdout
+    tests_passed = suite.returncode == 0 and ran_tests
+    if not tests_passed:
+        issues.append("test suite failed")
+    return CheckReport(
+        issues=tuple(issues),
+        readme_exists=has_readme(root),
+        tests_found=len(tests),
+        tests_ran=ran_tests,
+        tests_passed=tests_passed,
+        suite_returncode=suite.returncode,
+        suite_stdout=suite.stdout,
+        suite_stderr=suite.stderr,
+    )
+
+
+def release_project(root: Path, version: str, *, confirm: bool = False, dry_run: bool = False) -> ReleaseReport:
+    previous_tag = latest_tag(root)
+    since_tag = previous_tag or "initial release"
+    changes = calculate_release_changes(version, commits_since(root, previous_tag), since_tag)
+    suite = run_test_suite(root)
+    tests_ok = suite.returncode == 0 and "Ran 0 tests" not in suite.stdout
+    repo_issues = repo_health_issues(root, allow_dirty=False)
+    issues = validate_release_transition(
+        version=version,
+        repo_issues=repo_issues,
+        tests_ok=tests_ok,
+        tag_exists=tag_exists(root, release_tag(version)),
+        confirm=confirm,
+    )
+    if issues:
+        return ReleaseReport(
+            issues=tuple(issues),
+            version=version,
+            tag=release_tag(version),
+            version_path=str(root / "VERSION"),
+            changelog_path=str(root / "CHANGELOG.md"),
+            dry_run=dry_run,
+            written=False,
+            tag_created=False,
+            changes=changes,
+        )
+    if dry_run:
+        return ReleaseReport(
+            issues=(),
+            version=version,
+            tag=release_tag(version),
+            version_path=str(root / "VERSION"),
+            changelog_path=str(root / "CHANGELOG.md"),
+            dry_run=True,
+            written=False,
+            tag_created=False,
+            changes=changes,
+        )
+    write_text(root / "VERSION", version + "\n")
+    write_text(root / "CHANGELOG.md", changes.content)
+    create_annotated_tag(root, release_tag(version), f"release-orchestrator {version}")
+    return ReleaseReport(
+        issues=(),
+        version=version,
+        tag=release_tag(version),
+        version_path=str(root / "VERSION"),
+        changelog_path=str(root / "CHANGELOG.md"),
+        dry_run=False,
+        written=True,
+        tag_created=True,
+        changes=changes,
+    )
+
+
+def rollback_project(root: Path, version: str, *, confirm: bool = False, dry_run: bool = False) -> RollbackReport:
+    tag = release_tag(version)
+    issues = validate_rollback_transition(version=version, confirm=confirm, tag_exists=tag_exists(root, tag), dry_run=dry_run)
+    if issues:
+        return RollbackReport(issues=tuple(issues), version=version, tag=tag, dry_run=dry_run, removed=False)
+    if dry_run:
+        return RollbackReport(issues=(), version=version, tag=tag, dry_run=True, removed=False)
+    delete_tag(root, tag)
+    return RollbackReport(issues=(), version=version, tag=tag, dry_run=False, removed=True)
