@@ -16,10 +16,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__
+from .agent import CodeAgent
 from .model import OpenCodeProvider
+from .patches import PatchApplier, PatchError
 from .router import RoutingGraph
 from .servers import ServerRegistry
 from .session import SessionStore
+from .workspace import select_files
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,7 @@ COMMANDS = [
     ("/approve", "approve a pending decision (/approve <id>)"),
     ("/decisions", "list decisions awaiting consensus or approval"),
     ("/consensus", "run cross-model consensus on a task, or show pending status"),
+    ("/apply", "generate and govern a code patch (/apply <task>)"),
     ("/clear", "start a new session"),
     ("/sessions", "list past sessions"),
     ("/resume", "resume a past session"),
@@ -80,6 +84,7 @@ class ChatController:
         agent: str,
         registry: ServerRegistry | None = None,
         runtime=None,
+        model_timeout: int = 180,
     ) -> None:
         self.root = root
         self.store = store
@@ -91,9 +96,11 @@ class ChatController:
         self.agent = agent
         self.registry = registry or ServerRegistry(root)
         self.runtime = runtime
+        self.model_timeout = model_timeout
         self.routing = RoutingGraph(
             self.registry, default_model=model,
             executable=executable, auto_approve=auto_approve, agent=agent,
+            timeout_seconds=model_timeout,
         )
         self.route = "auto"
         self.history: list[str] = []
@@ -118,6 +125,8 @@ class ChatController:
             return self._handle_decisions(value)
         if command == "/consensus":
             return self._handle_consensus(value)
+        if command == "/apply":
+            return self._handle_apply(value)
         if command == "/clear":
             self.history.clear()
             return ChatCommandResult(True, "new session", new_session_id=self.store.create())
@@ -455,21 +464,77 @@ class ChatController:
 
     def _dispatch_consensus(self, task: str) -> ChatCommandResult:
         """Run a real cross-model consensus dispatch for a task."""
+        if self.runtime is None:
+            return ChatCommandResult(True, "governed runtime unavailable; pass --vial-root")
         pool = list(self.registry.pool)
         if len(pool) < 2:
             return ChatCommandResult(
                 True, "consensus requires >=2 models in the pool; use /pool add")
         try:
+            propose = getattr(self.runtime, "propose_decision", None)
+            decision = (
+                propose(objective=task, type="consensus", policy="development",
+                        risk="medium", rationale="cross-model review of requested task")
+                if propose is not None else None
+            )
             result, _ = self.routing.dispatch_consensus(task, self.root, models=pool)
         except (OSError, RuntimeError) as error:
             return ChatCommandResult(True, f"error: {error}")
+        if decision is not None and hasattr(self.runtime, "record_consensus"):
+            self.runtime.record_consensus(
+                decision.id, result.agreed, result.agreement_ratio,
+                models=list(result.responses),
+                responses={ref: response.text for ref, response in result.responses.items()},
+            )
         status = "agreed" if result.agreed else "disagreed"
-        lines = [f"consensus: {status} "
+        decision_label = f" (decision_id={decision.id})" if decision is not None else ""
+        lines = [f"consensus: {status}{decision_label} "
                  f"(ratio={result.agreement_ratio:.2f}, "
                  f"models={len(result.responses)})"]
         for ref, response in result.responses.items():
             lines.append(f"  {ref}: {response.text.strip()[:200]}")
         return ChatCommandResult(True, "\n".join(lines))
+
+    def _handle_apply(self, task: str) -> ChatCommandResult:
+        """Generate and apply a scoped patch through the VIAL governance gate."""
+        if not task:
+            return ChatCommandResult(True, "usage: /apply <task>")
+        if self.runtime is None:
+            return ChatCommandResult(True, "governed runtime unavailable; pass --vial-root")
+        files = select_files(self.root, ["*.py"], [".git", ".venv", "__pycache__"])
+        try:
+            generated = CodeAgent(self.provider, runtime=self.runtime).generate(
+                task, self.root, files, runtime=self.runtime)
+            if generated.patch is None:
+                return ChatCommandResult(True, "error: no patch generated")
+            if generated.workspace_changed:
+                return ChatCommandResult(True, "error: provider changed workspace outside governed apply")
+            allowed = {path.relative_to(self.root).as_posix() for path in files}
+            applier = PatchApplier(self.root)
+            applier.validate(generated.patch, allowed)
+            decision = self.runtime.propose_patch_decision(generated.context_id)
+        except (PatchError, RuntimeError, ValueError, OSError) as error:
+            return ChatCommandResult(True, f"error: {error}")
+        pool = list(self.registry.pool)
+        if len(pool) < 2:
+            return ChatCommandResult(True, f"blocked: consensus requires >=2 models; decision_id={decision.id}")
+        try:
+            consensus, _ = self.routing.dispatch_consensus(task, self.root, models=pool)
+            self.runtime.record_consensus(
+                decision.id, consensus.agreed, consensus.agreement_ratio,
+                models=list(consensus.responses),
+                responses={ref: response.text for ref, response in consensus.responses.items()},
+            )
+        except (OSError, RuntimeError) as error:
+            return ChatCommandResult(True, f"blocked: consensus unavailable; decision_id={decision.id}: {error}")
+        if not consensus.agreed:
+            return ChatCommandResult(True, f"blocked: consensus disagreed; decision_id={decision.id}")
+        result = self.runtime.apply_patch(
+            applier, generated.patch, generated.context_id,
+            allowed_paths=allowed, decision=decision)
+        if not result.ok():
+            return ChatCommandResult(True, f"blocked: {result.error or result.status}; decision_id={decision.id}")
+        return ChatCommandResult(True, f"applied (decision_id={decision.id})\n{generated.patch.rstrip()}")
 
     # ------------------------------------------------------------------ #
     # Discovery helpers (used by the TUI picker and tests)
@@ -618,6 +683,7 @@ Commands:
 /trace <decision_id>          show the audit trail of a Decision
 /decisions                    list Decisions awaiting consensus or approval
 /consensus                    run consensus on a task, or show pending status
+/apply <task>                 generate and govern a code patch
 /approve <decision_id>        approve a pending Decision
 /sessions                     list past sessions
 /resume <session_id>          resume a past session

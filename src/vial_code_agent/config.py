@@ -13,6 +13,7 @@ class AgentConfig:
     model: str = "auto"
     cache_dir: str = ".vial-cache"
     test_timeout: int = 120
+    model_timeout: int = 300
     max_context_chars: int = 6_000
     opencode_executable: str = "opencode"
     opencode_agent: str = "build"
@@ -44,6 +45,7 @@ def load_config(root: Path) -> AgentConfig:
         model=os.environ.get("VIAL_MODEL", str(values.get("model", "auto"))),
         cache_dir=os.environ.get("VIAL_CACHE_DIR", str(values.get("cache_dir", ".vial-cache"))),
         test_timeout=int(os.environ.get("VIAL_TEST_TIMEOUT", values.get("test_timeout", 120))),
+        model_timeout=int(os.environ.get("VIAL_MODEL_TIMEOUT", values.get("model_timeout", 300))),
         max_context_chars=int(os.environ.get("VIAL_MAX_CONTEXT_CHARS", values.get("max_context_chars", 6_000))),
         opencode_executable=os.environ.get(
             "VIAL_OPENCODE_EXECUTABLE", str(values.get("opencode_executable", "opencode"))

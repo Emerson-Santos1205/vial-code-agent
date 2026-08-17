@@ -27,6 +27,11 @@ def _with_history(prompt: str, history: list[tuple[str, str]]) -> str:
     return f"{context}\nuser: {prompt}"
 
 
+def _uses_stdin_prompt(executable: str) -> bool:
+    """Avoid cmd.exe's short command-line limit for Windows wrappers."""
+    return os.name == "nt" and executable.lower().endswith((".cmd", ".bat"))
+
+
 def _trim_messages(messages: list[dict[str, str]]) -> None:
     """Drop oldest messages until the payload fits the context cap."""
     total = sum(len(message["content"]) for message in messages)
@@ -58,11 +63,13 @@ class OpenCodeProvider:
         executable: str = "opencode",
         auto_approve: bool = False,
         agent: str = "plan",
+        timeout_seconds: int = 180,
     ) -> None:
         self.model = self.MODEL_ALIASES.get(model, model)
         self.executable = executable
         self.auto_approve = auto_approve
         self.agent = agent
+        self.timeout_seconds = timeout_seconds
         self._active_proc: subprocess.Popen[str] | None = None
         self.last_response: ModelResponse | None = None
 
@@ -74,6 +81,7 @@ class OpenCodeProvider:
         task: str | None = None,
         files: list[Path] | None = None,
     ) -> ModelResponse:
+        timeout_seconds = self.timeout_seconds
         instruction = f"{prompt} Return only a unified diff."
         executable = self.executable
         if not os.path.dirname(executable):
@@ -82,7 +90,9 @@ class OpenCodeProvider:
         if self.auto_approve:
             command.append("--auto")
         command.extend(["--agent", self.agent, "--format", "json", "--model", self.model])
-        command.append(instruction)
+        uses_stdin = _uses_stdin_prompt(executable)
+        if not uses_stdin:
+            command.append(instruction)
         for path in files or []:
             command.append(f"--file={path}")
         try:
@@ -90,6 +100,7 @@ class OpenCodeProvider:
                 command,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=timeout_seconds, check=False, cwd=directory,
+                input=instruction if uses_stdin else None,
             )
         except FileNotFoundError as error:
             if getattr(error, "winerror", None) == 206:
@@ -146,15 +157,20 @@ class OpenCodeProvider:
         """
         if history:
             prompt = _with_history(prompt, history)
+        timeout_seconds = self.timeout_seconds
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)
-        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model, prompt]
+        uses_stdin = _uses_stdin_prompt(executable)
+        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model]
+        if not uses_stdin:
+            command.append(prompt)
         if self.auto_approve:
             command.insert(2, "--auto")
         process = subprocess.run(
             command, cwd=directory, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout_seconds, check=False,
+            input=prompt if uses_stdin else None,
         )
         text = "".join(
             json.loads(line).get("part", {}).get("text", "")
@@ -178,17 +194,25 @@ class OpenCodeProvider:
         """
         if history:
             prompt = _with_history(prompt, history)
+        timeout_seconds = self.timeout_seconds
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)
-        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model, prompt]
+        uses_stdin = _uses_stdin_prompt(executable)
+        command = [executable, "run", "--agent", self.agent, "--format", "json", "--model", self.model]
+        if not uses_stdin:
+            command.append(prompt)
         if self.auto_approve:
             command.insert(2, "--auto")
         process = subprocess.Popen(
-            command, cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace",
+            command, cwd=directory, stdin=subprocess.PIPE if uses_stdin else None,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
         )
         self._active_proc = process
+        if uses_stdin and process.stdin is not None:
+            process.stdin.write(prompt)
+            process.stdin.close()
         text_parts: list[str] = []
         try:
             assert process.stdout is not None

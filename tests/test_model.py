@@ -104,6 +104,7 @@ class OpenCodeProviderTests(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             captured["command"] = command
+            captured["input"] = kwargs.get("input")
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with unittest.mock.patch(
@@ -113,7 +114,7 @@ class OpenCodeProviderTests(unittest.TestCase):
                 "translate to Portuguese",
                 history=[("user", "write a greeting"), ("assistant", "Olá")],
             )
-        prompt = captured["command"][-1]
+        prompt = captured["input"] or captured["command"][-1]
         self.assertIn("write a greeting", prompt)
         self.assertIn("Olá", prompt)
         self.assertTrue(prompt.endswith("user: translate to Portuguese"))
@@ -169,6 +170,7 @@ class OpenCodeProviderTests(unittest.TestCase):
                 self.command = command
                 self.stdout = _FakeStream()
                 self.stderr = _FakeStream()
+                self.stdin = None
                 self.returncode = 0
                 self._lines = iter(events.splitlines())
 
@@ -204,9 +206,17 @@ class OpenCodeProviderTests(unittest.TestCase):
         class _FakePopen:
             def __init__(self, command, **kwargs) -> None:
                 captured["command"] = command
+                captured["input"] = ""
                 self.stdout = _FakeStream()
                 self.stderr = _FakeStream()
+                self.stdin = self
                 self.returncode = 0
+
+            def write(self, value: str) -> None:
+                captured["input"] = value
+
+            def close(self) -> None:
+                pass
 
             def wait(self, timeout: int | None = None) -> int:
                 return 0
@@ -215,7 +225,7 @@ class OpenCodeProviderTests(unittest.TestCase):
             "vial_code_agent.model.subprocess.Popen", side_effect=_FakePopen
         ):
             list(provider.chat_stream("follow up", history=[("user", "first")]))
-        prompt = captured["command"][-1]
+        prompt = captured["input"] or captured["command"][-1]
         self.assertIn("first", prompt)
         self.assertTrue(prompt.endswith("user: follow up"))
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+from unittest.mock import patch
 import tempfile
 import unittest
 from pathlib import Path
 
-from vial_code_agent.app import ModelPicker, SessionPicker, VialTUI
+from vial_code_agent.app import ModelPicker, SelectableLog, SessionPicker, VialTUI
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import ModelResponse, OpenCodeProvider
 from vial_code_agent.session import SessionStore
@@ -56,6 +58,86 @@ def _controller(directory: str) -> ChatController:
 
 
 class TuiAppTests(unittest.TestCase):
+    def test_log_escapes_dynamic_markup_values(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                async with app.run_test() as pilot:
+                    app._log_user(["[red]not markup[/red]"])
+                    app._log_assistant({"link": "[docs](https://example.test)"})
+                    rendered = "\n".join(str(line) for line in app.query_one("#log").lines)
+                    self.assertIn("not markup", rendered)
+                    self.assertIn("docs", rendered)
+                    self.assertNotIn("Style(color=Color('red'", rendered)
+                    self.assertIn("You", rendered)
+                    self.assertIn("VIAL", rendered)
+
+        asyncio.run(run())
+
+    def test_prompt_history_only_handles_arrows_when_menu_is_closed(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                async with app.run_test() as pilot:
+                    prompt = app.query_one("#prompt")
+                    prompt.text = "first"
+                    await pilot.press("enter")
+                    prompt.text = "second"
+                    await pilot.press("enter")
+                    await pilot.press("up")
+                    self.assertEqual(prompt.text, "second")
+                    await pilot.press("up")
+                    self.assertEqual(prompt.text, "first")
+                    prompt.text = "/"
+                    await pilot.pause()
+                    before = app.query_one("#command-menu").index
+                    await pilot.press("down")
+                    self.assertNotEqual(app.query_one("#command-menu").index, before)
+
+        asyncio.run(run())
+
+    def test_side_panel_shows_runtime_and_root(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                controller.runtime = object()
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    side = str(app.query_one("#side").render())
+                    self.assertIn("Runtime", side)
+                    self.assertIn("available", side)
+                    self.assertIn(directory, side)
+
+        asyncio.run(run())
+
+    def test_clipboard_platform_selection_and_subprocess_outcomes(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                async with app.run_test() as pilot:
+                    with patch("vial_code_agent.app.os.name", "nt"), \
+                         patch("vial_code_agent.app.subprocess.run") as run_mock:
+                        self.assertIn("copied", app._copy_to_clipboard("win"))
+                        self.assertEqual(run_mock.call_args.args[0], ["clip.exe"])
+                    with patch("vial_code_agent.app.os.name", "posix"), \
+                         patch("vial_code_agent.app.sys.platform", "darwin"), \
+                         patch("vial_code_agent.app.subprocess.run") as run_mock:
+                        self.assertIn("copied", app._copy_to_clipboard("mac"))
+                        self.assertEqual(run_mock.call_args.args[0], ["pbcopy"])
+                    with patch("vial_code_agent.app.os.name", "posix"), \
+                         patch("vial_code_agent.app.sys.platform", "linux"), \
+                         patch("vial_code_agent.app.shutil.which", return_value="xclip"), \
+                         patch("vial_code_agent.app.subprocess.run") as run_mock:
+                        self.assertIn("copied", app._copy_to_clipboard("x"))
+                        self.assertEqual(run_mock.call_args.args[0], ["xclip"])
+                    with patch("vial_code_agent.app.subprocess.run", side_effect=OSError):
+                        self.assertIsNone(app._copy_to_clipboard("failure"))
+                    with patch("vial_code_agent.app.subprocess.run",
+                               side_effect=subprocess.CalledProcessError(1, "clip")):
+                        self.assertIsNone(app._copy_to_clipboard("failure"))
+
+        asyncio.run(run())
+
     def test_tab_switches_agent(self) -> None:
         async def run() -> None:
             with tempfile.TemporaryDirectory() as directory:
@@ -228,6 +310,36 @@ class TuiAppTests(unittest.TestCase):
                     selected = app.screen.get_selected_text()
                     self.assertIsNotNone(selected)
                     self.assertIn("alpha", selected)
+
+        asyncio.run(run())
+
+    def test_log_selection_ignores_external_endpoint(self) -> None:
+        async def run() -> None:
+            from textual.events import MouseMove
+
+            with tempfile.TemporaryDirectory() as directory:
+                controller = _controller(directory)
+                app = VialTUI(controller)
+                async with app.run_test() as pilot:
+                    log = app.query_one("#log", SelectableLog)
+                    side = app.query_one("#side")
+                    log.write("log line one\nlog line two")
+                    side.update("side panel text")
+                    await pilot.pause()
+                    await pilot.mouse_down(widget=log, offset=(0, 0))
+                    app.post_message(MouseMove(
+                        widget=side, x=0, y=0, delta_x=1, delta_y=1,
+                        button=0, shift=False, meta=False, ctrl=False,
+                    ))
+                    await pilot.pause()
+                    await pilot.mouse_up(widget=side, offset=(0, 0))
+                    await pilot.pause()
+                    self.assertTrue(all(
+                        isinstance(widget, SelectableLog)
+                        for widget in app.screen.selections
+                    ))
+                    selected = app.screen.get_selected_text()
+                    self.assertNotIn("side panel text", selected or "")
 
         asyncio.run(run())
 
