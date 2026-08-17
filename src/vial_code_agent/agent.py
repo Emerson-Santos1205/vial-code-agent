@@ -176,7 +176,12 @@ class CodeAgent:
                 context_id = context.context_id
                 context.consume()
 
-        prompt = task
+        prompt = (
+            f"{task}\n\n"
+            "Read the exact contents of the provided files before deciding the fix. "
+            "Do not guess line numbers or code. Do not edit files directly. "
+            "Return one applicable unified diff with exact removed and added lines."
+        )
         # Keep the operator workspace read-only from the provider's perspective.
         with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
             staging = Path(directory)
@@ -218,7 +223,8 @@ class CodeAgent:
                 response = self.provider.generate(
                     f"{task}\n\nReturn ONLY a unified diff. Do not explain. "
                     f"The previous candidate was rejected: {validation_error or 'no parseable patch'}. "
-                    "Use the exact current file context and return an applicable diff.",
+                    "Re-open and read the exact current staged file before responding. "
+                    "Use exact removed and added lines and return an applicable diff.",
                     directory=staging, files=staged_files)
                 patch = extract_diff(response.text)
                 if patch is not None:
@@ -243,7 +249,8 @@ class CodeAgent:
                         f"{task}\n\nFINAL PATCH RECOVERY. Return ONLY a valid unified diff "
                         "starting with --- and +++. Do not include prose, Markdown, "
                         "comments, or apply_patch markers. The diff must apply to "
-                        "the exact current staged file. Previous validation error: "
+                        "the exact current staged file after re-reading it. "
+                        "Previous validation error: "
                         f"{validation_error}",
                         directory=staging, files=staged_files)
                     patch = extract_diff(response.text)
