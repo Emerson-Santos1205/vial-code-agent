@@ -67,3 +67,20 @@ class AgentTests(unittest.TestCase):
             self.assertIsNotNone(result.patch)
             self.assertTrue(result.workspace_changed)
 
+    def test_provider_writes_are_confined_to_staging_workspace(self) -> None:
+        provider = Mock()
+        diff = "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n"
+
+        def mutate_staging(task, directory=None, files=None, **kwargs):
+            files[0].write_text("provider change\n", encoding="utf-8")
+            return ModelResponse(diff, 0)
+
+        provider.generate.side_effect = mutate_staging
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate("change it", root, [source])
+            self.assertFalse(result.workspace_changed)
+            self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
+

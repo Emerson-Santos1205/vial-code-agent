@@ -1,13 +1,13 @@
 {
   "name": "vial-code-agent-coding-matrix",
   "families": [
-    {"category": "bug_fix", "count": 3, "prompt": "Fix the reported bug"},
-    {"category": "feature", "count": 3, "prompt": "Implement the requested feature"},
-    {"category": "refactoring", "count": 3, "prompt": "Refactor the implementation without changing its contract"},
-    {"category": "multi_file", "count": 2, "prompt": "Implement the change across the project files"},
-    {"category": "tests", "count": 2, "prompt": "Implement the behavior required by the tests"},
-    {"category": "dependency", "count": 2, "prompt": "Implement the change using the available dependency surface"},
-    {"category": "regression", "count": 3, "prompt": "Fix the regression while preserving existing behavior"},
-    {"category": "ambiguous_task", "count": 2, "prompt": "Resolve the task conservatively from the project context"}
+    {"category": "bug_fix", "count": 7, "prompt": "Fix the reported bug"},
+    {"category": "feature", "count": 7, "prompt": "Implement the requested feature"},
+    {"category": "refactoring", "count": 7, "prompt": "Refactor the implementation without changing its contract"},
+    {"category": "multi_file", "count": 6, "prompt": "Implement the change across the project files"},
+    {"category": "tests", "count": 6, "prompt": "Implement the behavior required by the tests"},
+    {"category": "dependency", "count": 6, "prompt": "Implement the change using the available dependency surface"},
+    {"category": "regression", "count": 6, "prompt": "Fix the regression while preserving existing behavior"},
+    {"category": "ambiguous_task", "count": 5, "prompt": "Resolve the task conservatively from the project context"}
   ]
 }

@@ -9,6 +9,7 @@ from itertools import combinations
 from pathlib import Path
 
 from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
+from .evidence import validate_candidate
 from .vial_runtime import VialRuntime
 
 
@@ -323,6 +324,9 @@ class RoutingGraph:
         quorum: int = 2,
         min_agreement: float = 0.6,
         history: list[tuple[str, str]] | None = None,
+        require_evidence: bool = False,
+        test_command: list[str] | None = None,
+        test_timeout: int = 120,
     ) -> tuple["ConsensusResult", RouteDecision]:
         """Dispatch to >=``quorum`` independent models and require agreement.
 
@@ -379,9 +383,26 @@ class RoutingGraph:
             key=lambda pair: _agreement_ratio(pair[0][1], pair[1][1]),
         )
         ratio = _agreement_ratio(resp_a, resp_b)
-        agreed = ratio >= min_agreement
+        evidence: dict[str, dict[str, object]] = {}
+        evidence_passed = True
+        if require_evidence:
+            evidence_passed = False
+            for ref, response in valid.items():
+                patch = _extract_candidate_patch(response.text)
+                result = (validate_candidate(root, patch, test_command, test_timeout)
+                          if root is not None and patch else None)
+                evidence[ref] = {
+                    "static_valid": bool(result and result.static_valid),
+                    "behavioral_passed": result.behavioral_passed if result else False,
+                    "detail": result.detail if result else "no unified diff candidate",
+                }
+            evidence_passed = any(
+                item["static_valid"] and item["behavioral_passed"] is not False
+                for item in evidence.values())
+        agreed = ratio >= min_agreement and evidence_passed
         winner_ref, winner_response = (ref_a, resp_a)
-        return ConsensusResult(agreed, winner_response, ratio, responses), RouteDecision(
+        return ConsensusResult(agreed, winner_response, ratio, responses, evidence,
+                               evidence_passed), RouteDecision(
             tier=decision.tier, candidates=chosen, model=winner_ref,
             note=f"consensus={agreed} ratio={ratio:.2f}")
 
@@ -411,6 +432,17 @@ class ConsensusResult:
     response: ModelResponse
     agreement_ratio: float
     responses: dict[str, ModelResponse] = field(default_factory=dict)
+    evidence: dict[str, dict[str, object]] = field(default_factory=dict)
+    evidence_passed: bool = True
+
+
+def _extract_candidate_patch(text: str) -> str | None:
+    start = text.find("diff --git ")
+    if start < 0:
+        start = text.find("--- ")
+    if start < 0:
+        return None
+    return text[start:].strip() + "\n"
 
 
 def _tier_of(model_ref: str) -> str:

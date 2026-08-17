@@ -22,10 +22,15 @@ python benchmark/run_benchmark.py
 python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
 ```
 
-O modo padrão executa fixtures isoladas com patches conhecidos. O modo
-`--agent` gera o patch através do coding-agent configurado, aplica-o em uma
-fixture descartável, roda os testes da tarefa e grava relatório JSON em
-`benchmark/results/`.
+O benchmark padrão executa 50 fixtures isoladas em oito categorias. O modo
+`--agent` (ou `--adapter opencode`) gera o patch através do coding-agent
+configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
+grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
+sucesso, latência, tokens, regressões, rollbacks e intervenção humana.
+
+Consenso para mutações pode exigir evidência: cada candidato é aplicado em uma
+cópia descartável e validado estaticamente; quando `--test-command` é usado,
+os testes comportamentais também precisam passar antes do consenso ser aceito.
 
 ## Instalação
 

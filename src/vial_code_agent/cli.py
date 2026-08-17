@@ -281,7 +281,9 @@ def _run_fix_consensus(root: Path, config: AgentConfig, args, task: str,
         registry, default_model=model, executable=executable,
         auto_approve=auto_approve, agent=agent)
     try:
-        result, _ = graph.dispatch_consensus(task, root, models=pool)
+        result, _ = graph.dispatch_consensus(
+            task, root, models=pool, require_evidence=True,
+            test_command=args.test_command, test_timeout=args.test_timeout)
     except (OSError, RuntimeError):
         return None
     return result
@@ -381,11 +383,16 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                         "hint: configure a pool or re-run with --no-consensus "
                         "to authorize as operator", file=sys.stderr)
                     return 1
+                consensus_kwargs = {
+                    "models": list(consensus.responses),
+                    "responses": {ref: response.text
+                                  for ref, response in consensus.responses.items()},
+                }
+                if consensus.evidence:
+                    consensus_kwargs["evidence"] = consensus.evidence
                 runtime.record_consensus(
                     decision.id, consensus.agreed, consensus.agreement_ratio,
-                    models=list(consensus.responses),
-                    responses={ref: response.text
-                               for ref, response in consensus.responses.items()})
+                    **consensus_kwargs)
                 status = "agreed" if consensus.agreed else "disagreed"
                 print(f"consensus: {status} "
                       f"(ratio={consensus.agreement_ratio:.2f}, "

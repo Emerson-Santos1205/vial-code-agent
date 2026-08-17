@@ -111,6 +111,7 @@ class ConsensusRecord:
     agreement_ratio: float = 0.0
     models: list[str] = field(default_factory=list)
     responses: dict[str, str] = field(default_factory=dict)
+    evidence: dict[str, dict[str, object]] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
     note: str = ""
 
@@ -739,6 +740,7 @@ class VialRuntime:
         agreement_ratio: float = 0.0,
         models: list[str] | None = None,
         responses: dict[str, str] | None = None,
+        evidence: dict[str, dict[str, object]] | None = None,
         note: str = "",
     ) -> ConsensusRecord:
         """Record the outcome of a cross-model consensus for a Decision.
@@ -753,6 +755,7 @@ class VialRuntime:
             agreement_ratio=agreement_ratio,
             models=list(models or []),
             responses=dict(responses or {}),
+            evidence=dict(evidence or {}),
             note=note,
         )
         self.consensus_records[decision_id] = record

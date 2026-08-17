@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import difflib
 import hashlib
+import shutil
+import tempfile
 from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
@@ -172,7 +174,19 @@ class CodeAgent:
                 context.consume()
 
         prompt = task
-        response = self.provider.generate(prompt, directory=root, files=files)
+        # Keep the operator workspace read-only from the provider's perspective.
+        with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
+            staging = Path(directory)
+            staged_files: list[Path] = []
+            for path in files:
+                relative = path.relative_to(root)
+                target = staging / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if path.is_file():
+                    shutil.copy2(path, target)
+                    staged_files.append(target)
+            response = self.provider.generate(
+                prompt, directory=staging, files=staged_files)
         if runtime is not None and task_obj is not None:
             runtime.record_inference(
                 response.input_tokens or 0, response.output_tokens or 0, tier=route)
