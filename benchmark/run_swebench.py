@@ -58,6 +58,22 @@ def _apply_fixture(root: Path, patch: str) -> tuple[bool, str]:
     return applied.returncode == 0, applied.stderr[-2000:]
 
 
+def _run_test_group(root: Path, tests: list[str], env: dict[str, str]) -> tuple[bool, str]:
+    tests = [test for test in tests if "." in test or "::" in test or "/" in test]
+    if root.joinpath("tests", "runtests.py").is_file():
+        tests = [test for test in tests
+                 if test.rsplit(".", 1)[-1].startswith("test")]
+        command = [sys.executable, "tests/runtests.py", *tests]
+    else:
+        command = [sys.executable, "-m", "pytest", "-q", *tests]
+    if not tests:
+        return True, "no tests selected"
+    result = subprocess.run(
+        command, cwd=root, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=900, check=False, env=env)
+    return result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+
+
 def run_instance(instance: dict, model: str, run_tests: bool = False) -> dict:
     with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
         root = Path(directory) / "repo"
@@ -156,26 +172,46 @@ def run_instance(instance: dict, model: str, run_tests: bool = False) -> dict:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
                         "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
-        tests = _as_tests(instance.get("fail_to_pass"))
-        tests += _as_tests(instance.get("pass_to_pass"))
-        tests = [test for test in tests if "." in test or "::" in test or "/" in test]
-        if not tests:
+        fail_tests = _as_tests(instance.get("fail_to_pass"))
+        pass_tests = _as_tests(instance.get("pass_to_pass"))
+        if not fail_tests and not pass_tests:
             return {"id": instance["id"], "passed": False,
                     "stage": "test_selection", "detail": "no benchmark tests"}
-        if (root / "tests" / "runtests.py").is_file():
-            tests = [test for test in tests
-                     if test.rsplit(".", 1)[-1].startswith("test")]
-            test_command = [sys.executable, "tests/runtests.py", *tests]
-        else:
-            test_command = [sys.executable, "-m", "pytest", "-q", *tests]
-        test_run = subprocess.run(
-            test_command, cwd=root,
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=900, check=False, env=test_env)
-        return {"id": instance["id"], "passed": test_run.returncode == 0,
-                "stage": "tests", "attempts": generated.attempts,
-                "tokens": generated.tokens,
-                "detail": (test_run.stdout + test_run.stderr)[-4000:]}
+        fail_ok, fail_detail = _run_test_group(root, fail_tests, test_env)
+        pass_ok, pass_detail = _run_test_group(root, pass_tests, test_env)
+        attempts = generated.attempts
+        tokens = generated.tokens or 0
+        if not (fail_ok and pass_ok):
+            feedback = ("The generated patch was applied, but benchmark tests failed. "
+                        "Read the exact current source and modify only solution files. "
+                        "Do not modify tests.\n\n"
+                        f"FAIL_TO_PASS ({'passed' if fail_ok else 'failed'}):\n{fail_detail}\n\n"
+                        f"PASS_TO_PASS ({'passed' if pass_ok else 'failed'}):\n{pass_detail}")
+            try:
+                PatchApplier(root).reverse(generated.patch)
+            except PatchError as error:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "test_retry_revert", "detail": str(error)}
+            retry = CodeAgent(provider, runtime=runtime).generate(
+                feedback, root, files, runtime=runtime)
+            attempts += retry.attempts
+            tokens += retry.tokens or 0
+            if retry.patch is None:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "test_retry_contract", "detail": retry.failure_type}
+            try:
+                PatchApplier(root).validate(retry.patch, allowed_paths)
+                PatchApplier(root).apply(retry.patch)
+            except PatchError as error:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "test_retry_patch", "detail": str(error)}
+            fail_ok, fail_detail = _run_test_group(root, fail_tests, test_env)
+            pass_ok, pass_detail = _run_test_group(root, pass_tests, test_env)
+        return {"id": instance["id"], "passed": fail_ok and pass_ok,
+                "stage": "tests", "attempts": attempts, "tokens": tokens,
+                "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
+                "detail": (f"FAIL_TO_PASS:\n{fail_detail}\n\n"
+                            f"PASS_TO_PASS:\n{pass_detail}")[-7000:]}
 
 
 def main() -> int:
@@ -191,6 +227,13 @@ def main() -> int:
     results = [run_instance(instance, args.model, args.run_tests) for instance in selected]
     report = {"benchmark": workload.get("name", "swebench"),
               "tasks": len(results), "passed": sum(row["passed"] for row in results),
+              "patch_applicable": sum(row.get("stage") in {
+                  "patch_validated", "tests"} for row in results),
+              "fail_to_pass": sum(row.get("fail_to_pass", False) for row in results),
+              "pass_to_pass": sum(row.get("pass_to_pass", False) for row in results),
+              "tokens": sum(row.get("tokens", 0) or 0 for row in results),
+              "retries": sum(max((row.get("attempts", 1) or 1) - 1, 0)
+                             for row in results),
               "results": results}
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] == report["tasks"] else 1

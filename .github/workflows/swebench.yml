@@ -1,0 +1,58 @@
+name: SWE-bench Real Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      offset:
+        description: First dataset row to evaluate
+        required: false
+        default: "0"
+      length:
+        description: Number of SWE-bench Lite rows to evaluate
+        required: false
+        default: "10"
+      run_tests:
+        description: Apply test fixtures and execute benchmark tests
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  swebench:
+    runs-on: ubuntu-latest
+    env:
+      HAS_OPENCODE_AUTH: ${{ secrets.OPENCODE_AUTH_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-cov
+          python -m pip install -e vendor/vial-core
+      - name: Configure OpenCode credentials
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        env:
+          OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
+        run: |
+          mkdir -p "$HOME/.local/share/opencode"
+          printf '%s' "$OPENCODE_AUTH_JSON" > "$HOME/.local/share/opencode/auth.json"
+      - name: Build provider image
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+      - name: Fetch workload
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: |
+          python benchmark/fetch_swebench.py --split test \
+            --offset ${{ inputs.offset }} --length ${{ inputs.length }} \
+            --out benchmark/swebench-lite-real-ci.json
+      - name: Run real evaluation
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: |
+          args="--workload benchmark/swebench-lite-real-ci.json --model openai/gpt-5.6-luna --offset 0 --limit ${{ inputs.length }}"
+          if [ "${{ inputs.run_tests }}" = "true" ]; then args="$args --run-tests"; fi
+          python benchmark/run_swebench.py $args
