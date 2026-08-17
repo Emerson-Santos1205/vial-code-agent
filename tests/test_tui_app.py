@@ -7,7 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vial_code_agent.app import ModelPicker, SelectableLog, SessionPicker, VialTUI
+from vial_code_agent.app import (
+    AuditViewer, DiffViewer, ModelPicker, SelectableLog, SessionPicker, VialTUI,
+)
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import ModelResponse, OpenCodeProvider
 from vial_code_agent.session import SessionStore
@@ -58,6 +60,33 @@ def _controller(directory: str) -> ChatController:
 
 
 class TuiAppTests(unittest.TestCase):
+    def test_diff_viewer_is_read_only(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                app.controller.last_patch = "--- a/a.py\n+++ b/a.py\n"
+                async with app.run_test() as pilot:
+                    app.action_show_diff()
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, DiffViewer)
+                    self.assertIn("a.py", "\n".join(
+                        str(line) for line in app.screen.query_one("#diff-content").lines))
+                    await pilot.press("escape")
+
+        asyncio.run(run())
+
+    def test_audit_viewer_can_open_without_runtime_events(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                async with app.run_test() as pilot:
+                    app.push_screen(AuditViewer(["task started", "patch validated"]))
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, AuditViewer)
+                    await pilot.press("escape")
+
+        asyncio.run(run())
+
     def test_log_escapes_dynamic_markup_values(self) -> None:
         async def run() -> None:
             with tempfile.TemporaryDirectory() as directory:

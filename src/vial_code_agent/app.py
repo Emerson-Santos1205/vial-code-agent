@@ -23,7 +23,7 @@ from textual.screen import ModalScreen, Screen
 from textual.selection import SELECT_ALL, Selection
 from textual.widgets import (
     Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
-    Static, TextArea,
+    Static, TextArea, Button,
 )
 from rich.markup import escape
 
@@ -181,6 +181,96 @@ class SessionPicker(ModalScreen[str]):
         self.dismiss(self._visible[index][0])
 
 
+class DiffViewer(ModalScreen[None]):
+    """Read-only candidate diff viewer; applying remains a Runtime operation."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, patch: str) -> None:
+        super().__init__()
+        self._patch = patch
+
+    def compose(self) -> ComposeResult:
+        yield Static("PATCH READY (read-only)", classes="picker-title")
+        yield RichLog(id="diff-content", markup=False)
+        yield Button("Close", id="diff-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#diff-content", RichLog).write(self._patch or "No patch available")
+
+    @on(Button.Pressed, "#diff-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class AuditViewer(ModalScreen[None]):
+    """Read-only audit/event timeline sourced from Runtime state."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, lines: list[str]) -> None:
+        super().__init__()
+        self._lines = lines
+
+    def compose(self) -> ComposeResult:
+        yield Static("AUDIT / EVENTS", classes="picker-title")
+        yield RichLog(id="audit-content", markup=False)
+        yield Button("Close", id="audit-close")
+
+    def on_mount(self) -> None:
+        log = self.query_one("#audit-content", RichLog)
+        for line in self._lines:
+            log.write(line)
+
+    @on(Button.Pressed, "#audit-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class ApprovalModal(ModalScreen[str]):
+    """Approval prompt that returns an intent to the Controller."""
+
+    BINDINGS = [Binding("escape", "later", "later")]
+
+    def __init__(self, decision: dict) -> None:
+        super().__init__()
+        self._decision = decision
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"APPROVAL REQUIRED\n\nDecision: {self._decision.get('decision_id')}\n"
+            f"Risk: {self._decision.get('risk', 'unknown').upper()}\n"
+            f"Action: {self._decision.get('objective', 'mutation')}\n"
+            f"Consensus: {self._decision.get('consensus') or 'pending'}",
+            classes="picker-title",
+        )
+        yield Horizontal(
+            Button("Approve", id="approval-approve"),
+            Button("Deny", id="approval-deny"),
+            Button("Later", id="approval-later"),
+        )
+
+    @on(Button.Pressed, "#approval-approve")
+    def _approve(self) -> None:
+        self.dismiss("approve")
+
+    @on(Button.Pressed, "#approval-deny")
+    def _deny(self) -> None:
+        self.dismiss("deny")
+
+    @on(Button.Pressed, "#approval-later")
+    def _later_button(self) -> None:
+        self.dismiss("later")
+
+    def action_later(self) -> None:
+        self.dismiss("later")
+
 class _NonSelectableMixin:
     """Keep screen-level drag selection scoped to the output log."""
 
@@ -310,7 +400,7 @@ class VialTUI(App[str]):
     #command-menu ListItem.-highlight { color: $text; background: $primary 30%; }
     #side { width: 1fr; border: round $panel-lighten-2; padding: 1 1; color: $text-muted; }
     #side .key { color: $primary; }
-    ModelPicker, PoolPicker, SessionPicker { background: $surface; }
+    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal { background: $surface; }
     .picker-title { padding: 1 2; text-style: bold; }
     #session-filter { margin: 0 2 1 2; }
     """
@@ -324,6 +414,9 @@ class VialTUI(App[str]):
         Binding("ctrl+y", "copy_last", "copy", priority=True),
         Binding("ctrl+u", "focus_prompt", "prompt", priority=True),
         Binding("ctrl+k", "cancel_task", "cancel", priority=True),
+        Binding("ctrl+d", "show_diff", "diff", priority=True),
+        Binding("ctrl+a", "show_audit", "audit", priority=True),
+        Binding("ctrl+o", "show_approval", "approve", priority=True),
     ]
 
     def __init__(self, controller: ChatController, prompt: str = "") -> None:
@@ -445,6 +538,7 @@ class VialTUI(App[str]):
             if result.output:
                 self._log_user(message)
                 self._log_assistant(result.output)
+                self._maybe_show_approval()
             if result.new_session_id or result.new_model or result.new_agent:
                 self.refresh_side()
             if result.exit:
@@ -516,6 +610,58 @@ class VialTUI(App[str]):
         self._log_assistant("task cancelled")
         self._set_busy(False)
         self._worker = None
+
+    def action_show_diff(self) -> None:
+        """Open a read-only view of the latest candidate patch."""
+        self.push_screen(DiffViewer(getattr(self.controller, "last_patch", "")))
+
+    def action_show_audit(self) -> None:
+        """Open the Runtime event/audit timeline without changing state."""
+        lines: list[str] = []
+        runtime = self.controller.runtime
+        if runtime is not None:
+            for event in runtime.events.to_list()[-20:]:
+                lines.append(
+                    f"{event['timestamp']:.3f}  {event['type']}  "
+                    f"{event['resource']}  {event.get('data', {})}")
+            for record in runtime.patch_tool.audit_records[-20:]:
+                lines.append(f"audit  {record.__dict__}")
+        self.push_screen(AuditViewer(lines or ["No audit events available."]))
+
+    def action_show_approval(self) -> None:
+        """Show the first pending approval; approval itself remains governed."""
+        runtime = self.controller.runtime
+        if runtime is None:
+            self._log_assistant("governed runtime unavailable")
+            return
+        pending = runtime.pending_decisions()
+        decision = next(
+            (row for row in pending
+             if row.get("approval") is None
+             and row.get("risk", "medium") in {"high", "critical"}),
+            None)
+        if decision is None:
+            self._log_assistant("no pending approval")
+            return
+        self.push_screen(
+            ApprovalModal(decision),
+            callback=lambda result: self._approval_result(decision, result),
+        )
+
+    def _maybe_show_approval(self) -> None:
+        if isinstance(self.screen, ApprovalModal):
+            return
+        self.action_show_approval()
+
+    def _approval_result(self, decision: dict, result: str | None) -> None:
+        if result == "approve":
+            response = self.controller.handle(
+                f"/approve {decision['decision_id']}")
+            self._log_assistant(response.output or "approval recorded")
+        elif result == "deny":
+            self._log_assistant(
+                f"approval denied for {decision['decision_id']} (no Runtime mutation)")
+        self.refresh_side()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
