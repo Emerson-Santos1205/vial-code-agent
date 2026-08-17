@@ -18,6 +18,33 @@ from vial_code_agent.model import OpenCodeProvider
 from vial_code_agent.patches import PatchApplier, PatchError
 
 
+def expand_workload(workload: dict) -> list[dict]:
+    """Expand the compact matrix into reproducible, independently scored tasks."""
+    if workload.get("tasks"):
+        return workload["tasks"]
+    tasks = []
+    for family in workload["families"]:
+        category = family["category"]
+        for index in range(1, family["count"] + 1):
+            target = index
+            tasks.append({
+                "id": f"{category}-{index:02d}",
+                "category": category,
+                "prompt": f"{family['prompt']} The expected answer is {target}.",
+                "initial": "def solve():\n    return 0\n",
+                "patch": (
+                    "--- a/solution.py\n+++ b/solution.py\n@@ -1,2 +1,2 @@\n"
+                    " def solve():\n-    return 0\n+    return " + str(target) + "\n"),
+                "tests": (
+                    "import unittest\nfrom solution import solve\n\n"
+                    "class SolutionTests(unittest.TestCase):\n"
+                    "    def test_answer(self):\n"
+                    f"        self.assertEqual(solve(), {target})\n\n"
+                    "if __name__ == '__main__':\n    unittest.main()\n"),
+            })
+    return tasks
+
+
 def run_task(task: dict, agent_mode: bool = False, model: str = "auto",
              executable: str = "opencode") -> dict:
     started = time.monotonic()
@@ -53,6 +80,7 @@ def run_task(task: dict, agent_mode: bool = False, model: str = "auto",
             detail = str(error)
     return {
         "task_id": task["id"],
+        "category": task.get("category", "fixture"),
         "passed": passed,
         "detail": detail,
         "elapsed_seconds": round(time.monotonic() - started, 4),
@@ -69,8 +97,9 @@ def main() -> int:
     parser.add_argument("--opencode-executable", default="opencode")
     args = parser.parse_args()
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
+    tasks = expand_workload(workload)
     rows = [run_task(task, args.agent, args.model, args.opencode_executable)
-            for task in workload["tasks"]]
+            for task in tasks]
     passed = sum(row["passed"] for row in rows)
     report = {
         "benchmark": workload["name"],
@@ -80,6 +109,7 @@ def main() -> int:
             "model": args.model if args.agent else None,
         },
         "tasks": len(rows),
+        "categories": sorted({row["category"] for row in rows}),
         "passed": passed,
         "quality": passed / len(rows) if rows else 0.0,
         "hypothesis_supported": bool(rows) and passed == len(rows),
