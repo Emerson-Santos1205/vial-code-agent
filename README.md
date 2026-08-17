@@ -20,6 +20,7 @@ governado valida escopo, autorização, consenso, auditoria, commit e recuperaç
 python -m vial_code_agent --root . --vial-root vendor/vial-core --prompt "inspect the project"
 python benchmark/run_benchmark.py
 python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
+python benchmark/run_benchmark.py --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
 ```
 
 O benchmark padrão executa 50 fixtures isoladas em oito categorias. O modo
@@ -27,6 +28,12 @@ O benchmark padrão executa 50 fixtures isoladas em oito categorias. O modo
 configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
 grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
 sucesso, latência, tokens, regressões, rollbacks e intervenção humana.
+
+`--adapters baseline,opencode,vial` executa a mesma matriz em três caminhos:
+provider direto, agente convencional e agente composto pelo VIAL Runtime.
+Workloads reais podem ser fornecidos com `--workload caminho/para/workload.json`
+usando a mesma estrutura de `tasks` com `id`, `category`, `prompt`, `initial`,
+`patch` e `tests`.
 
 Consenso para mutações pode exigir evidência: cada candidato é aplicado em uma
 cópia descartável e validado estaticamente; quando `--test-command` é usado,

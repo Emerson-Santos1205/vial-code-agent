@@ -14,8 +14,10 @@ BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
 
 from vial_code_agent.agent import CodeAgent
-from vial_code_agent.model import OpenCodeProvider
+from vial_code_agent.core import VialCoreReference
+from vial_code_agent.model import OpenCodeProvider, extract_diff
 from vial_code_agent.patches import PatchApplier, PatchError
+from vial_code_agent.vial_runtime import VialRuntime
 
 
 def expand_workload(workload: dict) -> list[dict]:
@@ -56,16 +58,30 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         response = None
         rollback = False
         try:
-            if adapter == "opencode":
+            if adapter in {"baseline", "opencode", "vial"}:
                 provider = OpenCodeProvider(model, executable=executable, agent="build")
-                generated = CodeAgent(provider).generate(
-                    task.get("prompt", "solve the task"), root, [root / "solution.py"])
-                if generated.patch is None:
+                if adapter == "baseline":
+                    response = provider.generate(
+                        task.get("prompt", "solve the task"), directory=root,
+                        files=[root / "solution.py"])
+                    patch = extract_diff(response.text)
+                else:
+                    runtime = None
+                    if adapter == "vial":
+                        reference = VialCoreReference(BASE / "vendor" / "vial-core")
+                        runtime = VialRuntime(
+                            reference, root / ".vial-state", persist_state=False)
+                        runtime.set_workspace_root(root)
+                    generated = CodeAgent(provider, runtime=runtime).generate(
+                        task.get("prompt", "solve the task"), root,
+                        [root / "solution.py"], runtime=runtime)
+                    patch = generated.patch
+                    response = generated.response
+                if patch is None:
                     raise PatchError("agent did not return a patch")
-                patch = generated.patch
             else:
                 patch = task["patch"]
-            response = generated.response if adapter == "opencode" else None
+                response = None
             PatchApplier(root).apply(patch)
             applied = True
             result = subprocess.run(
@@ -119,23 +135,50 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path(__file__).with_name("results"))
     parser.add_argument("--agent", action="store_true",
                         help="generate patches with the configured coding agent")
-    parser.add_argument("--adapter", choices=["fixture", "opencode"],
+    parser.add_argument("--adapter", choices=["fixture", "baseline", "opencode", "vial"],
                         help="benchmark adapter; --agent is an alias for opencode")
+    parser.add_argument("--adapters",
+                        help="comma-separated adapters to compare on the same workload")
     parser.add_argument("--model", default="auto")
     parser.add_argument("--opencode-executable", default="opencode")
     args = parser.parse_args()
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     tasks = expand_workload(workload)
-    adapter = args.adapter or ("opencode" if args.agent else "fixture")
+    selected = args.adapters.split(",") if args.adapters else [
+        args.adapter or ("opencode" if args.agent else "fixture")]
+    invalid = set(selected) - {"fixture", "baseline", "opencode", "vial"}
+    if invalid:
+        parser.error(f"unknown adapters: {', '.join(sorted(invalid))}")
     rows = [run_task(task, adapter, args.model, args.opencode_executable)
-            for task in tasks]
+            for adapter in selected for task in tasks]
     passed = sum(row["passed"] for row in rows)
+    by_adapter = {}
+    for adapter in selected:
+        adapter_rows = [row for row in rows if row["adapter"] == adapter]
+        adapter_passed = sum(row["passed"] for row in adapter_rows)
+        by_adapter[adapter] = {
+            "tasks": len(adapter_rows),
+            "passed": adapter_passed,
+            "success_rate": adapter_passed / len(adapter_rows) if adapter_rows else 0.0,
+            "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in adapter_rows) /
+                                      len(adapter_rows) if adapter_rows else 0.0),
+            "regression_rate": (sum(row["regression"] for row in adapter_rows) /
+                                len(adapter_rows) if adapter_rows else 0.0),
+            "rollback_rate": (sum(row["rollback"] for row in adapter_rows) /
+                              len(adapter_rows) if adapter_rows else 0.0),
+            "human_intervention_rate": (sum(row["human_intervention"] for row in adapter_rows) /
+                                         len(adapter_rows) if adapter_rows else 0.0),
+            "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
+                                for row in adapter_rows),
+        }
     report = {
         "benchmark": workload["name"],
         "environment": {
             "python": platform.python_version(),
-            "mode": adapter,
-            "model": args.model if adapter == "opencode" else None,
+            "mode": "comparison" if len(selected) > 1 else selected[0],
+            "adapters": selected,
+            "model": args.model if any(a in {"opencode", "vial", "baseline"}
+                                        for a in selected) else None,
         },
         "tasks": len(rows),
         "categories": sorted({row["category"] for row in rows}),
@@ -152,6 +195,7 @@ def main() -> int:
             "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
                                 for row in rows),
         },
+        "by_adapter": by_adapter,
         "passed": passed,
         "quality": passed / len(rows) if rows else 0.0,
         "hypothesis_supported": bool(rows) and passed == len(rows),
