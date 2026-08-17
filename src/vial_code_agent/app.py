@@ -8,11 +8,13 @@ and every opencode-style slash command is handled by ``ChatController``.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -271,6 +273,32 @@ class ApprovalModal(ModalScreen[str]):
     def action_later(self) -> None:
         self.dismiss("later")
 
+
+class DecisionViewer(ModalScreen[None]):
+    """Read-only detailed Decision view sourced from Runtime."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, decision: dict) -> None:
+        super().__init__()
+        self._decision = decision
+
+    def compose(self) -> ComposeResult:
+        yield Static("DECISION DETAILS", classes="picker-title")
+        yield RichLog(id="decision-content", markup=False)
+        yield Button("Close", id="decision-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#decision-content", RichLog).write(
+            json.dumps(self._decision, indent=2, ensure_ascii=False))
+
+    @on(Button.Pressed, "#decision-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
 class _NonSelectableMixin:
     """Keep screen-level drag selection scoped to the output log."""
 
@@ -400,7 +428,7 @@ class VialTUI(App[str]):
     #command-menu ListItem.-highlight { color: $text; background: $primary 30%; }
     #side { width: 1fr; border: round $panel-lighten-2; padding: 1 1; color: $text-muted; }
     #side .key { color: $primary; }
-    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal { background: $surface; }
+    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal, DecisionViewer { background: $surface; }
     .picker-title { padding: 1 2; text-style: bold; }
     #session-filter { margin: 0 2 1 2; }
     """
@@ -417,6 +445,7 @@ class VialTUI(App[str]):
         Binding("ctrl+d", "show_diff", "diff", priority=True),
         Binding("ctrl+a", "show_audit", "audit", priority=True),
         Binding("ctrl+o", "show_approval", "approve", priority=True),
+        Binding("ctrl+v", "show_decision", "decision", priority=True),
     ]
 
     def __init__(self, controller: ChatController, prompt: str = "") -> None:
@@ -431,6 +460,7 @@ class VialTUI(App[str]):
         self._prompt_history: list[str] = []
         self._history_index: int | None = None
         self.tui_state = TUIState()
+        self._task_started_at: float | None = None
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -447,6 +477,8 @@ class VialTUI(App[str]):
         with Vertical(id="bottom"):
             yield _NonSelectableLoadingIndicator(id="spinner")
             yield _NonSelectableStatic("", id="stream")
+            yield _NonSelectableStatic("", id="test-status")
+            yield _NonSelectableStatic("", id="events")
             yield _NonSelectableListView(id="command-menu")
             yield PromptArea(
                 placeholder='Ask anything... "Fix a TODO in the codebase"',
@@ -546,6 +578,7 @@ class VialTUI(App[str]):
             return
         self._log_user(message)
         self.tui_state.start(message)
+        self._task_started_at = time.monotonic()
         self.refresh_side()
         self._set_busy(True)
         self._show_stream()
@@ -583,10 +616,18 @@ class VialTUI(App[str]):
             self.tui_state.advance("TEST" if not failed else "PATCH", "response complete")
             self.tui_state.patch_status = "READY" if not failed else "FAILED"
             self.tui_state.test_status = "NOT RUN"
+            if self._task_started_at is not None:
+                self.tui_state.latency_seconds = round(
+                    time.monotonic() - self._task_started_at, 3)
             response = getattr(self.controller.provider, "last_response", None)
             if response is not None:
                 self.tui_state.input_tokens = response.input_tokens or 0
                 self.tui_state.output_tokens = response.output_tokens or 0
+            if self.controller.runtime is not None:
+                try:
+                    self.tui_state.cost = self.controller.runtime.costs().get("total", 0.0)
+                except (AttributeError, TypeError):
+                    self.tui_state.cost = None
             self.tui_state.finish(not failed)
             self._hide_stream()
             self._log_assistant(
@@ -627,6 +668,17 @@ class VialTUI(App[str]):
             for record in runtime.patch_tool.audit_records[-20:]:
                 lines.append(f"audit  {record.__dict__}")
         self.push_screen(AuditViewer(lines or ["No audit events available."]))
+
+    def action_show_decision(self) -> None:
+        runtime = self.controller.runtime
+        if runtime is None:
+            self._log_assistant("governed runtime unavailable")
+            return
+        pending = runtime.pending_decisions()
+        if not pending:
+            self._log_assistant("no decision available")
+            return
+        self.push_screen(DecisionViewer(pending[0]))
 
     def action_show_approval(self) -> None:
         """Show the first pending approval; approval itself remains governed."""
@@ -846,6 +898,8 @@ class VialTUI(App[str]):
             f"[b]Authorization[/b]\n  {self.tui_state.authorization}\n"
             f"[b]Patch[/b]\n  {self.tui_state.patch_status}\n"
             f"[b]Tests[/b]\n  {self.tui_state.test_status}\n"
+            f"[b]Latency[/b]\n  {self.tui_state.latency_seconds if self.tui_state.latency_seconds is not None else '-'}s\n"
+            f"[b]Cost[/b]\n  {self.tui_state.cost if self.tui_state.cost is not None else '-'}\n"
             f"[b]Tokens[/b]\n  in={self.tui_state.input_tokens} out={self.tui_state.output_tokens}\n\n"
             f"[b]Pipeline[/b]\n  " + "\n  ".join(
                 f"{'[x]' if state == 'done' else '[*]' if state == 'running' else '[!]' if state == 'failed' else '[ ]'} {stage}"
@@ -869,3 +923,9 @@ class VialTUI(App[str]):
             f"[dim]vial {__version__}[/dim]"
         )
         self.query_one("#side", Static).update(panel)
+        self.query_one("#test-status", Static).update(
+            f"TESTS: {self.tui_state.test_status}"
+        )
+        self.query_one("#events", Static).update(
+            f"EVENTS: {self.tui_state.event_line()}"
+        )

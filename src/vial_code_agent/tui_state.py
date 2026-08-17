@@ -48,6 +48,9 @@ class TUIState:
         if event:
             self.events.append(event)
 
+    def event_line(self) -> str:
+        return " | ".join(self.events[-3:]) if self.events else "ready"
+
     def pipeline(self) -> list[tuple[str, str]]:
         current = PIPELINE.index(self.stage) if self.stage in PIPELINE else -1
         return [
