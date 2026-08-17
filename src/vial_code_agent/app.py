@@ -299,6 +299,49 @@ class DecisionViewer(ModalScreen[None]):
     def action_close(self) -> None:
         self.dismiss(None)
 
+
+class FailureDiagnostics(ModalScreen[str]):
+    """Explain a failed generation and offer only safe next actions."""
+
+    BINDINGS = [Binding("escape", "abort", "abort")]
+
+    def __init__(self, details: dict[str, str]) -> None:
+        super().__init__()
+        self._details = details
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "PATCH GENERATION FAILED\n\n"
+            f"Stage: {self._details.get('stage', 'unknown')}\n"
+            f"Provider: {self._details.get('provider', 'unknown')}\n"
+            f"Model: {self._details.get('model', 'unknown')}\n"
+            f"Attempt: {self._details.get('attempt', '1/1')}\n"
+            f"Patch detected: {self._details.get('patch_detected', 'NO')}\n"
+            f"Failure: {self._details.get('failure_type', 'UNKNOWN')}\n\n"
+            f"Response: {self._details.get('response', '')[:500]}",
+            classes="picker-title",
+        )
+        yield Horizontal(
+            Button("Retry", id="failure-retry"),
+            Button("View response", id="failure-view"),
+            Button("Abort", id="failure-abort"),
+        )
+
+    @on(Button.Pressed, "#failure-retry")
+    def _retry(self) -> None:
+        self.dismiss("retry")
+
+    @on(Button.Pressed, "#failure-view")
+    def _view(self) -> None:
+        self.dismiss("view")
+
+    @on(Button.Pressed, "#failure-abort")
+    def _abort(self) -> None:
+        self.dismiss("abort")
+
+    def action_abort(self) -> None:
+        self.dismiss("abort")
+
 class _NonSelectableMixin:
     """Keep screen-level drag selection scoped to the output log."""
 
@@ -428,7 +471,7 @@ class VialTUI(App[str]):
     #command-menu ListItem.-highlight { color: $text; background: $primary 30%; }
     #side { width: 1fr; border: round $panel-lighten-2; padding: 1 1; color: $text-muted; }
     #side .key { color: $primary; }
-    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal, DecisionViewer { background: $surface; }
+    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal, DecisionViewer, FailureDiagnostics { background: $surface; }
     .picker-title { padding: 1 2; text-style: bold; }
     #session-filter { margin: 0 2 1 2; }
     """
@@ -616,6 +659,8 @@ class VialTUI(App[str]):
             self.tui_state.advance("TEST" if not failed else "PATCH", "response complete")
             self.tui_state.patch_status = "READY" if not failed else "FAILED"
             self.tui_state.test_status = "NOT RUN"
+            if failed:
+                self.tui_state.failure_type = "MODEL_RESPONSE"
             if self._task_started_at is not None:
                 self.tui_state.latency_seconds = round(
                     time.monotonic() - self._task_started_at, 3)
@@ -633,6 +678,19 @@ class VialTUI(App[str]):
             self._log_assistant(
                 text or "error: model returned no response or output"
             )
+            if failed:
+                self.push_screen(
+                    FailureDiagnostics({
+                        "stage": self.tui_state.stage,
+                        "provider": type(self.controller.provider).__name__,
+                        "model": self.controller.model,
+                        "attempt": "1/2",
+                        "patch_detected": "NO",
+                        "failure_type": self.tui_state.failure_type,
+                        "response": text,
+                    }),
+                    callback=lambda action: self._failure_result(message, action),
+                )
         self._set_busy(False)
         self.refresh_side()
         self._worker = None
@@ -714,6 +772,13 @@ class VialTUI(App[str]):
             self._log_assistant(
                 f"approval denied for {decision['decision_id']} (no Runtime mutation)")
         self.refresh_side()
+
+    def _failure_result(self, message: str, result: str | None) -> None:
+        if result == "retry":
+            self._submit_prompt(message)
+        elif result == "view":
+            self._log_assistant(
+                self.tui_state.failure_type or "model response unavailable")
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy

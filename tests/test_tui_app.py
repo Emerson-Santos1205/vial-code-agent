@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 
 from vial_code_agent.app import (
-    AuditViewer, DiffViewer, ModelPicker, SelectableLog, SessionPicker, VialTUI,
+    AuditViewer, DiffViewer, FailureDiagnostics, ModelPicker, SelectableLog,
+    SessionPicker, VialTUI,
 )
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import ModelResponse, OpenCodeProvider
@@ -83,6 +84,26 @@ class TuiAppTests(unittest.TestCase):
                     app.push_screen(AuditViewer(["task started", "patch validated"]))
                     await pilot.pause()
                     self.assertIsInstance(app.screen, AuditViewer)
+                    await pilot.press("escape")
+
+        asyncio.run(run())
+
+    def test_failure_diagnostics_is_safe_and_offers_retry(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                app = VialTUI(_controller(directory))
+                async with app.run_test() as pilot:
+                    app.push_screen(FailureDiagnostics({
+                        "stage": "patch_extraction",
+                        "failure_type": "PATCH_CONTRACT",
+                        "response": "no diff",
+                    }))
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, FailureDiagnostics)
+                    self.assertIn(
+                        "PATCH_CONTRACT",
+                        str(app.screen.query_one(".picker-title").render()),
+                    )
                     await pilot.press("escape")
 
         asyncio.run(run())
