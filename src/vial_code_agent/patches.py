@@ -123,8 +123,35 @@ class PatchApplier:
                        if line.split("=", 1)[0].rstrip() == prefix]
             old = [original[matches[0]]] if len(matches) == 1 else []
         if len(matches) != 1:
-            return None
+            return self._repair_hunks(patch, relative, original)
         updated = original[:matches[0]] + new + original[matches[0] + len(old):]
+        return "".join(difflib.unified_diff(
+            original, updated, fromfile=f"a/{relative}", tofile=f"b/{relative}"))
+
+    def _repair_hunks(self, patch: str, relative: str,
+                      original: list[str]) -> str | None:
+        """Rebuild uniquely locatable hunks while ignoring stale line numbers."""
+        hunks: list[list[str]] = []
+        current: list[str] | None = None
+        for line in self._normalize(patch).splitlines():
+            if line.startswith("@@"):
+                current = []
+                hunks.append(current)
+            elif current is not None and line[:1] in (" ", "+", "-"):
+                current.append(line)
+        if not hunks:
+            return None
+
+        updated = list(original)
+        for hunk in hunks:
+            old_block = [line[1:] + "\n" for line in hunk if line.startswith((" ", "-"))]
+            new_block = [line[1:] + "\n" for line in hunk if line.startswith((" ", "+"))]
+            matches = [index for index in range(len(updated) - len(old_block) + 1)
+                       if updated[index:index + len(old_block)] == old_block]
+            if len(matches) != 1:
+                return None
+            index = matches[0]
+            updated[index:index + len(old_block)] = new_block
         return "".join(difflib.unified_diff(
             original, updated, fromfile=f"a/{relative}", tofile=f"b/{relative}"))
 

@@ -114,3 +114,22 @@ class PatchTests(unittest.TestCase):
             self.assertEqual(source.read_text(encoding="utf-8"), "before\nold\nafter\n")
             PatchApplier(root).apply(repaired or "")
             self.assertEqual(source.read_text(encoding="utf-8"), "before\nnew\nafter\n")
+
+    def test_repairs_multiple_hunks_with_stale_line_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            malformed = """--- a/value.txt
++++ b/value.txt
+@@ -90,1 +90,1 @@
+-one
++ONE
+@@ -190,1 +190,1 @@
+-four
++FOUR
+"""
+            repaired = PatchApplier(root).repair_candidate(malformed)
+            self.assertIsNotNone(repaired)
+            PatchApplier(root).apply(repaired or "")
+            self.assertEqual(source.read_text(encoding="utf-8"), "ONE\ntwo\nthree\nFOUR\n")

@@ -77,11 +77,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workload", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--model", default="openai/gpt-5.6-luna")
     args = parser.parse_args()
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
-    results = [run_instance(instance, args.model)
-               for instance in workload["tasks"][:args.limit]]
+    selected = workload["tasks"][args.offset:args.offset + args.limit]
+    results = [run_instance(instance, args.model) for instance in selected]
     report = {"benchmark": workload.get("name", "swebench"),
               "tasks": len(results), "passed": sum(row["passed"] for row in results),
               "results": results}
