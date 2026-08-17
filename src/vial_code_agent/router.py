@@ -396,9 +396,10 @@ class RoutingGraph:
                     "behavioral_passed": result.behavioral_passed if result else False,
                     "detail": result.detail if result else "no unified diff candidate",
                 }
-            evidence_passed = any(
-                item["static_valid"] and item["behavioral_passed"] is not False
-                for item in evidence.values())
+            evidence_passed = all(
+                evidence.get(ref, {}).get("static_valid")
+                and evidence.get(ref, {}).get("behavioral_passed") is not False
+                for ref in (ref_a, ref_b))
         agreed = ratio >= min_agreement and evidence_passed
         winner_ref, winner_response = (ref_a, resp_a)
         return ConsensusResult(agreed, winner_response, ratio, responses, evidence,
