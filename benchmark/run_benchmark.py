@@ -47,6 +47,35 @@ def expand_workload(workload: dict) -> list[dict]:
     return tasks
 
 
+def summarize(rows: list[dict]) -> dict:
+    """Produce comparable quality, efficiency and recovery measurements."""
+    passed = sum(row["passed"] for row in rows)
+    total = len(rows)
+    success = passed / total if total else 0.0
+    regression = sum(row["regression"] for row in rows) / total if total else 0.0
+    intervention = sum(row["human_intervention"] for row in rows) / total if total else 0.0
+    rollback = sum(row["rollback"] for row in rows) / total if total else 0.0
+    score = 100 * (0.5 * success + 0.2 * (1 - regression) +
+                   0.15 * (1 - intervention) + 0.15 * (1 - rollback))
+    return {
+        "tasks": total,
+        "passed": passed,
+        "success_rate": success,
+        "regression_rate": regression,
+        "human_intervention_rate": intervention,
+        "rollback_rate": rollback,
+        "retry_rate": (sum(row["attempts"] > 1 for row in rows) /
+                       total if total else 0.0),
+        "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in rows) /
+                                  total if total else 0.0),
+        "total_tokens": sum(row["input_tokens"] + row["output_tokens"] for row in rows),
+        "tokens_per_success": (sum(row["input_tokens"] + row["output_tokens"]
+                                   for row in rows if row["passed"]) /
+                               passed if passed else 0.0),
+        "vial_agent_score": round(score, 2),
+    }
+
+
 def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
              executable: str = "opencode") -> dict:
     started = time.monotonic()
@@ -158,23 +187,10 @@ def main() -> int:
     for adapter in selected:
         adapter_rows = [row for row in rows if row["adapter"] == adapter]
         adapter_passed = sum(row["passed"] for row in adapter_rows)
-        by_adapter[adapter] = {
+        by_adapter[adapter] = summarize(adapter_rows)
+        by_adapter[adapter].update({
             "tasks": len(adapter_rows),
-            "passed": adapter_passed,
-            "success_rate": adapter_passed / len(adapter_rows) if adapter_rows else 0.0,
-            "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in adapter_rows) /
-                                      len(adapter_rows) if adapter_rows else 0.0),
-            "regression_rate": (sum(row["regression"] for row in adapter_rows) /
-                                len(adapter_rows) if adapter_rows else 0.0),
-            "rollback_rate": (sum(row["rollback"] for row in adapter_rows) /
-                              len(adapter_rows) if adapter_rows else 0.0),
-            "human_intervention_rate": (sum(row["human_intervention"] for row in adapter_rows) /
-                                         len(adapter_rows) if adapter_rows else 0.0),
-            "retry_rate": (sum(row["attempts"] > 1 for row in adapter_rows) /
-                           len(adapter_rows) if adapter_rows else 0.0),
-            "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
-                                for row in adapter_rows),
-        }
+        })
     report = {
         "benchmark": workload["name"],
         "environment": {
@@ -186,23 +202,10 @@ def main() -> int:
         },
         "tasks": len(rows),
         "categories": sorted({row["category"] for row in rows}),
-        "metrics": {
-            "success_rate": passed / len(rows) if rows else 0.0,
-            "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in rows) /
-                                      len(rows) if rows else 0.0),
-            "regression_rate": (sum(row["regression"] for row in rows) /
-                                len(rows) if rows else 0.0),
-            "rollback_rate": (sum(row["rollback"] for row in rows) /
-                              len(rows) if rows else 0.0),
-            "human_intervention_rate": (sum(row["human_intervention"] for row in rows) /
-                                         len(rows) if rows else 0.0),
-            "retry_rate": (sum(row["attempts"] > 1 for row in rows) /
-                           len(rows) if rows else 0.0),
-            "tokens_per_success": (sum(row["input_tokens"] + row["output_tokens"]
-                                       for row in rows if row["passed"]) /
-                                   passed if passed else 0.0),
-            "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
-                                for row in rows),
+        "metrics": summarize(rows),
+        "by_category": {
+            category: summarize([row for row in rows if row["category"] == category])
+            for category in sorted({row["category"] for row in rows})
         },
         "by_adapter": by_adapter,
         "passed": passed,

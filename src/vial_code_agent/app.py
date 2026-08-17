@@ -8,11 +8,13 @@ and every opencode-style slash command is handled by ``ChatController``.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -23,12 +25,13 @@ from textual.screen import ModalScreen, Screen
 from textual.selection import SELECT_ALL, Selection
 from textual.widgets import (
     Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
-    Static, TextArea,
+    Static, TextArea, Button,
 )
 from rich.markup import escape
 
 from . import __version__
 from .chat import ChatController
+from .tui_state import TUIState
 
 
 class ModelPicker(ModalScreen[str]):
@@ -180,6 +183,122 @@ class SessionPicker(ModalScreen[str]):
         self.dismiss(self._visible[index][0])
 
 
+class DiffViewer(ModalScreen[None]):
+    """Read-only candidate diff viewer; applying remains a Runtime operation."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, patch: str) -> None:
+        super().__init__()
+        self._patch = patch
+
+    def compose(self) -> ComposeResult:
+        yield Static("PATCH READY (read-only)", classes="picker-title")
+        yield RichLog(id="diff-content", markup=False)
+        yield Button("Close", id="diff-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#diff-content", RichLog).write(self._patch or "No patch available")
+
+    @on(Button.Pressed, "#diff-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class AuditViewer(ModalScreen[None]):
+    """Read-only audit/event timeline sourced from Runtime state."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, lines: list[str]) -> None:
+        super().__init__()
+        self._lines = lines
+
+    def compose(self) -> ComposeResult:
+        yield Static("AUDIT / EVENTS", classes="picker-title")
+        yield RichLog(id="audit-content", markup=False)
+        yield Button("Close", id="audit-close")
+
+    def on_mount(self) -> None:
+        log = self.query_one("#audit-content", RichLog)
+        for line in self._lines:
+            log.write(line)
+
+    @on(Button.Pressed, "#audit-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class ApprovalModal(ModalScreen[str]):
+    """Approval prompt that returns an intent to the Controller."""
+
+    BINDINGS = [Binding("escape", "later", "later")]
+
+    def __init__(self, decision: dict) -> None:
+        super().__init__()
+        self._decision = decision
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"APPROVAL REQUIRED\n\nDecision: {self._decision.get('decision_id')}\n"
+            f"Risk: {self._decision.get('risk', 'unknown').upper()}\n"
+            f"Action: {self._decision.get('objective', 'mutation')}\n"
+            f"Consensus: {self._decision.get('consensus') or 'pending'}",
+            classes="picker-title",
+        )
+        yield Horizontal(
+            Button("Approve", id="approval-approve"),
+            Button("Deny", id="approval-deny"),
+            Button("Later", id="approval-later"),
+        )
+
+    @on(Button.Pressed, "#approval-approve")
+    def _approve(self) -> None:
+        self.dismiss("approve")
+
+    @on(Button.Pressed, "#approval-deny")
+    def _deny(self) -> None:
+        self.dismiss("deny")
+
+    @on(Button.Pressed, "#approval-later")
+    def _later_button(self) -> None:
+        self.dismiss("later")
+
+    def action_later(self) -> None:
+        self.dismiss("later")
+
+
+class DecisionViewer(ModalScreen[None]):
+    """Read-only detailed Decision view sourced from Runtime."""
+
+    BINDINGS = [Binding("escape", "close", "close")]
+
+    def __init__(self, decision: dict) -> None:
+        super().__init__()
+        self._decision = decision
+
+    def compose(self) -> ComposeResult:
+        yield Static("DECISION DETAILS", classes="picker-title")
+        yield RichLog(id="decision-content", markup=False)
+        yield Button("Close", id="decision-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#decision-content", RichLog).write(
+            json.dumps(self._decision, indent=2, ensure_ascii=False))
+
+    @on(Button.Pressed, "#decision-close")
+    def _close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
 class _NonSelectableMixin:
     """Keep screen-level drag selection scoped to the output log."""
 
@@ -309,7 +428,7 @@ class VialTUI(App[str]):
     #command-menu ListItem.-highlight { color: $text; background: $primary 30%; }
     #side { width: 1fr; border: round $panel-lighten-2; padding: 1 1; color: $text-muted; }
     #side .key { color: $primary; }
-    ModelPicker, PoolPicker, SessionPicker { background: $surface; }
+    ModelPicker, PoolPicker, SessionPicker, DiffViewer, AuditViewer, ApprovalModal, DecisionViewer { background: $surface; }
     .picker-title { padding: 1 2; text-style: bold; }
     #session-filter { margin: 0 2 1 2; }
     """
@@ -323,6 +442,10 @@ class VialTUI(App[str]):
         Binding("ctrl+y", "copy_last", "copy", priority=True),
         Binding("ctrl+u", "focus_prompt", "prompt", priority=True),
         Binding("ctrl+k", "cancel_task", "cancel", priority=True),
+        Binding("ctrl+d", "show_diff", "diff", priority=True),
+        Binding("ctrl+a", "show_audit", "audit", priority=True),
+        Binding("ctrl+o", "show_approval", "approve", priority=True),
+        Binding("ctrl+v", "show_decision", "decision", priority=True),
     ]
 
     def __init__(self, controller: ChatController, prompt: str = "") -> None:
@@ -336,6 +459,8 @@ class VialTUI(App[str]):
         self._stream_buffer: list[str] = []
         self._prompt_history: list[str] = []
         self._history_index: int | None = None
+        self.tui_state = TUIState()
+        self._task_started_at: float | None = None
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -352,6 +477,8 @@ class VialTUI(App[str]):
         with Vertical(id="bottom"):
             yield _NonSelectableLoadingIndicator(id="spinner")
             yield _NonSelectableStatic("", id="stream")
+            yield _NonSelectableStatic("", id="test-status")
+            yield _NonSelectableStatic("", id="events")
             yield _NonSelectableListView(id="command-menu")
             yield PromptArea(
                 placeholder='Ask anything... "Fix a TODO in the codebase"',
@@ -443,12 +570,16 @@ class VialTUI(App[str]):
             if result.output:
                 self._log_user(message)
                 self._log_assistant(result.output)
+                self._maybe_show_approval()
             if result.new_session_id or result.new_model or result.new_agent:
                 self.refresh_side()
             if result.exit:
                 self.exit("")
             return
         self._log_user(message)
+        self.tui_state.start(message)
+        self._task_started_at = time.monotonic()
+        self.refresh_side()
         self._set_busy(True)
         self._show_stream()
         self._worker = self.run_worker(
@@ -456,10 +587,13 @@ class VialTUI(App[str]):
 
     async def _dispatch(self, message: str) -> None:
         self._stream_buffer = []
+        self.tui_state.advance("CONTEXT", "context loading")
+        self.refresh_side()
         done = threading.Event()
 
         def consume() -> None:
             try:
+                self.tui_state.advance("COGNITION", "model reasoning")
                 for chunk in self.controller.respond_stream(message):
                     self._stream_buffer.append(chunk)
                     joined = "".join(self._stream_buffer)
@@ -478,11 +612,29 @@ class VialTUI(App[str]):
         thread.join(timeout=5)
         if not self._cancelled:
             text = "".join(self._stream_buffer).strip()
+            failed = text.lower().startswith("error:")
+            self.tui_state.advance("TEST" if not failed else "PATCH", "response complete")
+            self.tui_state.patch_status = "READY" if not failed else "FAILED"
+            self.tui_state.test_status = "NOT RUN"
+            if self._task_started_at is not None:
+                self.tui_state.latency_seconds = round(
+                    time.monotonic() - self._task_started_at, 3)
+            response = getattr(self.controller.provider, "last_response", None)
+            if response is not None:
+                self.tui_state.input_tokens = response.input_tokens or 0
+                self.tui_state.output_tokens = response.output_tokens or 0
+            if self.controller.runtime is not None:
+                try:
+                    self.tui_state.cost = self.controller.runtime.costs().get("total", 0.0)
+                except (AttributeError, TypeError):
+                    self.tui_state.cost = None
+            self.tui_state.finish(not failed)
             self._hide_stream()
             self._log_assistant(
                 text or "error: model returned no response or output"
             )
         self._set_busy(False)
+        self.refresh_side()
         self._worker = None
 
     async def action_cancel_task(self) -> None:
@@ -499,6 +651,69 @@ class VialTUI(App[str]):
         self._log_assistant("task cancelled")
         self._set_busy(False)
         self._worker = None
+
+    def action_show_diff(self) -> None:
+        """Open a read-only view of the latest candidate patch."""
+        self.push_screen(DiffViewer(getattr(self.controller, "last_patch", "")))
+
+    def action_show_audit(self) -> None:
+        """Open the Runtime event/audit timeline without changing state."""
+        lines: list[str] = []
+        runtime = self.controller.runtime
+        if runtime is not None:
+            for event in runtime.events.to_list()[-20:]:
+                lines.append(
+                    f"{event['timestamp']:.3f}  {event['type']}  "
+                    f"{event['resource']}  {event.get('data', {})}")
+            for record in runtime.patch_tool.audit_records[-20:]:
+                lines.append(f"audit  {record.__dict__}")
+        self.push_screen(AuditViewer(lines or ["No audit events available."]))
+
+    def action_show_decision(self) -> None:
+        runtime = self.controller.runtime
+        if runtime is None:
+            self._log_assistant("governed runtime unavailable")
+            return
+        pending = runtime.pending_decisions()
+        if not pending:
+            self._log_assistant("no decision available")
+            return
+        self.push_screen(DecisionViewer(pending[0]))
+
+    def action_show_approval(self) -> None:
+        """Show the first pending approval; approval itself remains governed."""
+        runtime = self.controller.runtime
+        if runtime is None:
+            self._log_assistant("governed runtime unavailable")
+            return
+        pending = runtime.pending_decisions()
+        decision = next(
+            (row for row in pending
+             if row.get("approval") is None
+             and row.get("risk", "medium") in {"high", "critical"}),
+            None)
+        if decision is None:
+            self._log_assistant("no pending approval")
+            return
+        self.push_screen(
+            ApprovalModal(decision),
+            callback=lambda result: self._approval_result(decision, result),
+        )
+
+    def _maybe_show_approval(self) -> None:
+        if isinstance(self.screen, ApprovalModal):
+            return
+        self.action_show_approval()
+
+    def _approval_result(self, decision: dict, result: str | None) -> None:
+        if result == "approve":
+            response = self.controller.handle(
+                f"/approve {decision['decision_id']}")
+            self._log_assistant(response.output or "approval recorded")
+        elif result == "deny":
+            self._log_assistant(
+                f"approval denied for {decision['decision_id']} (no Runtime mutation)")
+        self.refresh_side()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
@@ -675,6 +890,20 @@ class VialTUI(App[str]):
             f"[b]Model[/b]\n  {controller.model}\n\n"
             f"[b]Routing[/b]\n  {routing}\n\n"
             f"[b]Status[/b]\n  {status}\n\n"
+            f"[b]Task[/b]\n  {escape(self.tui_state.task[:48]) or '-'}\n"
+            f"[b]Stage[/b]\n  {self.tui_state.stage}\n"
+            f"[b]Risk[/b]\n  {self.tui_state.risk.upper()}\n"
+            f"[b]Decision[/b]\n  {self.tui_state.decision_id or '-'}\n"
+            f"[b]Consensus[/b]\n  {self.tui_state.consensus_ratio if self.tui_state.consensus_ratio is not None else '-'}\n"
+            f"[b]Authorization[/b]\n  {self.tui_state.authorization}\n"
+            f"[b]Patch[/b]\n  {self.tui_state.patch_status}\n"
+            f"[b]Tests[/b]\n  {self.tui_state.test_status}\n"
+            f"[b]Latency[/b]\n  {self.tui_state.latency_seconds if self.tui_state.latency_seconds is not None else '-'}s\n"
+            f"[b]Cost[/b]\n  {self.tui_state.cost if self.tui_state.cost is not None else '-'}\n"
+            f"[b]Tokens[/b]\n  in={self.tui_state.input_tokens} out={self.tui_state.output_tokens}\n\n"
+            f"[b]Pipeline[/b]\n  " + "\n  ".join(
+                f"{'[x]' if state == 'done' else '[*]' if state == 'running' else '[!]' if state == 'failed' else '[ ]'} {stage}"
+                for stage, state in self.tui_state.pipeline()) + "\n\n"
             f"[b]Runtime[/b]\n  {'available' if controller.runtime is not None else 'unavailable'}\n"
             f"  root: {escape(str(controller.root))}\n\n"
             f"[b]{pool_label}[/b]\n  {pool}\n\n"
@@ -694,3 +923,9 @@ class VialTUI(App[str]):
             f"[dim]vial {__version__}[/dim]"
         )
         self.query_one("#side", Static).update(panel)
+        self.query_one("#test-status", Static).update(
+            f"TESTS: {self.tui_state.test_status}"
+        )
+        self.query_one("#events", Static).update(
+            f"EVENTS: {self.tui_state.event_line()}"
+        )

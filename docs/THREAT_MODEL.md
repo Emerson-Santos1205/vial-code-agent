@@ -35,6 +35,20 @@
 - No consensus is accepted without candidate evidence when evidence is required.
 - No corrupted active snapshot is silently loaded.
 
+## Executed Adversarial Checks
+
+Run with `python benchmark/run_adversarial.py`:
+
+- path traversal;
+- `.git` metadata mutation;
+- `allowed_paths` violation;
+- invalid patch;
+- isolated behavioral evidence;
+- symlink escape;
+- high-risk automatic approval.
+
+The current suite reports `7/7` checks passed and `0` security violations.
+
 ## Validation Plan
 
 - Path traversal, symlink, `.git`, race and invalid patch tests.

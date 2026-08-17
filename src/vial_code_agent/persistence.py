@@ -32,15 +32,25 @@ class TransactionalJsonRepository:
                 if not name.endswith(".json") or Path(name).name != name:
                     raise ValueError(f"invalid record name: {name}")
                 payload = json.dumps(value, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-                (generation / name).write_bytes(payload)
+                destination = generation / name
+                with destination.open("wb") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
                 manifest[name] = hashlib.sha256(payload).hexdigest()
-            (generation / "manifest.json").write_text(
-                json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            manifest_path = generation / "manifest.json"
+            with manifest_path.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._fsync_directory(generation)
             pointer = self.root / "current-snapshot.json.tmp"
-            pointer.write_text(json.dumps({"generation": generation.name}) + "\n", encoding="utf-8")
-            with pointer.open("r+b") as handle:
+            with pointer.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"generation": generation.name}) + "\n")
+                handle.flush()
                 os.fsync(handle.fileno())
             os.replace(pointer, self.root / "current-snapshot.json")
+            self._fsync_directory(self.root)
             return generation
         except Exception:
             for child in generation.glob("*"):
@@ -53,8 +63,11 @@ class TransactionalJsonRepository:
         if not pointer.is_file():
             return None
         try:
-            generation = self.root / "snapshots" / json.loads(
-                pointer.read_text(encoding="utf-8"))["generation"]
+            generation_name = json.loads(pointer.read_text(encoding="utf-8"))["generation"]
+            generation = (self.root / "snapshots" / generation_name).resolve()
+            snapshots_root = (self.root / "snapshots").resolve()
+            if snapshots_root not in generation.parents:
+                raise ValueError("snapshot pointer escapes state directory")
             manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
             result = {}
             for name, expected in manifest.items():
@@ -65,3 +78,16 @@ class TransactionalJsonRepository:
             return result
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ValueError("active runtime snapshot is invalid") from exc
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError:
+            # Windows does not expose directory fsync; file and pointer fsync
+            # still provide the strongest portable guarantee available.
+            return

@@ -104,6 +104,7 @@ class ChatController:
         )
         self.route = "auto"
         self.history: list[str] = []
+        self.last_patch: str = ""
 
     # ------------------------------------------------------------------ #
     # Command handling
@@ -507,6 +508,7 @@ class ChatController:
                 task, self.root, files, runtime=self.runtime)
             if generated.patch is None:
                 return ChatCommandResult(True, "error: no patch generated")
+            self.last_patch = generated.patch
             if generated.workspace_changed:
                 return ChatCommandResult(True, "error: provider changed workspace outside governed apply")
             allowed = {path.relative_to(self.root).as_posix() for path in files}

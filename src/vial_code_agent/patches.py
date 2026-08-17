@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 class PatchError(ValueError):
@@ -47,9 +48,19 @@ class PatchApplier:
                 if path in ("/dev/null",):
                     continue
                 relative = path.removeprefix("a/").removeprefix("b/")
+                pure = PurePosixPath(relative)
+                if pure.is_absolute() or ".." in pure.parts:
+                    raise PatchError(f"patch path escapes workspace: {path}")
+                if pure.parts and (pure.parts[0] == ".git"):
+                    raise PatchError(f"patch cannot modify git metadata: {path}")
                 candidate = (self.root / relative).resolve()
                 if self.root not in candidate.parents and candidate != self.root:
                     raise PatchError(f"patch path escapes workspace: {path}")
+                current = self.root
+                for part in pure.parts:
+                    current = current / part
+                    if current.is_symlink():
+                        raise PatchError(f"patch path traverses symlink: {path}")
         command = [
             "git", "apply", "--ignore-space-change", "--ignore-whitespace",
             "--whitespace=nowarn" if reverse else "--whitespace=error",
