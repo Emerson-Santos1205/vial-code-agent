@@ -40,6 +40,10 @@ from .errors import VialRuntimeError
 from .events import EventStore, VialEvent
 from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 
+
+class PersistenceError(RuntimeError):
+    """Persistence failed and the runtime cannot claim durable state."""
+
 # Organizational identity defaults (SDK-002 §4).
 ORG_ID = "ORG-VIAL-CODE-AGENT"
 AUTHORITY = "org-root"
@@ -1021,7 +1025,7 @@ class VialRuntime:
     # Persistence (RFC-003 continuity)
     # ------------------------------------------------------------------ #
     def persist(self) -> None:
-        """Atomically persist organizational cognition (best effort)."""
+        """Atomically persist organizational cognition or fail explicitly."""
         if not self.persist_state:
             return
         try:
@@ -1057,9 +1061,9 @@ class VialRuntime:
             if self.project.snapshot is not None:
                 self.repository.save(
                     "project.json", self.project.snapshot.to_dict())
-        except Exception:
-            # Persistence is best-effort for the local reference runtime.
-            pass
+        except Exception as exc:
+            raise PersistenceError(
+                f"failed to persist VIAL runtime state in {self.state_root}") from exc
 
     def _load_persisted(self) -> None:
         if not self.persist_state:
@@ -1133,9 +1137,9 @@ class VialRuntime:
                     context_id: self._context_from_dict(data)
                     for context_id, data
                     in self.repository.load("contexts.json").items()}
-        except Exception:
-            # A corrupt/partial state dir should never crash the application.
-            pass
+        except Exception as exc:
+            raise PersistenceError(
+                f"failed to restore VIAL runtime state from {self.state_root}") from exc
 
     def _organization_to_dict(self) -> dict[str, Any]:
         return {

@@ -1,19 +1,13 @@
 {
-  "name": "vial-code-agent-smoke",
-  "tasks": [
-    {
-      "id": "return-value",
-      "prompt": "Change solve so it returns 42.",
-      "initial": "def solve():\n    return 0\n",
-      "patch": "--- a/solution.py\n+++ b/solution.py\n@@ -1,2 +1,2 @@\n def solve():\n-    return 0\n+    return 42\n",
-      "tests": "import unittest\nfrom solution import solve\n\nclass SolutionTests(unittest.TestCase):\n    def test_answer(self):\n        self.assertEqual(solve(), 42)\n\nif __name__ == '__main__':\n    unittest.main()\n"
-    },
-    {
-      "id": "string-value",
-      "prompt": "Change solve so it returns the string 'vial'.",
-      "initial": "def solve():\n    return ''\n",
-      "patch": "--- a/solution.py\n+++ b/solution.py\n@@ -1,2 +1,2 @@\n def solve():\n-    return ''\n+    return 'vial'\n",
-      "tests": "import unittest\nfrom solution import solve\n\nclass SolutionTests(unittest.TestCase):\n    def test_answer(self):\n        self.assertEqual(solve(), 'vial')\n\nif __name__ == '__main__':\n    unittest.main()\n"
-    }
+  "name": "vial-code-agent-coding-matrix",
+  "families": [
+    {"category": "bug_fix", "count": 3, "prompt": "Fix the reported bug"},
+    {"category": "feature", "count": 3, "prompt": "Implement the requested feature"},
+    {"category": "refactoring", "count": 3, "prompt": "Refactor the implementation without changing its contract"},
+    {"category": "multi_file", "count": 2, "prompt": "Implement the change across the project files"},
+    {"category": "tests", "count": 2, "prompt": "Implement the behavior required by the tests"},
+    {"category": "dependency", "count": 2, "prompt": "Implement the change using the available dependency surface"},
+    {"category": "regression", "count": 3, "prompt": "Fix the regression while preserving existing behavior"},
+    {"category": "ambiguous_task", "count": 2, "prompt": "Resolve the task conservatively from the project context"}
   ]
 }
