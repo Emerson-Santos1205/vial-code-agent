@@ -29,6 +29,7 @@ from rich.markup import escape
 
 from . import __version__
 from .chat import ChatController
+from .tui_state import TUIState
 
 
 class ModelPicker(ModalScreen[str]):
@@ -336,6 +337,7 @@ class VialTUI(App[str]):
         self._stream_buffer: list[str] = []
         self._prompt_history: list[str] = []
         self._history_index: int | None = None
+        self.tui_state = TUIState()
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -449,6 +451,8 @@ class VialTUI(App[str]):
                 self.exit("")
             return
         self._log_user(message)
+        self.tui_state.start(message)
+        self.refresh_side()
         self._set_busy(True)
         self._show_stream()
         self._worker = self.run_worker(
@@ -456,10 +460,13 @@ class VialTUI(App[str]):
 
     async def _dispatch(self, message: str) -> None:
         self._stream_buffer = []
+        self.tui_state.advance("CONTEXT", "context loading")
+        self.refresh_side()
         done = threading.Event()
 
         def consume() -> None:
             try:
+                self.tui_state.advance("COGNITION", "model reasoning")
                 for chunk in self.controller.respond_stream(message):
                     self._stream_buffer.append(chunk)
                     joined = "".join(self._stream_buffer)
@@ -478,11 +485,21 @@ class VialTUI(App[str]):
         thread.join(timeout=5)
         if not self._cancelled:
             text = "".join(self._stream_buffer).strip()
+            failed = text.lower().startswith("error:")
+            self.tui_state.advance("TEST" if not failed else "PATCH", "response complete")
+            self.tui_state.patch_status = "READY" if not failed else "FAILED"
+            self.tui_state.test_status = "NOT RUN"
+            response = getattr(self.controller.provider, "last_response", None)
+            if response is not None:
+                self.tui_state.input_tokens = response.input_tokens or 0
+                self.tui_state.output_tokens = response.output_tokens or 0
+            self.tui_state.finish(not failed)
             self._hide_stream()
             self._log_assistant(
                 text or "error: model returned no response or output"
             )
         self._set_busy(False)
+        self.refresh_side()
         self._worker = None
 
     async def action_cancel_task(self) -> None:
@@ -675,6 +692,18 @@ class VialTUI(App[str]):
             f"[b]Model[/b]\n  {controller.model}\n\n"
             f"[b]Routing[/b]\n  {routing}\n\n"
             f"[b]Status[/b]\n  {status}\n\n"
+            f"[b]Task[/b]\n  {escape(self.tui_state.task[:48]) or '-'}\n"
+            f"[b]Stage[/b]\n  {self.tui_state.stage}\n"
+            f"[b]Risk[/b]\n  {self.tui_state.risk.upper()}\n"
+            f"[b]Decision[/b]\n  {self.tui_state.decision_id or '-'}\n"
+            f"[b]Consensus[/b]\n  {self.tui_state.consensus_ratio if self.tui_state.consensus_ratio is not None else '-'}\n"
+            f"[b]Authorization[/b]\n  {self.tui_state.authorization}\n"
+            f"[b]Patch[/b]\n  {self.tui_state.patch_status}\n"
+            f"[b]Tests[/b]\n  {self.tui_state.test_status}\n"
+            f"[b]Tokens[/b]\n  in={self.tui_state.input_tokens} out={self.tui_state.output_tokens}\n\n"
+            f"[b]Pipeline[/b]\n  " + "\n  ".join(
+                f"{'[x]' if state == 'done' else '[*]' if state == 'running' else '[!]' if state == 'failed' else '[ ]'} {stage}"
+                for stage, state in self.tui_state.pipeline()) + "\n\n"
             f"[b]Runtime[/b]\n  {'available' if controller.runtime is not None else 'unavailable'}\n"
             f"  root: {escape(str(controller.root))}\n\n"
             f"[b]{pool_label}[/b]\n  {pool}\n\n"
