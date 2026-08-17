@@ -29,3 +29,5 @@ jobs:
         run: python -m compileall -q src tests benchmark
       - name: Adversarial checks
         run: python benchmark/run_adversarial.py
+      - name: Docker sandbox smoke test
+        run: python benchmark/run_sandbox.py --limit 1
