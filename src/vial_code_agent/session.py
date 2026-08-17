@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -13,6 +14,10 @@ class Message:
     role: str
     content: str
     timestamp: float
+
+
+class SessionCorruptionError(ValueError):
+    """A session contains a complete malformed record."""
 
 
 def _monotonic_timestamp(previous: float) -> float:
@@ -45,15 +50,29 @@ class SessionStore:
         with (self.directory / f"{session_id}.jsonl").open("a", encoding="utf-8") as stream:
             json.dump({"role": role, "content": content, "timestamp": timestamp}, stream)
             stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
 
     def messages(self, session_id: str) -> list[Message]:
         path = self.directory / f"{session_id}.jsonl"
         if not path.is_file():
             raise FileNotFoundError(path)
         result: list[Message] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            value: dict[str, Any] = json.loads(line)
-            result.append(Message(value["role"], value["content"], value["timestamp"]))
+        raw = path.read_text(encoding="utf-8")
+        lines = raw.splitlines(keepends=True)
+        for index, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                value: dict[str, Any] = json.loads(line)
+                result.append(Message(value["role"], value["content"], value["timestamp"]))
+            except (json.JSONDecodeError, KeyError, TypeError) as error:
+                # A process killed during append can leave one unterminated JSON
+                # record. Earlier complete records remain safe to replay.
+                if index == len(lines) and not line.endswith(("\n", "\r")):
+                    break
+                raise SessionCorruptionError(
+                    f"corrupt session {session_id} at line {index}") from error
         return result
 
     def list(self) -> list[str]:
@@ -71,7 +90,10 @@ class SessionStore:
         ]
 
         def last_message_time(session_id: str) -> float:
-            messages = self.messages(session_id)
+            try:
+                messages = self.messages(session_id)
+            except SessionCorruptionError:
+                return 0.0
             return messages[-1].timestamp if messages else 0.0
 
         return sorted(

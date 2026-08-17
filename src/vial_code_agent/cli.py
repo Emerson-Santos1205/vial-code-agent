@@ -112,6 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-timeout", type=int, default=120)
     parser.add_argument("--no-consensus", action="store_true",
                         help="skip the cross-model consensus gate with an explicit audit note")
+    parser.add_argument("--unsafe-direct-apply", action="store_true",
+                        help="allow mutation without VIAL Runtime (unsafe compatibility mode)")
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep changes when verification fails")
     return parser
@@ -355,8 +357,10 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
 
     try:
         if generated.workspace_changed:
-            print("patch: already applied by opencode")
-        elif runtime is not None:
+            raise PatchError(
+                "provider changed the workspace outside VIAL Runtime; "
+                "discard the change and retry")
+        if runtime is not None:
             decision = runtime.propose_patch_decision(generated.context_id)
             consensus = None
             if args.no_consensus:
@@ -408,8 +412,12 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                         file=sys.stderr)
                     return 1
                 raise PatchError(result.error or "VIAL tool rejected patch")
-        else:
+        elif args.unsafe_direct_apply:
             PatchApplier(root).apply(generated.patch)
+        else:
+            raise PatchError(
+                "VIAL Runtime is required for mutation; pass --vial-root "
+                "or explicitly opt into --unsafe-direct-apply")
     except PatchError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

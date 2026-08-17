@@ -134,6 +134,7 @@ class CliIntegrationTests(unittest.TestCase):
                 result = main(
                     [
                         "--fix", "change old to new", "--root", str(root),
+                        "--unsafe-direct-apply",
                         "--include", "source.txt",
                         "--test-command", sys.executable, "-c",
                         "import pathlib; assert pathlib.Path('source.txt').read_text() == 'new\\n'",
@@ -439,7 +440,7 @@ class CliIntegrationTests(unittest.TestCase):
                                 "--include", "source.txt",
                             ]
                         )
-            self.assertEqual(result, 0)
+            self.assertEqual(result, 1)
 
     def test_fix_patch_validate_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -613,8 +614,9 @@ class CliIntegrationTests(unittest.TestCase):
                 with patch("sys.stdout"):
                     result = main(
                         [
-                            "--fix", "change", "--root", str(root),
+                                "--fix", "change", "--root", str(root),
                             "--model", "openai/gpt-5.6-luna-fast",
+                            "--unsafe-direct-apply",
                             "--include", "source.txt",
                         ]
                     )

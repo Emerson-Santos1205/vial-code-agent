@@ -21,7 +21,7 @@ from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .router import RoutingGraph
 from .servers import ServerRegistry
-from .session import SessionStore
+from .session import SessionCorruptionError, SessionStore
 from .workspace import select_files
 
 
@@ -214,7 +214,7 @@ class ChatController:
         """
         try:
             messages = self.store.messages(self.session_id)
-        except (OSError, FileNotFoundError, json.JSONDecodeError):
+        except (OSError, FileNotFoundError, json.JSONDecodeError, SessionCorruptionError):
             return []
         prior = messages[:-1] if messages else []
         turns: list[tuple[str, str]] = []
@@ -259,7 +259,7 @@ class ChatController:
             return ChatCommandResult(True, "usage: /resume <session_id>")
         try:
             self.store.messages(value)
-        except (OSError, FileNotFoundError, json.JSONDecodeError):
+        except (OSError, FileNotFoundError, json.JSONDecodeError, SessionCorruptionError):
             return ChatCommandResult(True, f"unknown session: {value}")
         return ChatCommandResult(True, f"resumed session: {value}", new_session_id=value)
 
@@ -381,7 +381,7 @@ class ChatController:
     def _handle_copy(self) -> ChatCommandResult:
         try:
             messages = self.store.messages(self.session_id)
-        except (OSError, FileNotFoundError, json.JSONDecodeError):
+        except (OSError, FileNotFoundError, json.JSONDecodeError, SessionCorruptionError):
             return ChatCommandResult(True, "no messages in this session")
         last = next(
             (message for message in reversed(messages)
@@ -587,7 +587,7 @@ class ChatController:
         """Plain text of the most recent assistant message (for clipboard)."""
         try:
             messages = self.store.messages(self.session_id)
-        except (OSError, FileNotFoundError, json.JSONDecodeError):
+        except (OSError, FileNotFoundError, json.JSONDecodeError, SessionCorruptionError):
             return ""
         last = next(
             (message for message in reversed(messages)

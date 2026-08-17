@@ -1,6 +1,31 @@
-# release-orchestrator
+# VIAL Code Agent
 
-CLI em Python para preparar releases de projetos Git com segurança.
+Agente de coding baseado no VIAL Core, com Runtime governado, persistência
+auditável e uma CLI de release segura.
+
+## Camadas
+
+- `vial_code_agent.core`: integração com o VIAL Core.
+- `vial_code_agent.vial_runtime`: estado, autorização, consenso, ferramentas e mutações.
+- `vial_code_agent.agent`: geração de código e roteamento de modelos.
+- `vial_code_agent.api`: fronteira pública estável para integrações.
+- `vial_code_agent.cli` e `vial_code_agent.app`: interfaces, sem regras de governança próprias.
+
+Mutação de workspace deve passar por `VialRuntime.apply_patch`; o caminho
+governado valida escopo, autorização, consenso, auditoria, commit e recuperação.
+
+## Coding agent
+
+```text
+python -m vial_code_agent --root . --vial-root vendor/vial-core --prompt "inspect the project"
+python benchmark/run_benchmark.py
+python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
+```
+
+O modo padrão executa fixtures isoladas com patches conhecidos. O modo
+`--agent` gera o patch através do coding-agent configurado, aplica-o em uma
+fixture descartável, roda os testes da tarefa e grava relatório JSON em
+`benchmark/results/`.
 
 ## Instalação
 

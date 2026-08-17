@@ -13,17 +13,29 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
 
+from vial_code_agent.agent import CodeAgent
+from vial_code_agent.model import OpenCodeProvider
 from vial_code_agent.patches import PatchApplier, PatchError
 
 
-def run_task(task: dict) -> dict:
+def run_task(task: dict, agent_mode: bool = False, model: str = "auto",
+             executable: str = "opencode") -> dict:
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="vial-code-agent-") as directory:
         root = Path(directory)
         (root / "solution.py").write_text(task["initial"], encoding="utf-8")
         (root / "test_solution.py").write_text(task["tests"], encoding="utf-8")
         try:
-            PatchApplier(root).apply(task["patch"])
+            if agent_mode:
+                provider = OpenCodeProvider(model, executable=executable, agent="build")
+                generated = CodeAgent(provider).generate(
+                    task.get("prompt", "solve the task"), root, [root / "solution.py"])
+                if generated.patch is None:
+                    raise PatchError("agent did not return a patch")
+                patch = generated.patch
+            else:
+                patch = task["patch"]
+            PatchApplier(root).apply(patch)
             result = subprocess.run(
                 [sys.executable, "-m", "unittest", "-q", "test_solution.py"],
                 cwd=root,
@@ -36,7 +48,7 @@ def run_task(task: dict) -> dict:
             )
             passed = result.returncode == 0
             detail = (result.stdout + result.stderr).strip()[-1000:]
-        except (PatchError, subprocess.TimeoutExpired) as error:
+        except (PatchError, RuntimeError, subprocess.TimeoutExpired) as error:
             passed = False
             detail = str(error)
     return {
@@ -51,13 +63,22 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workload", type=Path, default=Path(__file__).with_name("workload.json"))
     parser.add_argument("--out", type=Path, default=Path(__file__).with_name("results"))
+    parser.add_argument("--agent", action="store_true",
+                        help="generate patches with the configured coding agent")
+    parser.add_argument("--model", default="auto")
+    parser.add_argument("--opencode-executable", default="opencode")
     args = parser.parse_args()
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
-    rows = [run_task(task) for task in workload["tasks"]]
+    rows = [run_task(task, args.agent, args.model, args.opencode_executable)
+            for task in workload["tasks"]]
     passed = sum(row["passed"] for row in rows)
     report = {
         "benchmark": workload["name"],
-        "environment": {"python": platform.python_version(), "mode": "offline-fixture"},
+        "environment": {
+            "python": platform.python_version(),
+            "mode": "agent" if args.agent else "offline-fixture",
+            "model": args.model if args.agent else None,
+        },
         "tasks": len(rows),
         "passed": passed,
         "quality": passed / len(rows) if rows else 0.0,
