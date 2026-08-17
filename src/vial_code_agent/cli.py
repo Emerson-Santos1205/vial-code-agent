@@ -17,6 +17,7 @@ from .errors import (ERR_INVALID_CONFIG, ERR_INVALID_USAGE,
                      VialRuntimeError, wrap)
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
+from .risk import RiskPolicy, classify_task
 from .router import (
     ConsensusResult, ModelRouter, RouteDecision, RoutingGraph, VialRouter,
 )
@@ -281,7 +282,9 @@ def _run_fix_consensus(root: Path, config: AgentConfig, args, task: str,
         registry, default_model=model, executable=executable,
         auto_approve=auto_approve, agent=agent)
     try:
-        result, _ = graph.dispatch_consensus(task, root, models=pool)
+        result, _ = graph.dispatch_consensus(
+            task, root, models=pool, require_evidence=True,
+            test_command=args.test_command, test_timeout=args.test_timeout)
     except (OSError, RuntimeError):
         return None
     return result
@@ -298,6 +301,13 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         model = config_model
     executable = config.opencode_executable if args.opencode_executable == "opencode" else args.opencode_executable
     auto_approve = args.auto or config.auto_approve
+    risk = classify_task(args.fix)
+    if auto_approve and not RiskPolicy(config.auto_approve_max_risk).allows_auto(risk):
+        print(
+            f"error: --auto is blocked for {risk}-risk task; "
+            f"maximum configured risk is {config.auto_approve_max_risk}",
+            file=sys.stderr)
+        return 2
     agent = _resolve_agent(args.agent, config.opencode_agent)
     max_chars = args.max_context_chars if args.max_context_chars != 6_000 else config.max_context_chars
     test_timeout = args.test_timeout if args.test_timeout != 120 else config.test_timeout
@@ -339,9 +349,14 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         route=generated.route,
         reused=generated.reused,
         quality=generated.quality,
+        attempts=generated.attempts,
+        failure_type=generated.failure_type,
+        patch_detected=generated.patch is not None,
     )
     if generated.patch is None:
-        print("error: no patch generated", file=sys.stderr)
+        print(
+            f"error: no patch generated ({generated.failure_type or 'UNKNOWN'}) "
+            f"after {generated.attempts} attempt(s)", file=sys.stderr)
         if generated.response.text:
             print(f"model response:\n{generated.response.text.strip()[:2000]}", file=sys.stderr)
         return 1
@@ -381,11 +396,16 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                         "hint: configure a pool or re-run with --no-consensus "
                         "to authorize as operator", file=sys.stderr)
                     return 1
+                consensus_kwargs = {
+                    "models": list(consensus.responses),
+                    "responses": {ref: response.text
+                                  for ref, response in consensus.responses.items()},
+                }
+                if consensus.evidence:
+                    consensus_kwargs["evidence"] = consensus.evidence
                 runtime.record_consensus(
                     decision.id, consensus.agreed, consensus.agreement_ratio,
-                    models=list(consensus.responses),
-                    responses={ref: response.text
-                               for ref, response in consensus.responses.items()})
+                    **consensus_kwargs)
                 status = "agreed" if consensus.agreed else "disagreed"
                 print(f"consensus: {status} "
                       f"(ratio={consensus.agreement_ratio:.2f}, "

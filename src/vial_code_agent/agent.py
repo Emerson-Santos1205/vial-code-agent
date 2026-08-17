@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import difflib
 import hashlib
+import shutil
+import tempfile
 from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
@@ -22,6 +24,8 @@ class GenerationResult:
     quality: float = 1.0
     reuse_outcome: str = "n/a"
     tokens: int = 0
+    attempts: int = 1
+    failure_type: str = ""
 
 
 def build_prompt(task: str, root: Path, files: list[Path], max_chars: int = 6_000) -> str:
@@ -172,12 +176,34 @@ class CodeAgent:
                 context.consume()
 
         prompt = task
-        response = self.provider.generate(prompt, directory=root, files=files)
+        # Keep the operator workspace read-only from the provider's perspective.
+        with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
+            staging = Path(directory)
+            staged_files: list[Path] = []
+            for path in files:
+                relative = path.relative_to(root)
+                target = staging / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if path.is_file():
+                    shutil.copy2(path, target)
+                    staged_files.append(target)
+            response = self.provider.generate(
+                prompt, directory=staging, files=staged_files)
+            patch = extract_diff(response.text)
+            attempts = 1
+            if patch is None:
+                # One bounded contract-recovery attempt. It uses the same
+                # staging and provider path; it never authorizes a fallback.
+                attempts = 2
+                response = self.provider.generate(
+                    f"{task}\n\nReturn ONLY a unified diff. Do not explain. "
+                    "The previous response contained no parseable patch.",
+                    directory=staging, files=staged_files)
+                patch = extract_diff(response.text)
         if runtime is not None and task_obj is not None:
             runtime.record_inference(
                 response.input_tokens or 0, response.output_tokens or 0, tier=route)
             runtime.record_validation(1)
-        patch = extract_diff(response.text)
         if patch is not None:
             if runtime is not None and task_obj is not None and ctx is not None:
                 runtime.store_reuse(task_obj, patch, 1.0, ctx)
@@ -185,6 +211,8 @@ class CodeAgent:
                 response=response, patch=patch, context_id=context_id,
                 route=route or "auto", reused=False, reuse_outcome=reuse_outcome,
                 tokens=token_usage,
+                attempts=attempts,
+                failure_type="" if patch else "PATCH_CONTRACT",
                 workspace_changed=self._workspace_changed(before),
             )
         for path, original in before.items():
@@ -205,11 +233,13 @@ class CodeAgent:
             return GenerationResult(
                 response=response, patch="".join(generated), workspace_changed=True,
                 context_id=context_id, route=route or "auto", reuse_outcome=reuse_outcome,
-                tokens=token_usage,
+                tokens=token_usage, attempts=attempts,
+                failure_type="PATCH_CONTRACT",
             )
         return GenerationResult(
             response=response, patch=None, context_id=context_id,
             route=route or "auto", reuse_outcome=reuse_outcome, tokens=token_usage,
+            attempts=attempts, failure_type="PATCH_CONTRACT",
         )
 
     @staticmethod
