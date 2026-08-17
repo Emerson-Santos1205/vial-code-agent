@@ -114,7 +114,7 @@ class OpenCodeProviderTests(unittest.TestCase):
                 "translate to Portuguese",
                 history=[("user", "write a greeting"), ("assistant", "Olá")],
             )
-        prompt = captured["input"]
+        prompt = captured["input"] or captured["command"][-1]
         self.assertIn("write a greeting", prompt)
         self.assertIn("Olá", prompt)
         self.assertTrue(prompt.endswith("user: translate to Portuguese"))
@@ -225,7 +225,7 @@ class OpenCodeProviderTests(unittest.TestCase):
             "vial_code_agent.model.subprocess.Popen", side_effect=_FakePopen
         ):
             list(provider.chat_stream("follow up", history=[("user", "first")]))
-        prompt = captured["input"]
+        prompt = captured["input"] or captured["command"][-1]
         self.assertIn("first", prompt)
         self.assertTrue(prompt.endswith("user: follow up"))
 
