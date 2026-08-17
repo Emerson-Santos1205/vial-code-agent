@@ -448,15 +448,18 @@ class TuiAppTests(unittest.TestCase):
     def test_streaming_updates_stream_widget_and_hides_when_done(self) -> None:
         async def run() -> None:
             from textual.widgets import LoadingIndicator, RichLog, Static
+            import threading
 
             with tempfile.TemporaryDirectory() as directory:
                 controller = _controller(directory)
+                first_chunk = threading.Event()
+                release_stream = threading.Event()
 
                 def fake_stream(message: str, root=None, requested_model="auto", history=None):
-                    for chunk in ("hello ", "world"):
-                        import time
-                        time.sleep(0.2)
-                        yield chunk
+                    first_chunk.set()
+                    yield "hello "
+                    release_stream.wait(2)
+                    yield "world"
 
                 controller.routing.dispatch_stream = fake_stream
                 app = VialTUI(controller)
@@ -466,9 +469,11 @@ class TuiAppTests(unittest.TestCase):
                     prompt = app.query_one("#prompt")
                     prompt.text = "stream this"
                     await pilot.press("enter")
-                    await pilot.pause()
+                    await asyncio.to_thread(first_chunk.wait, 2)
+                    await pilot.pause(0.05)
                     self.assertTrue(app._busy)
                     self.assertTrue(app.query_one("#spinner", LoadingIndicator).display)
+                    release_stream.set()
                     for _ in range(50):
                         if not app._busy:
                             break
