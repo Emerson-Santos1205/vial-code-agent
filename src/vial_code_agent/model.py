@@ -384,6 +384,13 @@ def _as_int(value: object) -> int | None:
 
 
 def extract_diff(text: str) -> str | None:
+    apply_patch = re.search(
+        r"\*\*\* Update File: (.+?)\n(.*?)(?:\n\*\*\* End Patch|$)",
+        text, re.IGNORECASE | re.DOTALL)
+    if apply_patch:
+        path = apply_patch.group(1).strip()
+        body = apply_patch.group(2).strip("\n")
+        return f"--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n{body}\n"
     fenced = re.search(r"```(?:diff|patch)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
     if fenced:
         candidate = fenced.group(1).strip()

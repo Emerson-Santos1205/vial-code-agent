@@ -96,3 +96,21 @@ class PatchTests(unittest.TestCase):
 """
             PatchApplier(root).apply(patch)
             self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\nnew\n")
+
+    def test_repairs_unambiguous_malformed_context_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("before\nold\nafter\n", encoding="utf-8")
+            malformed = """--- a/value.txt
++++ b/value.txt
+@@ -99,5 +99,5 @@
+ wrong context
+-old
++new
+"""
+            repaired = PatchApplier(root).repair_candidate(malformed)
+            self.assertIsNotNone(repaired)
+            self.assertEqual(source.read_text(encoding="utf-8"), "before\nold\nafter\n")
+            PatchApplier(root).apply(repaired or "")
+            self.assertEqual(source.read_text(encoding="utf-8"), "before\nnew\nafter\n")

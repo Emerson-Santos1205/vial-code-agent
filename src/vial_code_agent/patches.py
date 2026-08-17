@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import subprocess
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -85,6 +86,47 @@ class PatchApplier:
                 names = ", ".join(sorted(unexpected))
                 raise PatchError(f"patch changes files outside selected context: {names}")
         self._check(patch)
+
+    def repair_candidate(self, patch: str) -> str | None:
+        """Repair one unambiguous malformed replacement in a staging tree.
+
+        This never writes files. It derives a new diff only when one existing
+        file has one unique removed block, so ambiguous model output remains a
+        hard failure.
+        """
+        paths = self.paths(patch)
+        if len(paths) != 1:
+            return None
+        removed = [line[1:] for line in patch.splitlines()
+                   if line.startswith("-") and not line.startswith("---")]
+        added = [line[1:] for line in patch.splitlines()
+                 if line.startswith("+") and not line.startswith("+++")]
+        if not added:
+            return None
+        relative = next(iter(paths))
+        target = self.root / relative
+        if not target.is_file() or target.is_symlink():
+            return None
+        original = target.read_text(encoding="utf-8").splitlines(keepends=True)
+        new = [line if line.endswith("\n") else line + "\n" for line in added]
+        if removed:
+            old = [line if line.endswith("\n") else line + "\n" for line in removed]
+            matches = [index for index in range(len(original) - len(old) + 1)
+                       if original[index:index + len(old)] == old]
+        else:
+            code_lines = [line for line in new if "=" in line and
+                          not line.lstrip().startswith("#")]
+            if len(code_lines) != 1:
+                return None
+            prefix = code_lines[0].split("=", 1)[0].rstrip()
+            matches = [index for index, line in enumerate(original)
+                       if line.split("=", 1)[0].rstrip() == prefix]
+            old = [original[matches[0]]] if len(matches) == 1 else []
+        if len(matches) != 1:
+            return None
+        updated = original[:matches[0]] + new + original[matches[0] + len(old):]
+        return "".join(difflib.unified_diff(
+            original, updated, fromfile=f"a/{relative}", tofile=f"b/{relative}"))
 
     def _run(self, patch: str, reverse: bool = False) -> None:
         command, patch = self._check(patch, reverse)
