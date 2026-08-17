@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
 from .model import ModelResponse, OpenCodeProvider, extract_diff
+from .patches import PatchApplier, PatchError
 from .core import VialCoreReference
 from .router import deterministic_solvable, resolve_deterministic
 
@@ -191,15 +192,29 @@ class CodeAgent:
                 prompt, directory=staging, files=staged_files)
             patch = extract_diff(response.text)
             attempts = 1
+            validation_error = ""
+            if patch is not None:
+                try:
+                    PatchApplier(staging).validate(patch)
+                except PatchError as error:
+                    patch = None
+                    validation_error = str(error)
             if patch is None:
                 # One bounded contract-recovery attempt. It uses the same
                 # staging and provider path; it never authorizes a fallback.
                 attempts = 2
                 response = self.provider.generate(
                     f"{task}\n\nReturn ONLY a unified diff. Do not explain. "
-                    "The previous response contained no parseable patch.",
+                    f"The previous candidate was rejected: {validation_error or 'no parseable patch'}. "
+                    "Use the exact current file context and return an applicable diff.",
                     directory=staging, files=staged_files)
                 patch = extract_diff(response.text)
+                if patch is not None:
+                    try:
+                        PatchApplier(staging).validate(patch)
+                    except PatchError as error:
+                        patch = None
+                        validation_error = str(error)
         if runtime is not None and task_obj is not None:
             runtime.record_inference(
                 response.input_tokens or 0, response.output_tokens or 0, tier=route)

@@ -82,3 +82,17 @@ class PatchTests(unittest.TestCase):
 """
             PatchApplier(root).apply(patch)
             self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\n\nnew\nkeep\n")
+
+    def test_recounts_inconsistent_hunk_header_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "value.txt").write_text("old\nkeep\n", encoding="utf-8")
+            patch = """--- a/value.txt
++++ b/value.txt
+@@ -1,8 +1,8 @@
+ old
+-keep
++new
+"""
+            PatchApplier(root).apply(patch)
+            self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\nnew\n")

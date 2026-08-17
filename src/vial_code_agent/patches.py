@@ -63,6 +63,7 @@ class PatchApplier:
                         raise PatchError(f"patch path traverses symlink: {path}")
         command = [
             "git", "apply", "--ignore-space-change", "--ignore-whitespace",
+            "--recount",
             "--whitespace=nowarn" if reverse else "--whitespace=error",
         ]
         if reverse:
