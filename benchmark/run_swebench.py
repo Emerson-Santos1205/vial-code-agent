@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,7 +29,36 @@ def changed_paths(patch: str) -> list[str]:
     return sorted(set(paths))
 
 
-def run_instance(instance: dict, model: str) -> dict:
+def _as_tests(value: object) -> list[str]:
+    if isinstance(value, str):
+        items = [line.strip() for line in value.splitlines() if line.strip()]
+    else:
+        items = [str(item) for item in value or []]
+    normalized = []
+    for item in items:
+        if " (" in item and item.endswith(")"):
+            method, owner = item[:-1].split(" (", 1)
+            normalized.append(f"{owner}.{method}")
+        else:
+            normalized.append(item)
+    return normalized
+
+
+def _apply_fixture(root: Path, patch: str) -> tuple[bool, str]:
+    check = subprocess.run(
+        ["git", "apply", "--check", "-"], cwd=root, input=patch,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False)
+    if check.returncode:
+        return False, check.stderr[-2000:]
+    applied = subprocess.run(
+        ["git", "apply", "-"], cwd=root, input=patch,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False)
+    return applied.returncode == 0, applied.stderr[-2000:]
+
+
+def run_instance(instance: dict, model: str, run_tests: bool = False) -> dict:
     with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
         root = Path(directory) / "repo"
         clone = subprocess.run(
@@ -45,10 +75,16 @@ def run_instance(instance: dict, model: str) -> dict:
         if checkout.returncode:
             return {"id": instance["id"], "passed": False,
                     "stage": "checkout", "detail": checkout.stderr[-1000:]}
-        files = [root / path for path in changed_paths(instance["patch"])
-                 if (root / path).is_file()]
+        solution_files = [root / path for path in changed_paths(instance["patch"])
+                          if (root / path).is_file()]
+        test_files = [root / path for path in changed_paths(instance.get("test_patch", ""))
+                      if (root / path).is_file()]
+        files = list(dict.fromkeys(solution_files + test_files))
         if not files:
             files = list(root.rglob("*.py"))[:20]
+        allowed_paths = {path.relative_to(root).as_posix() for path in solution_files}
+        if not allowed_paths:
+            allowed_paths = {path.relative_to(root).as_posix() for path in files}
         provider = DockerOpenCodeProvider(model)
         runtime = VialRuntime(
             VialCoreReference(BASE / "vendor" / "vial-core"),
@@ -62,15 +98,84 @@ def run_instance(instance: dict, model: str) -> dict:
                     "response": generated.response.text[:2000]}
         try:
             PatchApplier(root).validate(generated.patch,
-                                        {path.relative_to(root).as_posix() for path in files})
-            return {"id": instance["id"], "passed": True,
-                    "stage": "patch_validated", "attempts": generated.attempts,
-                    "tokens": generated.tokens}
+                                        allowed_paths)
         except PatchError as error:
             return {"id": instance["id"], "passed": False,
                     "stage": "patch_validation", "detail": str(error),
                     "response": generated.response.text[:2000],
                     "patch": generated.patch[:3000]}
+        if not run_tests:
+            return {"id": instance["id"], "passed": True,
+                    "stage": "patch_validated", "attempts": generated.attempts,
+                    "tokens": generated.tokens}
+        try:
+            PatchApplier(root).apply(generated.patch)
+        except PatchError as error:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "patch_apply", "detail": str(error)}
+        if (root / "astropy").is_dir():
+            legacy_build = subprocess.run(
+                 [sys.executable, "-m", "pip", "install", "setuptools<60",
+                 "extension-helpers<1.0", "wheel",
+                 "--disable-pip-version-check"],
+                cwd=root, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=900, check=False)
+            if legacy_build.returncode:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "test_environment",
+                        "detail": (legacy_build.stdout + legacy_build.stderr)[-4000:]}
+        fixture_ok, fixture_error = _apply_fixture(root, instance.get("test_patch", ""))
+        if not fixture_ok:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "test_fixture", "detail": fixture_error}
+        install = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps",
+             "--no-build-isolation"],
+            cwd=root, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=900, check=False)
+        test_env = os.environ.copy()
+        if install.returncode:
+            # Some historical projects require native compilers unavailable on
+            # the host. Source-tree tests can still run without installing the
+            # package, provided the checkout is first on PYTHONPATH.
+            test_env["PYTHONPATH"] = str(root) + os.pathsep + test_env.get("PYTHONPATH", "")
+            test_env["PYTHONWARNINGS"] = "ignore"
+        requirement_files = [
+            root / "tests" / "requirements" / "py3.txt",
+            root / "requirements" / "test.txt",
+        ]
+        for requirements in requirement_files:
+            if not requirements.is_file():
+                continue
+            dependencies = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements),
+                 "--disable-pip-version-check"],
+            cwd=root, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=900, check=False, env=test_env)
+            if dependencies.returncode:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "test_environment",
+                        "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
+        tests = _as_tests(instance.get("fail_to_pass"))
+        tests += _as_tests(instance.get("pass_to_pass"))
+        tests = [test for test in tests if "." in test or "::" in test or "/" in test]
+        if not tests:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "test_selection", "detail": "no benchmark tests"}
+        if (root / "tests" / "runtests.py").is_file():
+            tests = [test for test in tests
+                     if test.rsplit(".", 1)[-1].startswith("test")]
+            test_command = [sys.executable, "tests/runtests.py", *tests]
+        else:
+            test_command = [sys.executable, "-m", "pytest", "-q", *tests]
+        test_run = subprocess.run(
+            test_command, cwd=root,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=900, check=False, env=test_env)
+        return {"id": instance["id"], "passed": test_run.returncode == 0,
+                "stage": "tests", "attempts": generated.attempts,
+                "tokens": generated.tokens,
+                "detail": (test_run.stdout + test_run.stderr)[-4000:]}
 
 
 def main() -> int:
@@ -79,10 +184,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--model", default="openai/gpt-5.6-luna")
+    parser.add_argument("--run-tests", action="store_true")
     args = parser.parse_args()
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     selected = workload["tasks"][args.offset:args.offset + args.limit]
-    results = [run_instance(instance, args.model) for instance in selected]
+    results = [run_instance(instance, args.model, args.run_tests) for instance in selected]
     report = {"benchmark": workload.get("name", "swebench"),
               "tasks": len(results), "passed": sum(row["passed"] for row in results),
               "results": results}
