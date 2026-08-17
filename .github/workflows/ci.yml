@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e . pytest pytest-cov
+          python -m pip install -e vendor/vial-core
       - name: Test and coverage gate
         run: python -m pytest -q --cov=vial_code_agent --cov-report=term-missing --cov-fail-under=70
       - name: Compile sources
