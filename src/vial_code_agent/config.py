@@ -18,6 +18,7 @@ class AgentConfig:
     opencode_executable: str = "opencode"
     opencode_agent: str = "build"
     auto_approve: bool = False
+    auto_approve_max_risk: str = "medium"
     telemetry_file: str = ".vial-cache/events.jsonl"
     org_id: str = ORG_ID
     authority: str = AUTHORITY
@@ -53,6 +54,9 @@ def load_config(root: Path) -> AgentConfig:
         opencode_agent=os.environ.get("VIAL_OPENCODE_AGENT", str(values.get("opencode_agent", "build"))),
         auto_approve=_as_bool(
             os.environ.get("VIAL_AUTO_APPROVE"), values.get("auto_approve", False)),
+        auto_approve_max_risk=os.environ.get(
+            "VIAL_AUTO_APPROVE_MAX_RISK",
+            str(values.get("auto_approve_max_risk", "medium"))),
         telemetry_file=os.environ.get(
             "VIAL_TELEMETRY_FILE", str(values.get("telemetry_file", ".vial-cache/events.jsonl"))
         ),

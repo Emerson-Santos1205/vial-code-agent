@@ -39,6 +39,7 @@ from .core import VialCoreReference
 from .errors import VialRuntimeError
 from .events import EventStore, VialEvent
 from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
+from .persistence import TransactionalJsonRepository
 
 
 class PersistenceError(RuntimeError):
@@ -175,7 +176,8 @@ class VialRuntime:
         self.registry = self._resource.ResourceRegistry(self.org_id)
 
         # --- persistence boundary (reference deployments) ---
-        self.repository = self._persistence.JsonRepository(self.state_root)
+        self.repository = TransactionalJsonRepository(
+            self.state_root, self._persistence.JsonRepository(self.state_root))
 
         # --- coordinator: intent log + recovery (RFC-009 §2.3) ---
         self.coordinator = self._coordinator.StateCoordinator(self.organization)
@@ -1032,14 +1034,15 @@ class VialRuntime:
         if not self.persist_state:
             return
         try:
-            self.repository.save("organization.json", self._organization_to_dict())
-            self.repository.save("decisions.json", {
+            records = {
+                "organization.json": self._organization_to_dict(),
+                "decisions.json": {
                 did: self._decision_to_dict(d)
-                for did, d in self.decision_engine.decisions.items()})
-            self.repository.save("intents.json", {
+                for did, d in self.decision_engine.decisions.items()},
+                "intents.json": {
                 op_id: self._intent_to_dict(intent)
-                for op_id, intent in self.coordinator.intents.items()})
-            self.repository.save("reuse.json", {
+                for op_id, intent in self.coordinator.intents.items()},
+                "reuse.json": {
                 "_stats": {
                     "reuse_hits": self.reuse_engine.reuse_hits,
                     "recomputes": self.reuse_engine.recomputes,
@@ -1048,22 +1051,24 @@ class VialRuntime:
                 "cache": {
                     sig: self._reuse_to_dict(entry)
                     for sig, entry in self.reuse_engine.cache.items()},
-            })
-            self.repository.save("audit.json", [
-                record.__dict__ for record in self.patch_tool.audit_records])
-            self.repository.save("approvals.json", [
-                record.__dict__ for record in self.approvals.values()])
-            self.repository.save("consensus.json", [
-                record.__dict__ for record in self.consensus_records.values()])
-            self.repository.save("cost.json", self._costs.to_dict())
-            self.repository.save("executions.json", self.executions)
-            self.repository.save("events.json", self.events.to_list())
-            self.repository.save("contexts.json", {
+                },
+                "audit.json": [record.__dict__ for record in self.patch_tool.audit_records],
+                "approvals.json": [record.__dict__ for record in self.approvals.values()],
+                "consensus.json": [record.__dict__ for record in self.consensus_records.values()],
+                "cost.json": self._costs.to_dict(),
+                "executions.json": self.executions,
+                "events.json": self.events.to_list(),
+                "contexts.json": {
                 context_id: self._context_to_dict(context)
-                for context_id, context in self.contexts.items()})
+                for context_id, context in self.contexts.items()},
+            }
             if self.project.snapshot is not None:
-                self.repository.save(
-                    "project.json", self.project.snapshot.to_dict())
+                records["project.json"] = self.project.snapshot.to_dict()
+            self.repository.save_snapshot(records)
+            # Compatibility mirrors are written only after the authoritative
+            # snapshot is published; recovery always prefers the manifest.
+            for name, value in records.items():
+                self.repository.save(name, value)
         except Exception as exc:
             raise PersistenceError(
                 f"failed to persist VIAL runtime state in {self.state_root}") from exc
@@ -1072,8 +1077,18 @@ class VialRuntime:
         if not self.persist_state:
             return
         try:
-            if (self.state_root / "organization.json").is_file():
-                data = self.repository.load("organization.json")
+            snapshot = self.repository.load_snapshot()
+
+            def has_record(name: str) -> bool:
+                return (name in snapshot if snapshot is not None else
+                        (self.state_root / name).is_file())
+
+            def load_record(name: str) -> Any:
+                return (snapshot[name] if snapshot is not None
+                        else self.repository.load(name))
+
+            if has_record("organization.json"):
+                data = load_record("organization.json")
                 self.organization.authority = data["authority"]
                 self.organization.config_version = data["config_version"]
                 self.organization.state_version = data["state_version"]
@@ -1083,17 +1098,17 @@ class VialRuntime:
                     for key, field in data["fields"].items()}
                 self.organization.transitions = [
                     self._transition_from_dict(t) for t in data["transitions"]]
-            if (self.state_root / "decisions.json").is_file():
-                data = self.repository.load("decisions.json")
+            if has_record("decisions.json"):
+                data = load_record("decisions.json")
                 self.decision_engine.decisions = {
                     did: self._decision_from_dict(d) for did, d in data.items()}
-            if (self.state_root / "intents.json").is_file():
-                data = self.repository.load("intents.json")
+            if has_record("intents.json"):
+                data = load_record("intents.json")
                 self.coordinator.intents = {
                     op_id: self._coordinator.Intent(**intent)
                     for op_id, intent in data.items()}
-            if (self.state_root / "reuse.json").is_file():
-                data = self.repository.load("reuse.json")
+            if has_record("reuse.json"):
+                data = load_record("reuse.json")
                 stats = data.get("_stats", {})
                 self.reuse_engine.reuse_hits = stats.get("reuse_hits", 0)
                 self.reuse_engine.recomputes = stats.get("recomputes", 0)
@@ -1101,22 +1116,22 @@ class VialRuntime:
                 self.reuse_engine.cache = {
                     sig: self._reuse.CachedResult(**entry)
                     for sig, entry in data.get("cache", data).items()}
-            if (self.state_root / "audit.json").is_file():
-                data = self.repository.load("audit.json")
+            if has_record("audit.json"):
+                data = load_record("audit.json")
                 self.patch_tool.audit_records = [
                     self._tool.AuditRecord(**record) for record in data]
-            if (self.state_root / "approvals.json").is_file():
-                data = self.repository.load("approvals.json")
+            if has_record("approvals.json"):
+                data = load_record("approvals.json")
                 self.approvals = {
                     record["decision_id"]: ApprovalRecord(**record)
                     for record in data}
-            if (self.state_root / "consensus.json").is_file():
-                data = self.repository.load("consensus.json")
+            if has_record("consensus.json"):
+                data = load_record("consensus.json")
                 self.consensus_records = {
                     record["decision_id"]: ConsensusRecord(**record)
                     for record in data}
-            if (self.state_root / "cost.json").is_file():
-                data = self.repository.load("cost.json")
+            if has_record("cost.json"):
+                data = load_record("cost.json")
                 self._costs = self._cost.CostComponents(
                     tokens=data.get("tokens", 0.0),
                     inference=data.get("inference", 0.0),
@@ -1125,21 +1140,21 @@ class VialRuntime:
                     construction=data.get("construction", 0.0),
                     validation=data.get("validation", 0.0),
                 )
-            if (self.state_root / "executions.json").is_file():
-                self.executions = list(self.repository.load("executions.json"))
-            if (self.state_root / "events.json").is_file():
+            if has_record("executions.json"):
+                self.executions = list(load_record("executions.json"))
+            if has_record("events.json"):
                 self.events = EventStore.from_list(
-                    self.repository.load("events.json"))
+                    load_record("events.json"))
                 self.events.configure({self.actor, self.authority})
-            if (self.state_root / "project.json").is_file():
+            if has_record("project.json"):
                 self.project.restore(ProjectSnapshot.from_dict(
-                    self.repository.load("project.json")))
+                    load_record("project.json")))
                 self.project.configure({self.actor, self.authority})
-            if (self.state_root / "contexts.json").is_file():
+            if has_record("contexts.json"):
                 self.contexts = {
                     context_id: self._context_from_dict(data)
                     for context_id, data
-                    in self.repository.load("contexts.json").items()}
+                    in load_record("contexts.json").items()}
         except Exception as exc:
             raise PersistenceError(
                 f"failed to restore VIAL runtime state from {self.state_root}") from exc

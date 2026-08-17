@@ -49,6 +49,25 @@ class PatchTests(unittest.TestCase):
             applier.reverse(patch)
             self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\n")
 
+    def test_rejects_symlink_to_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root.parent / f"{root.name}-outside.txt"
+            outside.write_text("old\n", encoding="utf-8")
+            link = root / "linked.txt"
+            try:
+                link.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks unavailable")
+            patch = """--- a/linked.txt
++++ b/linked.txt
+@@ -1 +1 @@
+-old
++new
+"""
+            with self.assertRaises(PatchError):
+                PatchApplier(root).apply(patch)
+
     def test_accepts_missing_prefix_on_blank_context_line(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

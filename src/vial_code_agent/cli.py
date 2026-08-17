@@ -17,6 +17,7 @@ from .errors import (ERR_INVALID_CONFIG, ERR_INVALID_USAGE,
                      VialRuntimeError, wrap)
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
+from .risk import RiskPolicy, classify_task
 from .router import (
     ConsensusResult, ModelRouter, RouteDecision, RoutingGraph, VialRouter,
 )
@@ -300,6 +301,13 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         model = config_model
     executable = config.opencode_executable if args.opencode_executable == "opencode" else args.opencode_executable
     auto_approve = args.auto or config.auto_approve
+    risk = classify_task(args.fix)
+    if auto_approve and not RiskPolicy(config.auto_approve_max_risk).allows_auto(risk):
+        print(
+            f"error: --auto is blocked for {risk}-risk task; "
+            f"maximum configured risk is {config.auto_approve_max_risk}",
+            file=sys.stderr)
+        return 2
     agent = _resolve_agent(args.agent, config.opencode_agent)
     max_chars = args.max_context_chars if args.max_context_chars != 6_000 else config.max_context_chars
     test_timeout = args.test_timeout if args.test_timeout != 120 else config.test_timeout
