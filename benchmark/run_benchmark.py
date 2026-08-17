@@ -124,6 +124,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         "input_tokens": input_tokens or 0,
         "output_tokens": output_tokens or 0,
         "returncode": response.returncode if response else 0,
+        "attempts": generated.attempts if adapter in {"opencode", "vial"} else 1,
+        "failure_type": generated.failure_type if adapter in {"opencode", "vial"} else "",
         "detail": detail,
         "elapsed_seconds": round(time.monotonic() - started, 4),
     }
@@ -168,6 +170,8 @@ def main() -> int:
                               len(adapter_rows) if adapter_rows else 0.0),
             "human_intervention_rate": (sum(row["human_intervention"] for row in adapter_rows) /
                                          len(adapter_rows) if adapter_rows else 0.0),
+            "retry_rate": (sum(row["attempts"] > 1 for row in adapter_rows) /
+                           len(adapter_rows) if adapter_rows else 0.0),
             "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
                                 for row in adapter_rows),
         }
@@ -192,6 +196,11 @@ def main() -> int:
                               len(rows) if rows else 0.0),
             "human_intervention_rate": (sum(row["human_intervention"] for row in rows) /
                                          len(rows) if rows else 0.0),
+            "retry_rate": (sum(row["attempts"] > 1 for row in rows) /
+                           len(rows) if rows else 0.0),
+            "tokens_per_success": (sum(row["input_tokens"] + row["output_tokens"]
+                                       for row in rows if row["passed"]) /
+                                   passed if passed else 0.0),
             "total_tokens": sum(row["input_tokens"] + row["output_tokens"]
                                 for row in rows),
         },

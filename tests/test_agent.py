@@ -31,6 +31,22 @@ class AgentTests(unittest.TestCase):
             result = CodeAgent(provider).generate("change it", root, [source])
             self.assertIsNotNone(result.patch)
 
+    def test_patch_contract_retries_once_with_strict_instruction(self) -> None:
+        provider = Mock()
+        diff = "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n"
+        provider.generate.side_effect = [
+            ModelResponse("Here is an explanation", 0),
+            ModelResponse(diff, 0),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate("change it", root, [source])
+            self.assertEqual(result.attempts, 2)
+            self.assertIsNotNone(result.patch)
+            self.assertEqual(provider.generate.call_count, 2)
+
     def test_deterministic_first_without_runtime_never_calls_model(self) -> None:
         provider = Mock()
         with tempfile.TemporaryDirectory() as directory:

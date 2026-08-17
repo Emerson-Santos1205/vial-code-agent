@@ -341,9 +341,14 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         route=generated.route,
         reused=generated.reused,
         quality=generated.quality,
+        attempts=generated.attempts,
+        failure_type=generated.failure_type,
+        patch_detected=generated.patch is not None,
     )
     if generated.patch is None:
-        print("error: no patch generated", file=sys.stderr)
+        print(
+            f"error: no patch generated ({generated.failure_type or 'UNKNOWN'}) "
+            f"after {generated.attempts} attempt(s)", file=sys.stderr)
         if generated.response.text:
             print(f"model response:\n{generated.response.text.strip()[:2000]}", file=sys.stderr)
         return 1
