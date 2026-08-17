@@ -384,11 +384,12 @@ def _as_int(value: object) -> int | None:
 
 
 def extract_diff(text: str) -> str | None:
-    git_start = text.find("diff --git ")
-    if git_start >= 0:
-        text = text[git_start:]
     fenced = re.search(r"```(?:diff|patch)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
-    candidate = text.strip() if git_start >= 0 else (fenced.group(1).strip() if fenced else text.strip())
+    if fenced:
+        candidate = fenced.group(1).strip()
+    else:
+        git_start = text.find("diff --git ")
+        candidate = text[git_start:].strip() if git_start >= 0 else text.strip()
     if not candidate.startswith(("diff --git ", "--- ")):
         match = re.search(r"(?:^|\n)(diff --git |--- )", candidate)
         if match:
