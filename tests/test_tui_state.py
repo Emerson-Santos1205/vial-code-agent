@@ -1,6 +1,6 @@
 import unittest
 
-from vial_code_agent.tui_state import TUIState
+from vial_code_agent.tui_state import PipelineEvent, TUIState
 
 
 class TUIStateTests(unittest.TestCase):
@@ -10,8 +10,17 @@ class TUIStateTests(unittest.TestCase):
         state.advance("CONSENSUS")
         stages = state.pipeline()
         self.assertEqual(stages[0], ("TASK", "done"))
-        self.assertEqual(stages[4], ("CONSENSUS", "running"))
-        self.assertEqual(stages[5], ("AUTHORIZATION", "pending"))
+        self.assertEqual(stages[2], ("CONSENSUS", "running"))
+        self.assertEqual(stages[3], ("EVIDENCE", "pending"))
+
+    def test_observation_tracks_completion_and_failure(self) -> None:
+        state = TUIState()
+        state.start("apply fix")
+        state.observe(PipelineEvent("AGENT", "completed", "patch proposed"))
+        state.observe(PipelineEvent("AUTHORIZATION", "blocked", "approval required"))
+        self.assertEqual(state.pipeline()[1], ("AGENT", "done"))
+        self.assertEqual(state.pipeline()[4], ("AUTHORIZATION", "failed"))
+        self.assertEqual(state.status, "FAILED")
 
     def test_failure_state_is_visible(self) -> None:
         state = TUIState()
