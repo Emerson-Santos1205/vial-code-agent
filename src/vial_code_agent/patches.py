@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import subprocess
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -63,6 +64,7 @@ class PatchApplier:
                         raise PatchError(f"patch path traverses symlink: {path}")
         command = [
             "git", "apply", "--ignore-space-change", "--ignore-whitespace",
+            "--recount",
             "--whitespace=nowarn" if reverse else "--whitespace=error",
         ]
         if reverse:
@@ -84,6 +86,74 @@ class PatchApplier:
                 names = ", ".join(sorted(unexpected))
                 raise PatchError(f"patch changes files outside selected context: {names}")
         self._check(patch)
+
+    def repair_candidate(self, patch: str) -> str | None:
+        """Repair one unambiguous malformed replacement in a staging tree.
+
+        This never writes files. It derives a new diff only when one existing
+        file has one unique removed block, so ambiguous model output remains a
+        hard failure.
+        """
+        paths = self.paths(patch)
+        if len(paths) != 1:
+            return None
+        removed = [line[1:] for line in patch.splitlines()
+                   if line.startswith("-") and not line.startswith("---")]
+        added = [line[1:] for line in patch.splitlines()
+                 if line.startswith("+") and not line.startswith("+++")]
+        if not added:
+            return None
+        relative = next(iter(paths))
+        target = self.root / relative
+        if not target.is_file() or target.is_symlink():
+            return None
+        original = target.read_text(encoding="utf-8").splitlines(keepends=True)
+        new = [line if line.endswith("\n") else line + "\n" for line in added]
+        if removed:
+            old = [line if line.endswith("\n") else line + "\n" for line in removed]
+            matches = [index for index in range(len(original) - len(old) + 1)
+                       if original[index:index + len(old)] == old]
+        else:
+            code_lines = [line for line in new if "=" in line and
+                          not line.lstrip().startswith("#")]
+            if len(code_lines) != 1:
+                return None
+            prefix = code_lines[0].split("=", 1)[0].rstrip()
+            matches = [index for index, line in enumerate(original)
+                       if line.split("=", 1)[0].rstrip() == prefix]
+            old = [original[matches[0]]] if len(matches) == 1 else []
+        if len(matches) != 1:
+            return self._repair_hunks(patch, relative, original)
+        updated = original[:matches[0]] + new + original[matches[0] + len(old):]
+        return "".join(difflib.unified_diff(
+            original, updated, fromfile=f"a/{relative}", tofile=f"b/{relative}"))
+
+    def _repair_hunks(self, patch: str, relative: str,
+                      original: list[str]) -> str | None:
+        """Rebuild uniquely locatable hunks while ignoring stale line numbers."""
+        hunks: list[list[str]] = []
+        current: list[str] | None = None
+        for line in self._normalize(patch).splitlines():
+            if line.startswith("@@"):
+                current = []
+                hunks.append(current)
+            elif current is not None and line[:1] in (" ", "+", "-"):
+                current.append(line)
+        if not hunks:
+            return None
+
+        updated = list(original)
+        for hunk in hunks:
+            old_block = [line[1:] + "\n" for line in hunk if line.startswith((" ", "-"))]
+            new_block = [line[1:] + "\n" for line in hunk if line.startswith((" ", "+"))]
+            matches = [index for index in range(len(updated) - len(old_block) + 1)
+                       if updated[index:index + len(old_block)] == old_block]
+            if len(matches) != 1:
+                return None
+            index = matches[0]
+            updated[index:index + len(old_block)] = new_block
+        return "".join(difflib.unified_diff(
+            original, updated, fromfile=f"a/{relative}", tofile=f"b/{relative}"))
 
     def _run(self, patch: str, reverse: bool = False) -> None:
         command, patch = self._check(patch, reverse)

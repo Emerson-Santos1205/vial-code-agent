@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
 from .model import ModelResponse, OpenCodeProvider, extract_diff
+from .patches import PatchApplier, PatchError
 from .core import VialCoreReference
 from .router import deterministic_solvable, resolve_deterministic
 
@@ -175,7 +176,12 @@ class CodeAgent:
                 context_id = context.context_id
                 context.consume()
 
-        prompt = task
+        prompt = (
+            f"{task}\n\n"
+            "Read the exact contents of the provided files before deciding the fix. "
+            "Do not guess line numbers or code. Do not edit files directly. "
+            "Return one applicable unified diff with exact removed and added lines."
+        )
         # Keep the operator workspace read-only from the provider's perspective.
         with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
             staging = Path(directory)
@@ -191,15 +197,79 @@ class CodeAgent:
                 prompt, directory=staging, files=staged_files)
             patch = extract_diff(response.text)
             attempts = 1
+            validation_error = ""
+            if patch is not None:
+                patch = self._normalize_staged_paths(patch, staging, staged_files)
+                if patch is None:
+                    validation_error = "candidate path does not uniquely match staged files"
+                else:
+                    try:
+                        PatchApplier(staging).validate(patch)
+                    except PatchError as error:
+                        validation_error = str(error)
+                        repaired = PatchApplier(staging).repair_candidate(patch)
+                        if repaired:
+                            try:
+                                PatchApplier(staging).validate(repaired)
+                                patch = repaired
+                            except PatchError:
+                                patch = None
+                        else:
+                            patch = None
             if patch is None:
                 # One bounded contract-recovery attempt. It uses the same
                 # staging and provider path; it never authorizes a fallback.
                 attempts = 2
                 response = self.provider.generate(
                     f"{task}\n\nReturn ONLY a unified diff. Do not explain. "
-                    "The previous response contained no parseable patch.",
+                    f"The previous candidate was rejected: {validation_error or 'no parseable patch'}. "
+                    "Re-open and read the exact current staged file before responding. "
+                    "Use exact removed and added lines and return an applicable diff.",
                     directory=staging, files=staged_files)
                 patch = extract_diff(response.text)
+                if patch is not None:
+                    patch = self._normalize_staged_paths(patch, staging, staged_files)
+                    if patch is not None:
+                        try:
+                            PatchApplier(staging).validate(patch)
+                        except PatchError as error:
+                            validation_error = str(error)
+                            repaired = PatchApplier(staging).repair_candidate(patch)
+                            if repaired:
+                                try:
+                                    PatchApplier(staging).validate(repaired)
+                                    patch = repaired
+                                except PatchError:
+                                    patch = None
+                            else:
+                                patch = None
+                if patch is None:
+                    attempts = 3
+                    response = self.provider.generate(
+                        f"{task}\n\nFINAL PATCH RECOVERY. Return ONLY a valid unified diff "
+                        "starting with --- and +++. Do not include prose, Markdown, "
+                        "comments, or apply_patch markers. The diff must apply to "
+                        "the exact current staged file after re-reading it. "
+                        "Previous validation error: "
+                        f"{validation_error}",
+                        directory=staging, files=staged_files)
+                    patch = extract_diff(response.text)
+                    if patch is not None:
+                        patch = self._normalize_staged_paths(patch, staging, staged_files)
+                        if patch is not None:
+                            try:
+                                PatchApplier(staging).validate(patch)
+                            except PatchError as error:
+                                validation_error = str(error)
+                                repaired = PatchApplier(staging).repair_candidate(patch)
+                                if repaired:
+                                    try:
+                                        PatchApplier(staging).validate(repaired)
+                                        patch = repaired
+                                    except PatchError:
+                                        patch = None
+                                else:
+                                    patch = None
         if runtime is not None and task_obj is not None:
             runtime.record_inference(
                 response.input_tokens or 0, response.output_tokens or 0, tier=route)
@@ -212,7 +282,7 @@ class CodeAgent:
                 route=route or "auto", reused=False, reuse_outcome=reuse_outcome,
                 tokens=token_usage,
                 attempts=attempts,
-                failure_type="" if patch else "PATCH_CONTRACT",
+                failure_type="" if patch else f"PATCH_CONTRACT: {validation_error}",
                 workspace_changed=self._workspace_changed(before),
             )
         for path, original in before.items():
@@ -234,12 +304,12 @@ class CodeAgent:
                 response=response, patch="".join(generated), workspace_changed=True,
                 context_id=context_id, route=route or "auto", reuse_outcome=reuse_outcome,
                 tokens=token_usage, attempts=attempts,
-                failure_type="PATCH_CONTRACT",
+                failure_type=f"PATCH_CONTRACT: {validation_error}",
             )
         return GenerationResult(
             response=response, patch=None, context_id=context_id,
             route=route or "auto", reuse_outcome=reuse_outcome, tokens=token_usage,
-            attempts=attempts, failure_type="PATCH_CONTRACT",
+            attempts=attempts, failure_type=f"PATCH_CONTRACT: {validation_error}",
         )
 
     @staticmethod
@@ -251,3 +321,23 @@ class CodeAgent:
             if path.read_bytes() != original:
                 return True
         return False
+
+    @staticmethod
+    def _normalize_staged_paths(patch: str, staging: Path,
+                                files: list[Path]) -> str | None:
+        """Resolve a uniquely abbreviated model path against staged files."""
+        applier = PatchApplier(staging)
+        replacements: dict[str, str] = {}
+        for path in applier.paths(patch):
+            if (staging / path).is_file():
+                continue
+            matches = [file.relative_to(staging).as_posix() for file in files
+                       if file.relative_to(staging).as_posix().endswith("/" + path)
+                       or file.name == Path(path).name]
+            if len(matches) != 1:
+                return None
+            replacements[path] = matches[0]
+        for old, new in replacements.items():
+            patch = patch.replace(f"a/{old}", f"a/{new}")
+            patch = patch.replace(f"b/{old}", f"b/{new}")
+        return patch

@@ -384,11 +384,19 @@ def _as_int(value: object) -> int | None:
 
 
 def extract_diff(text: str) -> str | None:
-    git_start = text.find("diff --git ")
-    if git_start >= 0:
-        text = text[git_start:]
+    apply_patch = re.search(
+        r"\*\*\* Update File: (.+?)\n(.*?)(?:\n\*\*\* End Patch|$)",
+        text, re.IGNORECASE | re.DOTALL)
+    if apply_patch:
+        path = apply_patch.group(1).strip()
+        body = apply_patch.group(2).strip("\n")
+        return f"--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n{body}\n"
     fenced = re.search(r"```(?:diff|patch)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
-    candidate = text.strip() if git_start >= 0 else (fenced.group(1).strip() if fenced else text.strip())
+    if fenced:
+        candidate = fenced.group(1).strip()
+    else:
+        git_start = text.find("diff --git ")
+        candidate = text[git_start:].strip() if git_start >= 0 else text.strip()
     if not candidate.startswith(("diff --git ", "--- ")):
         match = re.search(r"(?:^|\n)(diff --git |--- )", candidate)
         if match:

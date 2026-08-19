@@ -82,3 +82,54 @@ class PatchTests(unittest.TestCase):
 """
             PatchApplier(root).apply(patch)
             self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\n\nnew\nkeep\n")
+
+    def test_recounts_inconsistent_hunk_header_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "value.txt").write_text("old\nkeep\n", encoding="utf-8")
+            patch = """--- a/value.txt
++++ b/value.txt
+@@ -1,8 +1,8 @@
+ old
+-keep
++new
+"""
+            PatchApplier(root).apply(patch)
+            self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "old\nnew\n")
+
+    def test_repairs_unambiguous_malformed_context_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("before\nold\nafter\n", encoding="utf-8")
+            malformed = """--- a/value.txt
++++ b/value.txt
+@@ -99,5 +99,5 @@
+ wrong context
+-old
++new
+"""
+            repaired = PatchApplier(root).repair_candidate(malformed)
+            self.assertIsNotNone(repaired)
+            self.assertEqual(source.read_text(encoding="utf-8"), "before\nold\nafter\n")
+            PatchApplier(root).apply(repaired or "")
+            self.assertEqual(source.read_text(encoding="utf-8"), "before\nnew\nafter\n")
+
+    def test_repairs_multiple_hunks_with_stale_line_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            malformed = """--- a/value.txt
++++ b/value.txt
+@@ -90,1 +90,1 @@
+-one
++ONE
+@@ -190,1 +190,1 @@
+-four
++FOUR
+"""
+            repaired = PatchApplier(root).repair_candidate(malformed)
+            self.assertIsNotNone(repaired)
+            PatchApplier(root).apply(repaired or "")
+            self.assertEqual(source.read_text(encoding="utf-8"), "ONE\ntwo\nthree\nFOUR\n")

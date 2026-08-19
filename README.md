@@ -23,7 +23,7 @@ python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
 python benchmark/run_benchmark.py --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
 ```
 
-O benchmark padrão executa 50 fixtures isoladas em oito categorias. O modo
+O benchmark padrão executa 100 fixtures isoladas em oito categorias. O modo
 `--agent` (ou `--adapter opencode`) gera o patch através do coding-agent
 configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
 grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
@@ -34,6 +34,40 @@ provider direto, agente convencional e agente composto pelo VIAL Runtime.
 Workloads reais podem ser fornecidos com `--workload caminho/para/workload.json`
 usando a mesma estrutura de `tasks` com `id`, `category`, `prompt`, `initial`,
 `patch` e `tests`.
+
+Para baixar instâncias reais do SWE-bench Lite:
+
+```text
+python benchmark/fetch_swebench.py --split test --offset 0 --length 10 --out benchmark/swebench-lite-real.json
+```
+
+O dataset contém issue, repositório, commit base, patch de referência e listas
+de testes. A execução completa requer clonar cada repositório no commit base e
+instalar suas dependências, por isso não é tratada como fixture local simples.
+
+Validação de testes em sandbox Docker:
+
+```text
+python benchmark/run_sandbox.py --limit 1
+```
+
+O executor usa rede desabilitada, filesystem read-only e apenas `/tmp` gravável.
+
+Imagem do provider OpenCode:
+
+```text
+docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+docker run --rm vial-code-agent-opencode:1.18.18 --version
+```
+
+Credenciais devem ser montadas somente durante a execução, nunca copiadas para
+a imagem:
+
+```text
+docker run --rm --network none \
+  --mount type=bind,src=%USERPROFILE%\.local\share\opencode\auth.json,dst=/root/.local/share/opencode/auth.json,readonly \
+  vial-code-agent-opencode:1.18.18 providers list
+```
 
 Consenso para mutações pode exigir evidência: cada candidato é aplicado em uma
 cópia descartável e validado estaticamente; quando `--test-command` é usado,
