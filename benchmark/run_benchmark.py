@@ -55,6 +55,9 @@ def summarize(rows: list[dict]) -> dict:
     regression = sum(row["regression"] for row in rows) / total if total else 0.0
     intervention = sum(row["human_intervention"] for row in rows) / total if total else 0.0
     rollback = sum(row["rollback"] for row in rows) / total if total else 0.0
+    patch_failures = sum(row["patch_failure"] for row in rows)
+    test_failures = sum(row["failure_stage"] in {"tests", "test_execution"}
+                        for row in rows)
     score = 100 * (0.5 * success + 0.2 * (1 - regression) +
                    0.15 * (1 - intervention) + 0.15 * (1 - rollback))
     return {
@@ -64,6 +67,10 @@ def summarize(rows: list[dict]) -> dict:
         "regression_rate": regression,
         "human_intervention_rate": intervention,
         "rollback_rate": rollback,
+        "patch_failures": patch_failures,
+        "patch_failure_rate": patch_failures / total if total else 0.0,
+        "test_failures": test_failures,
+        "test_failure_rate": test_failures / total if total else 0.0,
         "retry_rate": (sum(row["attempts"] > 1 for row in rows) /
                        total if total else 0.0),
         "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in rows) /
@@ -86,6 +93,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         applied = False
         response = None
         rollback = False
+        generated = None
+        failure_stage = ""
         try:
             if adapter in {"baseline", "opencode", "vial"}:
                 provider = OpenCodeProvider(model, executable=executable, agent="build")
@@ -107,6 +116,7 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
                     patch = generated.patch
                     response = generated.response
                 if patch is None:
+                    failure_stage = "patch_contract"
                     raise PatchError("agent did not return a patch")
             else:
                 patch = task["patch"]
@@ -134,6 +144,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         except (PatchError, RuntimeError, subprocess.TimeoutExpired) as error:
             passed = False
             detail = str(error)
+            if not failure_stage:
+                failure_stage = "test_execution" if applied else "patch_contract"
             if applied:
                 try:
                     PatchApplier(root).reverse(patch)
@@ -148,6 +160,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         "adapter": adapter,
         "passed": passed,
         "regression": applied and not passed,
+        "patch_failure": failure_stage in {"patch", "patch_contract"},
+        "failure_stage": failure_stage,
         "rollback": rollback,
         "human_intervention": not passed,
         "input_tokens": input_tokens or 0,

@@ -79,6 +79,12 @@ class PatchApplier:
         return command, patch
 
     def validate(self, patch: str, allowed_paths: set[str] | None = None) -> None:
+        removed = [line[1:] for line in patch.splitlines()
+                   if line.startswith("-") and not line.startswith("---")]
+        added = [line[1:] for line in patch.splitlines()
+                 if line.startswith("+") and not line.startswith("+++")]
+        if removed == added and removed:
+            raise PatchError("patch is a no-op: added and removed lines are identical")
         if allowed_paths is not None:
             changed = self.paths(patch)
             unexpected = changed - allowed_paths
