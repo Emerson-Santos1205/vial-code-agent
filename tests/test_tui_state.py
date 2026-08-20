@@ -30,3 +30,17 @@ class TUIStateTests(unittest.TestCase):
         state.finish(False, "patch generation failed")
         self.assertEqual(state.status, "FAILED")
         self.assertIn("patch generation failed", state.events)
+        self.assertEqual(state.final_result, "FAILED")
+
+    def test_observability_fields_are_presentation_only(self) -> None:
+        state = TUIState()
+        state.start("benchmark task")
+        state.base_commit = "abc123"
+        state.route = "openai/model"
+        state.observe(PipelineEvent("ENVIRONMENT", "completed", "docker-image"))
+        state.observe(PipelineEvent("PATCH", "completed", "validated"))
+        state.observe(PipelineEvent("RETRY", "running", "1/2"))
+        self.assertEqual(state.base_commit, "abc123")
+        self.assertEqual(state.environment, "docker-image")
+        self.assertEqual(state.patch_validation, "PASSED")
+        self.assertEqual(state.retry, "1/2")

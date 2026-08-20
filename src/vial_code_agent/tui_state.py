@@ -34,6 +34,8 @@ _EVENT_STAGE_ALIASES = {
 class TUIState:
     task_id: str | None = None
     task: str = ""
+    base_commit: str = ""
+    route: str = ""
     stage: str = "IDLE"
     status: str = "READY"
     risk: str = "medium"
@@ -41,23 +43,35 @@ class TUIState:
     consensus_ratio: float | None = None
     authorization: str = "UNKNOWN"
     patch_status: str = "PENDING"
+    patch_validation: str = "PENDING"
+    retry: str = "NONE"
+    environment: str = "UNKNOWN"
     test_status: str = "PENDING"
     latency_seconds: float | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     cost: float | None = None
     failure_type: str = ""
+    failure_class: str = ""
+    final_result: str = "PENDING"
     events: list[str] = field(default_factory=list)
     observations: list[PipelineEvent] = field(default_factory=list)
 
     def start(self, task: str) -> None:
         self.task = task
         self.task_id = None
+        self.base_commit = ""
+        self.route = ""
         self.stage = "TASK"
         self.status = "RUNNING"
         self.patch_status = "PENDING"
+        self.patch_validation = "PENDING"
+        self.retry = "NONE"
+        self.environment = "UNKNOWN"
         self.test_status = "PENDING"
         self.failure_type = ""
+        self.failure_class = ""
+        self.final_result = "PENDING"
         self.events = ["task started"]
         self.observations = [PipelineEvent("TASK", "running", "task started")]
 
@@ -68,6 +82,10 @@ class TUIState:
     def observe(self, observation: PipelineEvent) -> None:
         stage = _EVENT_STAGE_ALIASES.get(observation.stage, observation.stage)
         if stage not in PIPELINE:
+            if stage == "ENVIRONMENT":
+                self.environment = observation.detail or observation.status.upper()
+            elif stage == "RETRY":
+                self.retry = observation.detail or observation.status.upper()
             return
         normalized = PipelineEvent(stage, observation.status,
                                    observation.detail, observation.timestamp)
@@ -78,9 +96,11 @@ class TUIState:
         if observation.status in {"failed", "blocked"}:
             self.status = "FAILED"
             self.failure_type = observation.detail or observation.status.upper()
+            self.failure_class = observation.detail or observation.status.upper()
         elif observation.status == "completed":
             if stage == "PATCH":
                 self.patch_status = "READY"
+                self.patch_validation = "PASSED"
             if stage == "TESTS":
                 self.test_status = "PASSED"
         elif observation.status == "running":
@@ -102,6 +122,7 @@ class TUIState:
 
     def finish(self, passed: bool = True, event: str | None = None) -> None:
         self.status = "DONE" if passed else "FAILED"
+        self.final_result = "PASSED" if passed else "FAILED"
         if event:
             self.events.append(event)
 

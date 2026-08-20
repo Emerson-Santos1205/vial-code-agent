@@ -257,7 +257,8 @@ class VialRuntime:
                 input_schema={
                     "type": "object",
                     "properties": {"patch": {"type": "string"},
-                                   "_applier": {}},
+                                   "_applier": {},
+                                   "reverse": {"type": "boolean"}},
                 },
                 output_schema={"type": "object"},
                 errors=["PatchError"],
@@ -272,7 +273,10 @@ class VialRuntime:
             },
             risk_classification=RISK_MEDIUM,
             side_effect_classification="mutation",
-            invocation=lambda value: value["_applier"].apply(value["patch"]),
+            invocation=lambda value: (
+                value["_applier"].reverse(value["patch"])
+                if value.get("reverse") else
+                value["_applier"].apply(value["patch"])),
         )
         self.tools.register(self.patch_tool)
 
@@ -908,7 +912,8 @@ class VialRuntime:
     # ------------------------------------------------------------------ #
     def apply_patch(self, applier: Any, patch: str, context_id: str = "",
                     operation_id: str | None = None, decision: Any = None,
-                    allowed_paths: set[str] | None = None) -> Any:
+                    allowed_paths: set[str] | None = None,
+                    reverse: bool = False) -> Any:
         """Apply a patch through the full governance pipeline.
 
         Flow: resolve from intent log (idempotency/recovery) -> scope
@@ -916,7 +921,9 @@ class VialRuntime:
         invocation -> atomic commit / abort -> file reconciliation ->
         persistence. Replayed operations are resolved before any mutation.
         """
-        op_id = operation_id or hashlib.sha256(patch.encode("utf-8")).hexdigest()
+        op_id = operation_id or (
+            ("ROLLBACK-" if reverse else "") +
+            hashlib.sha256(patch.encode("utf-8")).hexdigest())
 
         resolved = self.coordinator.resolve(op_id)
         if resolved is not None and resolved.status == self._coordinator.COMMITTED:
@@ -937,9 +944,9 @@ class VialRuntime:
             )
 
         if allowed_paths is not None:
-            applier.validate(patch, allowed_paths)
+            applier.validate(patch, allowed_paths, reverse=reverse)
         else:
-            applier.validate(patch)
+            applier.validate(patch, reverse=reverse)
 
         intent = resolved
         if intent is not None and intent.status == self._coordinator.PENDING:
@@ -965,7 +972,7 @@ class VialRuntime:
 
         tool = self.tools.get(PATCH_TOOL_ID)
         result = tool.invoke(
-            {"patch": patch, "_applier": applier},
+            {"patch": patch, "_applier": applier, "reverse": reverse},
             actor=self.authority,
             organization_id=self.org_id,
             context_id=context_id,

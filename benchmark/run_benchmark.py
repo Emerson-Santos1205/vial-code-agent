@@ -1,4 +1,4 @@
-"""Offline, reproducible benchmark for patch application and test validation."""
+"""Synthetic unit/regression benchmark for patch and test validation."""
 from __future__ import annotations
 
 import argparse
@@ -18,6 +18,33 @@ from vial_code_agent.core import VialCoreReference
 from vial_code_agent.model import OpenCodeProvider, extract_diff
 from vial_code_agent.patches import PatchApplier, PatchError
 from vial_code_agent.vial_runtime import VialRuntime
+
+
+def classify_failure(stage: str, detail: str, applied: bool = False,
+                     passed: bool = False) -> tuple[str, str]:
+    """Return a stable top-level failure class and reason."""
+    if passed or not stage:
+        return "none", "none"
+    text = detail.lower()
+    if stage in {"tests", "test_execution"}:
+        return "tests", "timeout" if "timed out" in text else "fail_to_pass"
+    if stage in {"patch", "patch_contract"}:
+        if "no-op" in text:
+            return "patch", "no_op"
+        if any(marker in text for marker in (
+                "escapes workspace", "outside selected context",
+                "symlink", "git metadata")):
+            return "patch", "path_violation"
+        if "does not apply" in text or "patch failed" in text:
+            return "patch", "context_mismatch"
+        return "patch", "malformed"
+    if stage == "patch_apply":
+        return "patch", "apply_failure"
+    if stage in {"model", "generation"}:
+        return "model", "incomplete_solution"
+    if "timed out" in text or "executable not found" in text:
+        return "environment", "infrastructure"
+    return "environment", "infrastructure"
 
 
 def expand_workload(workload: dict) -> list[dict]:
@@ -51,6 +78,9 @@ def summarize(rows: list[dict]) -> dict:
     """Produce comparable quality, efficiency and recovery measurements."""
     passed = sum(row["passed"] for row in rows)
     total = len(rows)
+    environment_valid = sum(row.get("failure_class") != "environment" for row in rows)
+    agent_success_rate = passed / environment_valid if environment_valid else 0.0
+    end_to_end_success_rate = passed / total if total else 0.0
     success = passed / total if total else 0.0
     regression = sum(row["regression"] for row in rows) / total if total else 0.0
     intervention = sum(row["human_intervention"] for row in rows) / total if total else 0.0
@@ -60,10 +90,18 @@ def summarize(rows: list[dict]) -> dict:
                         for row in rows)
     score = 100 * (0.5 * success + 0.2 * (1 - regression) +
                    0.15 * (1 - intervention) + 0.15 * (1 - rollback))
+    failure_breakdown: dict[str, int] = {}
+    for row in rows:
+        key = f"{row['failure_class']}.{row['failure_subclass']}"
+        failure_breakdown[key] = failure_breakdown.get(key, 0) + 1
     return {
         "tasks": total,
         "passed": passed,
         "success_rate": success,
+        "environment_valid": environment_valid,
+        "environment_valid_rate": environment_valid / total if total else 0.0,
+        "agent_success_rate": agent_success_rate,
+        "end_to_end_success_rate": end_to_end_success_rate,
         "regression_rate": regression,
         "human_intervention_rate": intervention,
         "rollback_rate": rollback,
@@ -71,6 +109,7 @@ def summarize(rows: list[dict]) -> dict:
         "patch_failure_rate": patch_failures / total if total else 0.0,
         "test_failures": test_failures,
         "test_failure_rate": test_failures / total if total else 0.0,
+        "failure_breakdown": failure_breakdown,
         "retry_rate": (sum(row["attempts"] > 1 for row in rows) /
                        total if total else 0.0),
         "mean_latency_seconds": (sum(row["elapsed_seconds"] for row in rows) /
@@ -95,6 +134,7 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         rollback = False
         generated = None
         failure_stage = ""
+        failure_detail = ""
         try:
             if adapter in {"baseline", "opencode", "vial"}:
                 provider = OpenCodeProvider(model, executable=executable, agent="build")
@@ -144,8 +184,12 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         except (PatchError, RuntimeError, subprocess.TimeoutExpired) as error:
             passed = False
             detail = str(error)
+            failure_detail = detail
             if not failure_stage:
-                failure_stage = "test_execution" if applied else "patch_contract"
+                if isinstance(error, (RuntimeError, subprocess.TimeoutExpired)):
+                    failure_stage = "test_execution" if applied else "environment"
+                else:
+                    failure_stage = "patch" if applied else "patch_contract"
             if applied:
                 try:
                     PatchApplier(root).reverse(patch)
@@ -154,6 +198,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
                     rollback = False
     input_tokens = response.input_tokens if response else 0
     output_tokens = response.output_tokens if response else 0
+    failure_class, failure_subclass = classify_failure(
+        failure_stage, failure_detail or detail, applied, passed)
     return {
         "task_id": task["id"],
         "category": task.get("category", "fixture"),
@@ -162,6 +208,8 @@ def run_task(task: dict, adapter: str = "fixture", model: str = "auto",
         "regression": applied and not passed,
         "patch_failure": failure_stage in {"patch", "patch_contract"},
         "failure_stage": failure_stage,
+        "failure_class": failure_class,
+        "failure_subclass": failure_subclass,
         "rollback": rollback,
         "human_intervention": not passed,
         "input_tokens": input_tokens or 0,
@@ -207,6 +255,11 @@ def main() -> int:
         })
     report = {
         "benchmark": workload["name"],
+        "benchmark_type": "unit_regression_synthetic",
+        "benchmark_scope": (
+            "Synthetic fixtures for patch application, rollback, retries and "
+            "test validation; not a SWE-bench or coding-agent quality estimate."
+        ),
         "environment": {
             "python": platform.python_version(),
             "mode": "comparison" if len(selected) > 1 else selected[0],

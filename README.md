@@ -23,13 +23,25 @@ python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
 python benchmark/run_benchmark.py --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
 ```
 
-O benchmark padrão executa 100 fixtures isoladas em oito categorias. O modo
-`--agent` (ou `--adapter opencode`) gera o patch através do coding-agent
+O benchmark padrão é um **Unit / Regression Benchmark** sintético: executa 100
+fixtures isoladas em oito categorias, todas derivadas de transformações pequenas
+e determinísticas. Ele mede aplicação de patch, validação, rollback, retries e
+execução de testes; **não é uma estimativa de qualidade de coding agent e não
+substitui SWE-bench**.
+
+O modo `--agent` (ou `--adapter opencode`) gera o patch através do coding-agent
 configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
 grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
-sucesso, latência, tokens, regressões, rollbacks e intervenção humana.
+sucesso, latência, tokens, regressões, falhas de patch, rollbacks e intervenção
+humana.
 
-`--adapters baseline,opencode,vial` executa a mesma matriz em três caminhos:
+Nos relatórios SWE-bench, o sucesso é decomposto em duas métricas: `agent_success_rate`
+é soluções corretas dividido pelas tarefas ambientalmente válidas, enquanto
+`end_to_end_success_rate` é soluções corretas dividido por todas as tarefas.
+Assim, falhas classificadas como `environment` não são confundidas com falhas do
+agente, mas continuam incluídas na avaliação end-to-end.
+
+`--adapters baseline,opencode,vial` executa a mesma matriz sintética em três caminhos:
 provider direto, agente convencional e agente composto pelo VIAL Runtime.
 Workloads reais podem ser fornecidos com `--workload caminho/para/workload.json`
 usando a mesma estrutura de `tasks` com `id`, `category`, `prompt`, `initial`,
@@ -44,6 +56,16 @@ python benchmark/fetch_swebench.py --split test --offset 0 --length 10 --out ben
 O dataset contém issue, repositório, commit base, patch de referência e listas
 de testes. A execução completa requer clonar cada repositório no commit base e
 instalar suas dependências, por isso não é tratada como fixture local simples.
+No executor SWE-bench, a imagem de testes é escolhida por instância/repositório
+quando `--test-image` não é informado; esse parâmetro existe apenas como
+override experimental para reproduções controladas.
+O contrato de ambiente é resolvido antes do workspace e pode declarar versão
+Python, dependências, comando de testes e metadados. As imagens são famílias
+reutilizáveis por versão, não uma imagem obrigatória por instância.
+O relatório SWE-bench é persistido em `benchmark/results/` e registra repositório,
+commit base, imagem, Python, dependências, timeout, classificação e evidência por
+tarefa. A aplicação do patch do agente é fail-closed: sem consenso independente
+fornecido por `--consensus-file`, a tarefa é bloqueada sem mutar o workspace.
 
 Validação de testes em sandbox Docker:
 
