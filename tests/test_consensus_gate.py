@@ -96,6 +96,30 @@ class ConsensusGateTests(unittest.TestCase):
             self.assertTrue(result.ok())
             self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
 
+    def test_governed_reverse_uses_the_same_mutation_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("old\n", encoding="utf-8")
+            runtime = _runtime(Path(directory) / "state")
+            decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(
+                decision.id, True, 0.9, models=["a/x", "b/y"],
+                responses={"a/x": "same", "b/y": "same"})
+            applied = runtime.apply_patch(
+                PatchApplier(root), PATCH, decision=decision)
+            self.assertTrue(applied.ok())
+
+            rollback_decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(
+                rollback_decision.id, True, 0.9, models=["a/x", "b/y"],
+                responses={"a/x": "same", "b/y": "same"})
+            reverted = runtime.apply_patch(
+                PatchApplier(root), PATCH, decision=rollback_decision,
+                reverse=True)
+            self.assertTrue(reverted.ok())
+            self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
+
     def test_disagreement_escalates_to_approval_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

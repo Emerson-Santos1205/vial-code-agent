@@ -1,5 +1,5 @@
 {
-  "name": "vial-code-agent-coding-matrix",
+  "name": "vial-code-agent-unit-regression-matrix",
   "families": [
     {"category": "bug_fix", "count": 13, "prompt": "Fix the reported bug"},
     {"category": "feature", "count": 13, "prompt": "Implement the requested feature"},

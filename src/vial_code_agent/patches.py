@@ -78,7 +78,8 @@ class PatchApplier:
             raise PatchError(detail or "patch validation failed")
         return command, patch
 
-    def validate(self, patch: str, allowed_paths: set[str] | None = None) -> None:
+    def validate(self, patch: str, allowed_paths: set[str] | None = None,
+                 reverse: bool = False) -> None:
         removed = [line[1:] for line in patch.splitlines()
                    if line.startswith("-") and not line.startswith("---")]
         added = [line[1:] for line in patch.splitlines()
@@ -91,7 +92,7 @@ class PatchApplier:
             if unexpected:
                 names = ", ".join(sorted(unexpected))
                 raise PatchError(f"patch changes files outside selected context: {names}")
-        self._check(patch)
+        self._check(patch, reverse=reverse)
 
     def repair_candidate(self, patch: str) -> str | None:
         """Repair one unambiguous malformed replacement in a staging tree.
