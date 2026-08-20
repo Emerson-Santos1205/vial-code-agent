@@ -397,6 +397,9 @@ def extract_diff(text: str) -> str | None:
     else:
         git_start = text.find("diff --git ")
         candidate = text[git_start:].strip() if git_start >= 0 else text.strip()
+    # Models sometimes wrap a valid diff in the apply_patch protocol marker.
+    # Keep only the diff so the marker cannot reach git-apply.
+    candidate = candidate.split("\n*** End Patch", 1)[0].rstrip()
     if not candidate.startswith(("diff --git ", "--- ")):
         match = re.search(r"(?:^|\n)(diff --git |--- )", candidate)
         if match:

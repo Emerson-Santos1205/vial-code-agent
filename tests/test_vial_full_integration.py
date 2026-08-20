@@ -531,7 +531,7 @@ class FullIntegrationTests(unittest.TestCase):
             decision = runtime.propose_patch_decision(context.context_id)
             runtime.record_consensus(decision.id, True, 1.0)
             runtime.apply_patch(
-                PatchApplier(root), "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 1\n",
+                PatchApplier(root), "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n",
                 context.context_id, decision=decision)
             runtime.persist()
 

@@ -23,6 +23,17 @@ class PatchTests(unittest.TestCase):
 
             self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "new\n")
 
+    def test_rejects_noop_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            patch = """--- a/value.txt
++++ b/value.txt
+@@ -1 +1 @@
+-same
++same
+"""
+            with self.assertRaisesRegex(PatchError, "no-op"):
+                PatchApplier(Path(directory)).validate(patch)
+
     def test_rejects_escape_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             patch = """--- a/../outside.txt

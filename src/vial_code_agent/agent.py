@@ -224,7 +224,10 @@ class CodeAgent:
                     f"{task}\n\nReturn ONLY a unified diff. Do not explain. "
                     f"The previous candidate was rejected: {validation_error or 'no parseable patch'}. "
                     "Re-open and read the exact current staged file before responding. "
-                    "Use exact removed and added lines and return an applicable diff.",
+                    "Use exact removed and added lines and return an applicable diff. "
+                    "Do not return a no-op where removed and added lines are identical. "
+                    "If the requested fix is already present, return a clear explanation "
+                    "instead of fabricating a patch.",
                     directory=staging, files=staged_files)
                 patch = extract_diff(response.text)
                 if patch is not None:

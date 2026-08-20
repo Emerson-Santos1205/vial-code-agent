@@ -31,7 +31,7 @@ from rich.markup import escape
 
 from . import __version__
 from .chat import ChatController
-from .tui_state import TUIState
+from .tui_state import PipelineEvent, TUIState
 
 
 class ModelPicker(ModalScreen[str]):
@@ -504,6 +504,7 @@ class VialTUI(App[str]):
         self._history_index: int | None = None
         self.tui_state = TUIState()
         self._task_started_at: float | None = None
+        self._event_cursor = ""
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -630,13 +631,12 @@ class VialTUI(App[str]):
 
     async def _dispatch(self, message: str) -> None:
         self._stream_buffer = []
-        self.tui_state.advance("CONTEXT", "context loading")
+        self.tui_state.observe(PipelineEvent("AGENT", "running", "agent started"))
         self.refresh_side()
         done = threading.Event()
 
         def consume() -> None:
             try:
-                self.tui_state.advance("COGNITION", "model reasoning")
                 for chunk in self.controller.respond_stream(message):
                     self._stream_buffer.append(chunk)
                     joined = "".join(self._stream_buffer)
@@ -654,11 +654,12 @@ class VialTUI(App[str]):
             await asyncio.sleep(0.05)
         thread.join(timeout=5)
         if not self._cancelled:
+            self._sync_runtime_events()
             text = "".join(self._stream_buffer).strip()
             failed = text.lower().startswith("error:")
-            self.tui_state.advance("TEST" if not failed else "PATCH", "response complete")
-            self.tui_state.patch_status = "READY" if not failed else "FAILED"
-            self.tui_state.test_status = "NOT RUN"
+            self.tui_state.observe(PipelineEvent(
+                "AGENT", "failed" if failed else "completed",
+                "agent response failed" if failed else "agent response complete"))
             if failed:
                 self.tui_state.failure_type = "MODEL_RESPONSE"
             if self._task_started_at is not None:
@@ -994,3 +995,12 @@ class VialTUI(App[str]):
         self.query_one("#events", Static).update(
             f"EVENTS: {self.tui_state.event_line()}"
         )
+
+    def _sync_runtime_events(self) -> None:
+        """Consume tagged runtime events without inventing missing stages."""
+        runtime = self.controller.runtime
+        if runtime is None:
+            return
+        for event in runtime.event_delta(self._event_cursor):
+            self.tui_state.observe_runtime_event(event)
+            self._event_cursor = event.event_id

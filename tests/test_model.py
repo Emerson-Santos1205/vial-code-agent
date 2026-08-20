@@ -69,6 +69,13 @@ class ExtractDiffTests(unittest.TestCase):
         prose = 'Here is the change:\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new'
         self.assertEqual(extract_diff(prose).startswith("--- a/x"), True)
 
+    def test_apply_patch_end_marker_is_removed(self) -> None:
+        response = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n*** End Patch"
+        self.assertEqual(
+            extract_diff(response),
+            "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n",
+        )
+
     def test_no_diff_returns_none(self) -> None:
         self.assertIsNone(extract_diff("nothing here"))
 
