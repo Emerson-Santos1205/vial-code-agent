@@ -1,11 +1,14 @@
 import unittest
+import subprocess
 import tempfile
 from pathlib import Path
 
 from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
-    baseline_is_valid, should_retry_test_failure, success_metrics,
+    _candidate_consensus, _run_test_groups, baseline_is_valid,
+    should_retry_test_failure,
+    success_metrics,
 )
 from benchmark.instance import InstanceSpec
 from benchmark.report import success_metrics as report_success_metrics
@@ -124,6 +127,49 @@ class BenchmarkMetricTests(unittest.TestCase):
             "repo": "example/project", "timeout_seconds": "120",
         })
         self.assertEqual(spec.timeout_seconds, 120)
+
+    def test_astropy_environment_pins_its_build_and_test_dependencies(self) -> None:
+        spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
+        self.assertIn("Cython<3", spec.dependencies)
+        self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
+        self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
+
+    def test_baseline_empty_groups_keep_swebench_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = _run_test_groups(
+                Path(directory), [], [], {}, None, (), (), 30)
+        self.assertEqual(result[0], False)
+        self.assertEqual(result[2], True)
+
+    def test_independent_candidates_must_produce_the_same_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            first = """--- a/value.txt
++++ b/value.txt
+@@ -1 +1 @@
+-old
++new
+"""
+            second = first
+            evidence = _candidate_consensus(
+                root, first, second, {"value.txt"}, ("a/model", "b/model"))
+            self.assertTrue(evidence["agreed"])
+            self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
+
+            disagreement = _candidate_consensus(
+                root, first, second.replace("+new", "+other"),
+                {"value.txt"}, ("a/model", "b/model"))
+            self.assertFalse(disagreement["agreed"])
+            failed_behavior = _candidate_consensus(
+                root, first, second, {"value.txt"}, ("a/model", "b/model"),
+                behavioral={
+                    "a/model": {"static_valid": True, "behavioral_passed": True},
+                    "b/model": {"static_valid": True, "behavioral_passed": False},
+                })
+            self.assertFalse(failed_behavior["agreed"])
 
     def test_environment_failure_never_retries_model(self) -> None:
         self.assertFalse(should_retry_test_failure(

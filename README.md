@@ -66,6 +66,14 @@ O relatório SWE-bench é persistido em `benchmark/results/` e registra reposit�
 commit base, imagem, Python, dependências, timeout, classificação e evidência por
 tarefa. A aplicação do patch do agente é fail-closed: sem consenso independente
 fornecido por `--consensus-file`, a tarefa é bloqueada sem mutar o workspace.
+Para gerar esse consenso automaticamente, informe um segundo modelo independente
+com `--consensus-model`; candidatos divergentes são bloqueados.
+Para Astropy, o ambiente usa a imagem pré-construída
+`vial-code-agent-swebench-python39:local`, que fixa `pytest==7.4.4`, `Cython<3`,
+`pytest-astropy==0.9.0` e `pytest-astropy-header==0.1.2`, compila as extensões
+com `build_ext --inplace` apenas quando ainda não há artefatos, e executa pytest
+com o plugin de warnings desativado,
+compatível com os commits históricos do SWE-bench.
 
 Validação de testes em sandbox Docker:
 
