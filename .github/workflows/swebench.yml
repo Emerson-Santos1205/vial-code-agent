@@ -44,6 +44,12 @@ jobs:
       - name: Build provider image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+      - name: Build historical Astropy test image
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: docker build -f docker/swebench-test.Dockerfile -t vial-code-agent-swebench-python39:local .
+      - name: Build historical Django test image
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: docker build -f docker/swebench-django-test.Dockerfile -t vial-code-agent-swebench-python38:local .
       - name: Fetch workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |

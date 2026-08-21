@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -176,7 +177,7 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
                     configured_command: tuple[str, ...] = (),
                     timeout_seconds: int = 900) -> tuple[bool, str]:
     tests = [test for test in tests if "." in test or "::" in test or "/" in test]
-    if root.joinpath("tests", "runtests.py").is_file():
+    if root.joinpath("tests", "runtests.py").is_file() and not (root / "astropy").is_dir():
         tests = [test for test in tests
                  if test.rsplit(".", 1)[-1].startswith("test")]
         command = ["python" if docker_image else sys.executable,
@@ -194,14 +195,21 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
             ) if path.is_file()
         ]
         setup = [
-            "python -m pip install -e . --no-deps --no-build-isolation",
-            "python -m pip install 'pytest<8' --disable-pip-version-check",
+            "python -m pip install 'pytest==7.4.4' --disable-pip-version-check",
         ]
+        if not (root / "astropy").is_dir():
+            setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
         if (root / "astropy").is_dir():
             setup.insert(0, "python -m pip install 'setuptools<60' "
                          "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
-                         "'pyerfa<3' 'PyYAML>=3.13' "
+                         "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
+                         "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                          "--disable-pip-version-check")
+            # Baseline setup and the candidate copy share the compiled
+            # extensions. Rebuilding them for every test group can exceed the
+            # executor window on historical Astropy checkouts.
+            setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
+                         "python setup.py build_ext --inplace")
         setup.extend(
             "python -m pip install -r "
             + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
@@ -222,7 +230,10 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
         command = ["sh", "-lc", " && ".join(setup + [test_command])]
     result = _run_command(command, root, env, docker_image,
                           timeout=timeout_seconds)
-    return result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    detail = (f"STDOUT:\n{result.stdout[-2000:]}\n"
+              f"STDERR:\n{result.stderr[-2000:]}\n"
+              f"[returncode={result.returncode}]")
+    return result.returncode == 0, detail
 
 
 def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
@@ -238,24 +249,39 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         pass_ok, pass_detail = _run_test_group(
             root, pass_tests, env, docker_image, dependencies, configured_command,
             timeout_seconds)
+        if not fail_tests:
+            fail_ok, fail_detail = False, "no FAIL_TO_PASS tests selected"
+        if not pass_tests:
+            pass_ok, pass_detail = True, "no PASS_TO_PASS tests selected"
         return fail_ok, fail_detail, pass_ok, pass_detail
 
     def command_for(tests: list[str]) -> str:
         tests = [test for test in tests if "." in test or "::" in test or "/" in test]
-        if root.joinpath("tests", "runtests.py").is_file():
+        if not tests:
+            return ":"
+        if (root / "tests" / "runtests.py").is_file() and not (root / "astropy").is_dir():
+            tests = [test for test in tests
+                     if test.rsplit(".", 1)[-1].startswith("test")]
+            if not tests:
+                return ":"
             return " ".join(shlex.quote(part) for part in
                              ["python", "tests/runtests.py", *tests])
         return " ".join(shlex.quote(part) for part in
-                         ["python", "-m", "pytest", "-q", *tests])
+                         ["python", "-m", "pytest", "-p", "no:warnings", "-q", *tests])
 
     setup = [
-        "python -m pip install -e . --no-deps --no-build-isolation",
-        "python -m pip install 'pytest<8' --disable-pip-version-check",
+        "python -m pip install 'pytest==7.4.4' --disable-pip-version-check",
     ]
+    if not (root / "astropy").is_dir():
+        setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
     if (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install 'setuptools<60' "
                      "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
-                     "'pyerfa<3' 'PyYAML>=3.13' --disable-pip-version-check")
+                     "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
+                     "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
+                     "--disable-pip-version-check")
+        setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
+                     "python setup.py build_ext --inplace")
     requirements = [path for path in (
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",
@@ -276,10 +302,23 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
     result = _run_command(["sh", "-lc", script], root, env, docker_image,
                           timeout=timeout_seconds)
     output = result.stdout + result.stderr
+    if "__VIAL_FAIL_END__" not in output or "__VIAL_PASS_END__" not in output:
+        detail = (f"test group markers missing (returncode={result.returncode})\n"
+                  f"STDOUT:\n{result.stdout[-2000:]}\n"
+                  f"STDERR:\n{result.stderr[-2000:]}")
+        return False, detail, False, detail
     fail_detail = output.split("__VIAL_FAIL_END__", 1)[0].split(
         "__VIAL_FAIL_BEGIN__", 1)[-1][-4000:]
     pass_detail = output.split("__VIAL_PASS_BEGIN__", 1)[-1].split(
         "__VIAL_PASS_END__", 1)[0][-4000:]
+    fail_marker = output.split("__VIAL_FAIL_END__", 1)[1].splitlines()[0]
+    pass_marker = output.split("__VIAL_PASS_END__", 1)[1].splitlines()[0]
+    fail_detail = f"{fail_detail}\n[runner={fail_marker}]"
+    pass_detail = f"{pass_detail}\n[runner={pass_marker}]"
+    channels = (f"\nSTDOUT:\n{result.stdout[-2000:]}\n"
+                f"STDERR:\n{result.stderr[-2000:]}")
+    fail_detail += channels
+    pass_detail += channels
     fail_ok = "__VIAL_FAIL_END__:0" in output
     pass_ok = "__VIAL_PASS_END__:0" in output
     if result.returncode != 0:
@@ -304,6 +343,7 @@ def _failure_class(stage: str, detail: str = "") -> str:
             "failed to create task for container", "executable file not found",
             "command timed out", "subprocess-exited-with-error",
             "error: command '/usr/bin/gcc'", "metadata-generation-failed",
+            "[runner=:4]", "test group markers missing",
         )
         return "environment" if any(marker in detail for marker in environment_markers) else "tests"
     return "unknown"
@@ -315,6 +355,8 @@ def _failure_subclass(stage: str, detail: str = "", result: dict | None = None) 
     if not stage or (result and result.get("passed")):
         return "none"
     if result and result.get("failure_class") == "environment":
+        if "runner=:4" in text or "returncode=4" in text:
+            return "test_runner_usage"
         if "python" in text or "version" in text:
             return "python_version"
         if "gcc" in text or "compiler" in text:
@@ -408,10 +450,99 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
     return bool(result.ok()), str(getattr(result, "error", "") or ""), metadata
 
 
+def _compare_candidate_results(root: Path, first: str, second: str,
+                               allowed_paths: set[str]) -> tuple[bool, str]:
+    """Compare independently applicable candidates without touching ``root``."""
+    with tempfile.TemporaryDirectory(prefix="vial-consensus-") as directory:
+        first_root = Path(directory) / "first"
+        second_root = Path(directory) / "second"
+        shutil.copytree(root, first_root, ignore=shutil.ignore_patterns(".vial-state"))
+        shutil.copytree(root, second_root, ignore=shutil.ignore_patterns(".vial-state"))
+        try:
+            PatchApplier(first_root).apply(first)
+            PatchApplier(second_root).apply(second)
+        except PatchError as error:
+            return False, f"candidate application failed: {error}"
+        paths = set(allowed_paths)
+        for patch in (first, second):
+            paths.update(PatchApplier(root).paths(patch))
+        for relative in sorted(paths):
+            first_path = first_root / relative
+            second_path = second_root / relative
+            first_bytes = first_path.read_bytes() if first_path.is_file() else None
+            second_bytes = second_path.read_bytes() if second_path.is_file() else None
+            if first_bytes != second_bytes:
+                return False, f"candidates produce different results for {relative}"
+    return True, "candidates produce the same workspace result"
+
+
+def _evaluate_candidate_behavior(root: Path, patch: str, instance: dict,
+                                 environment: EnvironmentSpec | None,
+                                 docker_image: str | None) -> dict[str, object]:
+    """Run benchmark tests for one candidate in an isolated copy."""
+    with tempfile.TemporaryDirectory(prefix="vial-candidate-test-") as directory:
+        candidate_root = Path(directory) / "repo"
+        # Consensus candidates only need source and tests. Excluding repository
+        # documentation and generated build metadata avoids duplicating hundreds
+        # of MB for each historical Astropy candidate.
+        shutil.copytree(root, candidate_root,
+                        ignore=shutil.ignore_patterns(
+                            ".git", ".vial-state", "build", "dist", ".tox",
+                            "docs", "examples", "licenses", "__pycache__"))
+        try:
+            PatchApplier(candidate_root).apply(patch)
+            test_patch = instance.get("test_patch", "")
+            if test_patch:
+                fixture_ok, fixture_error = _apply_fixture(candidate_root, test_patch)
+                if not fixture_ok:
+                    return {"static_valid": True, "behavioral_passed": False,
+                            "detail": f"test fixture failed: {fixture_error}"}
+            fail_ok, fail_detail, pass_ok, pass_detail = _run_test_groups(
+                candidate_root, _as_tests(instance.get("fail_to_pass")),
+                _as_tests(instance.get("pass_to_pass")), os.environ.copy(),
+                docker_image, environment.dependencies if environment else (),
+                environment.test_command if environment else (),
+                environment.timeout_seconds if environment else 900)
+        except PatchError as error:
+            return {"static_valid": True, "behavioral_passed": False,
+                    "detail": f"candidate test application failed: {error}"}
+    return {
+        "static_valid": True,
+        "behavioral_passed": fail_ok and pass_ok,
+        "detail": (f"FAIL_TO_PASS: {fail_detail}\nPASS_TO_PASS: {pass_detail}")[-4000:],
+    }
+
+
+def _candidate_consensus(root: Path, first: str, second: str,
+                         allowed_paths: set[str], models: tuple[str, str],
+                         behavioral: dict[str, dict[str, object]] | None = None) -> dict:
+    """Build auditable consensus evidence from two validated patches."""
+    equivalent, detail = _compare_candidate_results(root, first, second, allowed_paths)
+    behavioral = behavioral or {}
+    behavioral_passed = all(
+        behavioral.get(model, {}).get("behavioral_passed") is not False
+        for model in models)
+    return {
+        "agreed": equivalent and behavioral_passed,
+        "agreement_ratio": 1.0 if equivalent else 0.0,
+        "models": list(models),
+        "responses": {models[0]: first, models[1]: second},
+        "evidence": {
+            models[0]: behavioral.get(models[0], {
+                "static_valid": True, "behavioral_passed": None}),
+            models[1]: behavioral.get(models[1], {
+                "static_valid": True, "behavioral_passed": None}),
+            "comparison": detail,
+        },
+        "note": "independent SWE-bench candidate comparison",
+    }
+
+
 def run_instance(instance: dict, model: str, run_tests: bool = False,
                  docker_image: str | None = None,
                  environment: EnvironmentSpec | None = None,
-                 consensus: dict | None = None) -> dict:
+                 consensus: dict | None = None,
+                 consensus_model: str | None = None) -> dict:
     if environment is not None:
         docker_image = environment.image
     with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
@@ -467,6 +598,10 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests", "baseline": baseline,
                         "detail": baseline["detail"]}
+        if consensus_model is not None and consensus_model == model:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "governance",
+                    "detail": "consensus model must be independent from primary model"}
         provider = DockerOpenCodeProvider(model)
         runtime = VialRuntime(
             VialCoreReference(BASE / "vendor" / "vial-core"),
@@ -492,6 +627,38 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "stage": "patch_validation", "detail": str(error),
                     "response": generated.response.text[:2000],
                     "patch": generated_patch[:3000]}
+        if consensus_model is not None:
+            review_runtime = VialRuntime(
+                VialCoreReference(BASE / "vendor" / "vial-core"),
+                root / ".vial-consensus-state", persist_state=False)
+            review_runtime.set_workspace_root(root)
+            review_provider = DockerOpenCodeProvider(consensus_model)
+            reviewed = CodeAgent(review_provider, runtime=review_runtime).generate(
+                prompt, root, files, runtime=review_runtime)
+            if reviewed.patch is None:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "governance",
+                        "detail": "independent consensus candidate did not return a patch"}
+            try:
+                reviewed_patch = _validate_candidate(root, reviewed.patch,
+                                                     allowed_paths)
+            except PatchError as error:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "governance",
+                        "detail": f"independent consensus candidate invalid: {error}"}
+            consensus = _candidate_consensus(
+                root, generated_patch, reviewed_patch, allowed_paths,
+                (model, consensus_model),
+                behavioral={
+                    model: _evaluate_candidate_behavior(
+                        root, generated_patch, instance, environment, docker_image),
+                    consensus_model: _evaluate_candidate_behavior(
+                        root, reviewed_patch, instance, environment, docker_image),
+                } if run_tests else None)
+            if not consensus["agreed"]:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "governance", "consensus": consensus,
+                        "detail": consensus["evidence"]["comparison"]}
         if not run_tests:
             return {"id": instance["id"], "passed": True,
                     "stage": "patch_validated", "attempts": generated.attempts,
@@ -501,9 +668,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             allowed_paths, consensus=consensus)
         if not applied:
             return {"id": instance["id"], "passed": False,
-                    "stage": "governance", "detail": apply_error or
-                    "patch application rejected by VialRuntime",
-                    "governance": apply_metadata}
+                        "stage": "governance", "detail": apply_error or
+                        "patch application rejected by VialRuntime",
+                    "governance": apply_metadata, "consensus": consensus}
         if (root / "astropy").is_dir():
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
@@ -571,6 +738,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts, "tokens": tokens,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
+                        "consensus": consensus,
                         "detail": evidence[-7000:]}
             feedback = ("The generated patch was applied, but benchmark tests failed.\n"
                         f"FAIL_TO_PASS ({'passed' if fail_ok else 'failed'}):\n{fail_detail}\n\n"
@@ -618,6 +786,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 "stage": "tests", "attempts": attempts, "tokens": tokens,
                 "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                 "baseline": baseline,
+                "consensus": consensus,
                 "detail": (f"FAIL_TO_PASS:\n{fail_detail}\n\n"
                             f"PASS_TO_PASS:\n{pass_detail}")[-7000:]}
 
@@ -636,7 +805,11 @@ def main() -> int:
                         help="directory for the reproducible JSON report")
     parser.add_argument("--consensus-file", type=Path, default=None,
                         help="JSON map of task id to independent consensus evidence")
+    parser.add_argument("--consensus-model", default=None,
+                        help="independent second model used to validate each patch")
     args = parser.parse_args()
+    if not args.run_tests:
+        parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     consensus_by_id = {}
     if args.consensus_file is not None:
@@ -651,7 +824,8 @@ def main() -> int:
         environment = resolver.resolve(instance, args.test_image)
         result = run_instance(instance, args.model, args.run_tests,
                               environment.image, environment,
-                              consensus_by_id.get(instance.get("id")))
+                              consensus_by_id.get(instance.get("id")),
+                              args.consensus_model)
         result["environment"] = {
             "repo": instance.get("repo", ""),
             "base_commit": instance.get("base_commit", ""),
@@ -671,17 +845,37 @@ def main() -> int:
                 result.get("stage", ""), result.get("detail", ""))
         result["failure_subclass"] = _failure_subclass(
             result.get("stage", ""), result.get("detail", ""), result)
+        environment_invalid_stages = {
+            "clone", "checkout", "baseline_tests", "test_environment",
+            "test_fixture", "test_selection",
+        }
+        result["environment_valid"] = result.get("stage") not in environment_invalid_stages
+        result["environment_status"] = (
+            "VALID" if result["environment_valid"] else "INVALID")
+        result["agent_attempted"] = result["stage"] not in environment_invalid_stages
+        consensus_result = result.get("consensus") or {}
+        result["consensus_approved"] = bool(consensus_result.get("agreed"))
+        result["patch_valid"] = result.get("stage") == "tests"
+        result["tests_passed"] = bool(
+            result.get("stage") == "tests" and result.get("passed"))
     failure_breakdown: dict[str, int] = {}
     for result in results:
         key = f"{result['failure_class']}.{result['failure_subclass']}"
         failure_breakdown[key] = failure_breakdown.get(key, 0) + 1
     metrics = success_metrics(results)
     report = {"benchmark": workload.get("name", "swebench"),
-              "tasks": len(results), "passed": sum(row["passed"] for row in results),
-              "environment_valid": metrics["environment_valid"],
+              "total": len(results), "tasks": len(results),
+              "passed": sum(row["passed"] for row in results),
+              "environment_valid": sum(row["environment_valid"] for row in results),
+              "environment_invalid": sum(not row["environment_valid"] for row in results),
               "environment_valid_rate": metrics["environment_valid_rate"],
+              "agent_attempted": sum(row["agent_attempted"] for row in results),
+              "consensus_approved": sum(row["consensus_approved"] for row in results),
+              "patch_valid": sum(row["patch_valid"] for row in results),
+              "tests_passed": sum(row["tests_passed"] for row in results),
               "agent_solved": metrics["agent_solved"],
               "agent_success_rate": metrics["agent_success_rate"],
+              "end_to_end_success": metrics["agent_solved"],
               "end_to_end_success_rate": metrics["end_to_end_success_rate"],
               "patch_applicable": sum(row.get("stage") in {
                   "patch_validated", "tests"} for row in results),
@@ -711,6 +905,7 @@ def main() -> int:
                   "test_image_override": args.test_image,
                   "consensus_file": str(args.consensus_file)
                   if args.consensus_file is not None else None,
+                  "consensus_model": args.consensus_model,
               }}
     args.out.mkdir(parents=True, exist_ok=True)
     output = args.out / f"report-{time.strftime('%Y%m%d-%H%M%S')}.json"

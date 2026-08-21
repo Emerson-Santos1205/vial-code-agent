@@ -24,6 +24,12 @@ class EnvironmentResolver:
         "astropy/astropy": "3.9",
         "django/django": "3.8",
     }
+    REPOSITORY_DEPENDENCIES = {
+        "astropy/astropy": (
+            "pytest==7.4.4", "Cython<3", "pytest-astropy==0.9.0",
+            "pytest-astropy-header==0.1.2",
+        ),
+    }
 
     def resolve(self, instance: dict[str, Any], override: str | None = None) -> EnvironmentSpec:
         repo = str(instance.get("repo", ""))
@@ -33,7 +39,9 @@ class EnvironmentResolver:
         compact = python.replace(".", "")
         image = (override or instance.get("test_image") or
                  f"vial-code-agent-swebench-python{compact}:local")
-        dependencies = tuple(str(item) for item in instance.get("dependencies", ()))
+        dependencies = tuple(dict.fromkeys(
+            self.REPOSITORY_DEPENDENCIES.get(repo, ()) +
+            tuple(str(item) for item in instance.get("dependencies", ()))))
         command = instance.get("test_command", ())
         if isinstance(command, str):
             command = (command,)
