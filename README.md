@@ -105,6 +105,25 @@ os testes comportamentais também precisam passar antes do consenso ser aceito.
 
 ## Instalação
 
+O projeto depende do VIAL Core em `vendor/vial-core`, configurado como um
+submódulo Git. Para um clone novo, inicialize o repositório incluindo os
+submódulos:
+
+```text
+git clone --recurse-submodules https://github.com/Emerson-Santos1205/vial-code-agent.git
+cd vial-code-agent
+```
+
+Se o repositório já foi clonado sem `--recurse-submodules`, inicialize o
+submódulo manualmente:
+
+```text
+git submodule update --init --recursive
+```
+
+Confirme que `vendor/vial-core` existe antes de executar a aplicação ou os
+benchmarks. Em seguida, instale o pacote em modo editável:
+
 ```text
 python -m pip install -e .
 ```
