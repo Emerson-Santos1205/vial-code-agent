@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import os
 import shlex
 import shutil
@@ -22,12 +23,30 @@ from vial_code_agent.patches import PatchApplier, PatchError
 from vial_code_agent.patch_review import PatchReviewGate
 from vial_code_agent.vial_runtime import VialRuntime
 try:
+    from .report import candidate_metrics
+except ImportError:
+    from report import candidate_metrics
+try:
     from .environment import EnvironmentResolver, EnvironmentSpec
 except ImportError:
     from environment import EnvironmentResolver, EnvironmentSpec
 
 
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
+
+
+def _workspace_sha256(root: Path) -> str:
+    """Fingerprint the checkout state visible to both candidates."""
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=False,
+        capture_output=True, text=True).stdout
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1"], cwd=root, check=False,
+        capture_output=True, text=True).stdout
+    diff = subprocess.run(
+        ["git", "diff", "--binary"], cwd=root, check=False,
+        capture_output=True, text=True).stdout
+    return hashlib.sha256((head + status + diff).encode("utf-8")).hexdigest()
 
 
 def select_test_image(instance: dict, override: str | None = None) -> tuple[str, str]:
@@ -56,6 +75,8 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
         "- Do not create files unless explicitly authorized.\n"
         "- Do not change dependencies unless requested.\n"
         f"- Do not use APIs newer than Python {environment.python_version}.\n"
+        "- Make the smallest causal change; each hunk must match the current checkout exactly.\n"
+        "- If a hunk cannot be anchored to the shown current state, reread the file before answering.\n"
         "- Do not claim tests were executed.\n"
         "- Return a minimal change as one applicable unified diff.",
     ]
@@ -159,7 +180,10 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types"]
         return subprocess.run(
             ["docker", "run", "--rm", "--workdir", "/workspace",
-             "--mount", mount, *docker_env,
+             "--mount", mount,
+             "--mount", "type=volume,source=vial-swebench-pip-cache," \
+                         "destination=/root/.cache/pip",
+             *docker_env,
              docker_image, *command], cwd=root, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False)
     except subprocess.TimeoutExpired as error:
@@ -195,7 +219,9 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
             ) if path.is_file()
         ]
         setup = [
-            "python -m pip install 'pytest==7.4.4' --disable-pip-version-check",
+            "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
+            "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
+            "python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
         ]
         if not (root / "astropy").is_dir():
             setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
@@ -270,7 +296,9 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
                          ["python", "-m", "pytest", "-p", "no:warnings", "-q", *tests])
 
     setup = [
-        "python -m pip install 'pytest==7.4.4' --disable-pip-version-check",
+        "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
+        "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
+        "python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
     ]
     if not (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
@@ -413,7 +441,7 @@ def success_metrics(results: list[dict]) -> dict[str, float | int]:
     passed = sum(bool(row.get("passed")) for row in results)
     environment_valid = sum(
         row.get("failure_class") != "environment" for row in results)
-    return {
+    metrics = {
         "tasks": total,
         "environment_valid": environment_valid,
         "environment_valid_rate": environment_valid / total if total else 0.0,
@@ -421,6 +449,11 @@ def success_metrics(results: list[dict]) -> dict[str, float | int]:
         "agent_success_rate": passed / environment_valid if environment_valid else 0.0,
         "end_to_end_success_rate": passed / total if total else 0.0,
     }
+    if any(row.get("candidates") or row.get("candidate_outcomes") or
+           (row.get("consensus") or {}).get("candidate_outcomes")
+           for row in results):
+        metrics.update(candidate_metrics(results))
+    return metrics
 
 
 def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
@@ -434,13 +467,28 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
     """
     decision = runtime.propose_patch_decision(context_id)
     if consensus is not None:
+        evidence = dict(consensus.get("evidence") or {})
+        candidate_outcomes = dict(consensus.get("candidate_outcomes") or {})
+        if candidate_outcomes:
+            evidence["candidate_outcomes"] = candidate_outcomes
+        evidence["consensus_result"] = {
+            "result_code": consensus.get("result_code", ""),
+            "candidate_attempts": sum(
+                int(outcome.get("attempts", 1) or 1)
+                for outcome in candidate_outcomes.values()
+                if isinstance(outcome, dict)),
+            "candidate_retries": sum(
+                int(outcome.get("retries", 0) or 0)
+                for outcome in candidate_outcomes.values()
+                if isinstance(outcome, dict)),
+        }
         runtime.record_consensus(
             decision.id, bool(consensus.get("agreed")),
             float(consensus.get("agreement_ratio", 0.0)),
             models=[str(model) for model in consensus.get("models", ())],
             responses={str(key): str(value)
                        for key, value in (consensus.get("responses") or {}).items()},
-            evidence=dict(consensus.get("evidence") or {}),
+            evidence=evidence,
             note=str(consensus.get("note", "")),
         )
     result = runtime.apply_patch(
@@ -513,15 +561,177 @@ def _evaluate_candidate_behavior(root: Path, patch: str, instance: dict,
     }
 
 
+def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
+                                environment: EnvironmentSpec | None,
+                                docker_image: str | None, model: str,
+                                runtime: VialRuntime, files: list[Path],
+                                allowed_paths: set[str],
+                                behavior: dict[str, object]
+                                ) -> tuple[str, dict, int, int]:
+    """Give one failing consensus candidate its concrete test evidence."""
+    feedback = (
+        "The candidate patch applied but failed the isolated benchmark tests. "
+        "Correct only the causal implementation issue and return a minimal "
+        "unified diff.\n\n" + str(behavior.get("detail", "")))
+    prompt = build_swebench_prompt(
+        instance, root, files, allowed_paths,
+        environment or EnvironmentSpec(
+            python_version="declared-by-image", image=docker_image or "host"),
+        feedback=feedback)
+    retry = CodeAgent(DockerOpenCodeProvider(model), runtime=runtime).generate(
+        prompt, root, files, runtime=runtime)
+    attempts = max(int(retry.attempts or 1), 1)
+    if retry.patch is None:
+        failed = dict(behavior)
+        failed["detail"] = (str(behavior.get("detail", "")) +
+                            "\nBEHAVIORAL RETRY CONTRACT: " +
+                            str(retry.failure_type or "no patch returned"))[-4000:]
+        return patch, failed, attempts, 0
+    try:
+        corrected = _validate_candidate(root, retry.patch, allowed_paths)
+    except PatchError as error:
+        failed = dict(behavior)
+        failed["detail"] = (str(behavior.get("detail", "")) +
+                            "\nBEHAVIORAL RETRY VALIDATION: " + str(error))[-4000:]
+        return patch, failed, attempts, 1
+    corrected_behavior = _evaluate_candidate_behavior(
+        root, corrected, instance, environment, docker_image)
+    return corrected, corrected_behavior, attempts, 1
+
+
+def _candidate_outcome(label: str, model: str, *, returned_patch: bool,
+                       patch_valid: bool, tests_passed: bool | None,
+                       detail: str = "", attempts: int = 1,
+                       retries: int = 0, patch_returns: int | None = None
+                       ) -> dict[str, object]:
+    """Record the observable pipeline for one independent candidate."""
+    if not returned_patch:
+        phase = "patch"
+        result = f"CANDIDATE_{label}_FAILED"
+    elif not patch_valid:
+        phase = "static"
+        result = f"CANDIDATE_{label}_FAILED"
+    elif tests_passed is False:
+        phase = "behavioral"
+        result = f"CANDIDATE_{label}_FAILED"
+    else:
+        phase = "result"
+        result = f"CANDIDATE_{label}_SUCCEEDED"
+    return {
+        "candidate_id": label,
+        "model": model,
+        "pipeline": {
+            "patch": "PASS" if returned_patch else "FAIL",
+            "static": "PASS" if patch_valid else "FAIL",
+            "behavioral": ("PASS" if tests_passed is True else
+                            "FAIL" if tests_passed is False else "NOT_RUN"),
+            "result": result,
+        },
+        "returned_patch": returned_patch,
+        "patch_returns": (int(returned_patch) if patch_returns is None
+                           else patch_returns),
+        "attempts": attempts,
+        "retries": retries,
+        "patch_valid": patch_valid,
+        "tests_passed": tests_passed,
+        "result_code": result,
+        "failure_detail": detail,
+    }
+
+
+def _generate_validated_candidate(label: str, model: str, prompt: str,
+                                  root: Path, files: list[Path],
+                                  allowed_paths: set[str],
+                                  runtime: VialRuntime) -> dict[str, object]:
+    """Generate and statically validate one candidate without peer evidence."""
+    provider = DockerOpenCodeProvider(model)
+    attempts = retries = patch_returns = 0
+    diagnostics = []
+    generated = None
+    candidate_prompt = prompt
+    for attempt in range(2):
+        generated = CodeAgent(provider, runtime=runtime).generate(
+            candidate_prompt, root, files, runtime=runtime)
+        generated_attempts = max(int(generated.attempts or 1), 1)
+        attempts += generated_attempts
+        retries += max(generated_attempts - 1, 0) + int(attempt > 0)
+        if generated.patch is None:
+            diagnostic = str(generated.failure_type or "no patch returned")
+            diagnostics.append(diagnostic)
+            candidate_prompt = prompt + (
+                "\n\nThe previous response contained no applicable patch. "
+                "Retry once from the original task and workspace. Return only "
+                "a complete minimal unified diff.\n"
+                f"PATCH CONTRACT DIAGNOSTIC: {diagnostic}")
+            continue
+        patch_returns += 1
+        try:
+            patch = _validate_candidate(root, generated.patch, allowed_paths)
+        except PatchError as error:
+            diagnostics.append(str(error))
+            candidate_prompt = prompt + (
+                "\n\nThe previous patch failed static validation against the "
+                "exact workspace. Regenerate it from the original task and "
+                "workspace; do not repeat the failed hunk unchanged. Return "
+                "only a complete minimal unified diff.\n"
+                f"PATCH VALIDATION DIAGNOSTIC: {error}")
+            continue
+        outcome = _candidate_outcome(
+            label, model, returned_patch=True, patch_valid=True,
+            tests_passed=None, attempts=attempts, retries=retries,
+            patch_returns=patch_returns)
+        outcome["response_received"] = bool(
+            getattr(getattr(generated, "response", None), "text", ""))
+        outcome["prompt_sha256"] = hashlib.sha256(
+            candidate_prompt.encode("utf-8")).hexdigest()
+        outcome["protocol"] = {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass",
+        }
+        outcome["protocol_sha256"] = hashlib.sha256(json.dumps(
+            outcome["protocol"], sort_keys=True).encode("utf-8")).hexdigest()
+        outcome["workspace_sha256"] = _workspace_sha256(root)
+        return {"model": model, "patch": patch, "generated": generated,
+                "outcome": outcome, "behavior": None}
+    detail = "; corrective attempt: ".join(diagnostics)
+    outcome = _candidate_outcome(
+        label, model, returned_patch=patch_returns > 0, patch_valid=False,
+        tests_passed=None, detail=detail, attempts=attempts, retries=retries,
+        patch_returns=patch_returns)
+    outcome["response_received"] = bool(
+        getattr(getattr(generated, "response", None), "text", ""))
+    outcome["prompt_sha256"] = hashlib.sha256(
+        candidate_prompt.encode("utf-8")).hexdigest()
+    outcome["protocol"] = {
+        "output": "unified_diff",
+        "validation": "static_then_behavioral",
+        "tests": "same_instance_fail_to_pass_pass_to_pass",
+    }
+    outcome["protocol_sha256"] = hashlib.sha256(json.dumps(
+        outcome["protocol"], sort_keys=True).encode("utf-8")).hexdigest()
+    outcome["workspace_sha256"] = _workspace_sha256(root)
+    return {"model": model, "patch": None, "generated": generated,
+            "outcome": outcome, "behavior": None}
+
+
+def _generate_candidate_set(requests: list[tuple], generate=None) -> list[dict]:
+    """Run every independent generation request without short-circuiting."""
+    generate = generate or _generate_validated_candidate
+    return [generate(*request) for request in requests]
+
+
 def _candidate_consensus(root: Path, first: str, second: str,
                          allowed_paths: set[str], models: tuple[str, str],
-                         behavioral: dict[str, dict[str, object]] | None = None) -> dict:
+                         behavioral: dict[str, dict[str, object]] | None = None,
+                         run_tests: bool = False) -> dict:
     """Build auditable consensus evidence from two validated patches."""
     equivalent, detail = _compare_candidate_results(root, first, second, allowed_paths)
     behavioral = behavioral or {}
-    behavioral_passed = all(
-        behavioral.get(model, {}).get("behavioral_passed") is not False
+    behavioral_passed = not run_tests or all(
+        behavioral.get(model, {}).get("behavioral_passed") is True
         for model in models)
+    behavioral_equivalent = run_tests and behavioral_passed
     return {
         "agreed": equivalent and behavioral_passed,
         "agreement_ratio": 1.0 if equivalent else 0.0,
@@ -533,16 +743,141 @@ def _candidate_consensus(root: Path, first: str, second: str,
             models[1]: behavioral.get(models[1], {
                 "static_valid": True, "behavioral_passed": None}),
             "comparison": detail,
+            "behavioral_equivalent": behavioral_equivalent,
         },
+        "candidate_outcomes": {
+            models[0]: _candidate_outcome(
+                "A", models[0], returned_patch=True, patch_valid=True,
+                tests_passed=(behavioral.get(models[0], {}).get(
+                    "behavioral_passed") if behavioral else None)),
+            models[1]: _candidate_outcome(
+                "B", models[1], returned_patch=True, patch_valid=True,
+                tests_passed=(behavioral.get(models[1], {}).get(
+                    "behavioral_passed") if behavioral else None)),
+        },
+        "status": "APPROVED" if (
+            equivalent and behavioral_passed
+        ) else "DISAGREEMENT",
+        "result_code": "CONSENSUS_SUCCEEDED" if (
+            equivalent and behavioral_passed
+        ) else "CONSENSUS_FAILED",
         "note": "independent SWE-bench candidate comparison",
     }
+
+
+def _candidate_set_consensus(root: Path, candidates: list[dict[str, object]],
+                             allowed_paths: set[str], run_tests: bool) -> dict:
+    """Evaluate consensus only when two candidates have complete evidence."""
+    outcomes = {
+        str(candidate["model"]): candidate["outcome"] for candidate in candidates
+    }
+    qualified = [candidate for candidate in candidates
+                 if candidate.get("patch") is not None
+                 and bool(candidate["outcome"].get("patch_valid"))
+                 and (not run_tests or
+                      candidate["outcome"].get("tests_passed") is True)]
+    if len(qualified) < 2:
+        return {
+            "agreed": False,
+            "agreement_ratio": 0.0,
+            "status": "INSUFFICIENT_CANDIDATES",
+            "result_code": "CANDIDATE_SET_INSUFFICIENT",
+            "models": [str(candidate["model"]) for candidate in candidates],
+            "responses": {},
+            "evidence": {
+                "qualified_candidates": [str(candidate["model"])
+                                           for candidate in qualified],
+                "diagnostics": {
+                    str(candidate["model"]): candidate["outcome"].get(
+                        "failure_detail", "") for candidate in candidates},
+            },
+            "candidate_outcomes": outcomes,
+            "note": "fewer than two candidates have complete passing evidence",
+        }
+    first, second = qualified[:2]
+    consensus = _candidate_consensus(
+        root, str(first["patch"]), str(second["patch"]), allowed_paths,
+        (str(first["model"]), str(second["model"])),
+        behavioral={
+            str(candidate["model"]): candidate.get("behavior") or {}
+            for candidate in (first, second)
+        }, run_tests=run_tests)
+    consensus["candidate_outcomes"] = outcomes
+    return consensus
+
+
+def _adjudicated_candidate_consensus(
+        root: Path, passing: dict[str, object], adjudicator: dict[str, object],
+        original_candidates: list[dict[str, object]],
+        allowed_paths: set[str]) -> dict:
+    """Mark adjudication only when it supplies a second passing candidate."""
+    consensus = _candidate_set_consensus(
+        root, [passing, adjudicator], allowed_paths, True)
+    consensus["candidate_outcomes"] = {
+        **{str(candidate["model"]): candidate["outcome"]
+           for candidate in original_candidates},
+        str(adjudicator["model"]): adjudicator["outcome"],
+    }
+    if consensus["agreed"]:
+        consensus["status"] = "ADJUDICATED"
+        consensus["note"] = (
+            "consensus from one original passing candidate and an independent "
+            "passing adjudicator")
+    return consensus
+
+
+def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
+    """Add durable classification fields before a checkpoint is written."""
+    result_code = result.get("result_code", "")
+    if str(result_code).startswith("CANDIDATE_"):
+        result["failure_class"] = "candidate"
+        result["failure_subclass"] = str(result_code).lower()
+    elif result.get("passed"):
+        result["failure_class"] = "none"
+        result["failure_subclass"] = "none"
+    else:
+        result["failure_class"] = _failure_class(
+            result.get("stage", ""), result.get("detail", ""))
+        result["failure_subclass"] = _failure_subclass(
+            result.get("stage", ""), result.get("detail", ""), result)
+    environment_invalid_stages = {
+        "clone", "checkout", "baseline_tests", "test_environment",
+        "test_fixture", "test_selection",
+    }
+    result["environment_valid"] = result.get("stage") not in environment_invalid_stages
+    result["environment_status"] = (
+        "VALID" if result["environment_valid"] else "INVALID")
+    result["agent_attempted"] = result["stage"] not in environment_invalid_stages
+    consensus_result = result.get("consensus") or {}
+    result["consensus_approved"] = bool(consensus_result.get("agreed"))
+    if consensus_result.get("candidate_outcomes"):
+        result["candidate_outcomes"] = consensus_result["candidate_outcomes"]
+    result["result_code"] = result.get(
+        "result_code", consensus_result.get(
+            "result_code", "TASK_SUCCEEDED" if result.get("passed")
+            else "TASK_FAILED"))
+    result["patch_valid"] = result.get("stage") == "tests"
+    result["tests_passed"] = bool(
+        result.get("stage") == "tests" and result.get("passed"))
+    result["environment"] = {
+        "repo": result.get("environment", {}).get("repo", ""),
+        "base_commit": result.get("environment", {}).get("base_commit", ""),
+        "python_version": environment.python_version,
+        "image": environment.image,
+        "dependencies": list(environment.dependencies),
+        "test_command": list(environment.test_command),
+        "timeout_seconds": environment.timeout_seconds,
+        "metadata": dict(environment.metadata),
+    }
+    return result
 
 
 def run_instance(instance: dict, model: str, run_tests: bool = False,
                  docker_image: str | None = None,
                  environment: EnvironmentSpec | None = None,
                  consensus: dict | None = None,
-                 consensus_model: str | None = None) -> dict:
+                 consensus_model: str | None = None,
+                 adjudicator_model: str | None = None) -> dict:
     if environment is not None:
         docker_image = environment.image
     with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
@@ -602,7 +937,16 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
                     "detail": "consensus model must be independent from primary model"}
-        provider = DockerOpenCodeProvider(model)
+        if adjudicator_model is not None and adjudicator_model in {
+                model, consensus_model}:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "governance",
+                    "detail": ("adjudicator model must be independent from "
+                               "primary and consensus models")}
+        if adjudicator_model is not None and consensus_model is None:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "governance",
+                    "detail": "adjudicator model requires a consensus model"}
         runtime = VialRuntime(
             VialCoreReference(BASE / "vendor" / "vial-core"),
             root / ".vial-state", persist_state=False)
@@ -612,53 +956,140 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             environment or EnvironmentSpec(
                 python_version="declared-by-image",
                 image=docker_image or "host"))
-        generated = CodeAgent(provider, runtime=runtime).generate(
-            prompt, root, files, runtime=runtime)
-        if generated.patch is None:
-            return {"id": instance["id"], "passed": False,
-                    "stage": "patch_contract", "detail": generated.failure_type,
-                    "response": generated.response.text[:2000]}
-        generated_patch = generated.patch
-        try:
-            generated_patch = _validate_candidate(root, generated_patch,
-                                                  allowed_paths)
-        except PatchError as error:
-            return {"id": instance["id"], "passed": False,
-                    "stage": "patch_validation", "detail": str(error),
-                    "response": generated.response.text[:2000],
-                    "patch": generated_patch[:3000]}
         if consensus_model is not None:
             review_runtime = VialRuntime(
                 VialCoreReference(BASE / "vendor" / "vial-core"),
                 root / ".vial-consensus-state", persist_state=False)
             review_runtime.set_workspace_root(root)
-            review_provider = DockerOpenCodeProvider(consensus_model)
-            reviewed = CodeAgent(review_provider, runtime=review_runtime).generate(
-                prompt, root, files, runtime=review_runtime)
-            if reviewed.patch is None:
-                return {"id": instance["id"], "passed": False,
-                        "stage": "governance",
-                        "detail": "independent consensus candidate did not return a patch"}
-            try:
-                reviewed_patch = _validate_candidate(root, reviewed.patch,
-                                                     allowed_paths)
-            except PatchError as error:
-                return {"id": instance["id"], "passed": False,
-                        "stage": "governance",
-                        "detail": f"independent consensus candidate invalid: {error}"}
-            consensus = _candidate_consensus(
-                root, generated_patch, reviewed_patch, allowed_paths,
-                (model, consensus_model),
-                behavioral={
-                    model: _evaluate_candidate_behavior(
-                        root, generated_patch, instance, environment, docker_image),
-                    consensus_model: _evaluate_candidate_behavior(
-                        root, reviewed_patch, instance, environment, docker_image),
-                } if run_tests else None)
+            candidates = _generate_candidate_set([
+                ("A", model, prompt, root, files, allowed_paths, runtime),
+                ("B", consensus_model, prompt, root, files, allowed_paths,
+                 review_runtime),
+            ])
+            primary, secondary = candidates
+            candidate_runtimes = {model: runtime, consensus_model: review_runtime}
+            for candidate in candidates:
+                if candidate["patch"] is None:
+                    continue
+                if run_tests:
+                    behavior = _evaluate_candidate_behavior(
+                        root, str(candidate["patch"]), instance, environment,
+                        docker_image)
+                    candidate["behavior"] = behavior
+                    if behavior.get("behavioral_passed") is False:
+                        corrected, behavior, retry_attempts, patch_returns = (
+                            _retry_behavioral_candidate(
+                                root, str(candidate["patch"]), instance,
+                                environment, docker_image,
+                                str(candidate["model"]),
+                                candidate_runtimes[str(candidate["model"])], files,
+                                allowed_paths, behavior))
+                        candidate["patch"] = corrected
+                        candidate["behavior"] = behavior
+                        candidate["outcome"]["attempts"] += retry_attempts
+                        candidate["outcome"]["retries"] += retry_attempts
+                        candidate["outcome"]["patch_returns"] += patch_returns
+                    candidate["outcome"]["tests_passed"] = (
+                        candidate["behavior"].get("behavioral_passed"))
+                    candidate["outcome"]["pipeline"]["behavioral"] = (
+                        "PASS" if candidate["outcome"]["tests_passed"] is True
+                        else "FAIL")
+                    if candidate["outcome"]["tests_passed"] is not True:
+                        candidate["outcome"]["result_code"] = (
+                            f"CANDIDATE_{candidate['outcome']['candidate_id']}_FAILED")
+                        candidate["outcome"]["pipeline"]["result"] = (
+                            candidate["outcome"]["result_code"])
+                        candidate["outcome"]["failure_detail"] = str(
+                            candidate["behavior"].get("detail", ""))
+            consensus = _candidate_set_consensus(
+                root, candidates, allowed_paths, run_tests)
+            passing = [candidate for candidate in candidates
+                       if candidate["outcome"].get("patch_valid")
+                       and (not run_tests or
+                            candidate["outcome"].get("tests_passed") is True)]
+            if (adjudicator_model and run_tests and not consensus["agreed"]
+                    and passing):
+                adjudicator_runtime = VialRuntime(
+                    VialCoreReference(BASE / "vendor" / "vial-core"),
+                    root / ".vial-adjudicator-state", persist_state=False)
+                adjudicator_runtime.set_workspace_root(root)
+                diagnostics = {
+                    str(candidate["model"]): {
+                        "result_code": candidate["outcome"].get("result_code"),
+                        "pipeline": candidate["outcome"].get("pipeline"),
+                        "behavioral_detail": (candidate.get("behavior") or {}).get(
+                            "detail", "")[-1500:],
+                    } for candidate in candidates
+                }
+                adjudicator_prompt = build_swebench_prompt(
+                    instance, root, files, allowed_paths,
+                    environment or EnvironmentSpec(
+                        python_version="declared-by-image",
+                        image=docker_image or "host"),
+                    feedback=("Generate an independent candidate from the "
+                              "original task and workspace. Candidate patches "
+                              "are intentionally withheld. Use only this "
+                              "diagnostic evidence:\n" +
+                              json.dumps(diagnostics, sort_keys=True)))
+                adjudicator = _generate_validated_candidate(
+                    "ADJUDICATOR", adjudicator_model, adjudicator_prompt, root,
+                    files, allowed_paths, adjudicator_runtime)
+                if adjudicator["patch"] is not None:
+                    adjudicator["behavior"] = _evaluate_candidate_behavior(
+                        root, str(adjudicator["patch"]), instance, environment,
+                        docker_image)
+                    adjudicator["outcome"]["tests_passed"] = (
+                        adjudicator["behavior"].get("behavioral_passed"))
+                    adjudicator["outcome"]["pipeline"]["behavioral"] = (
+                        "PASS" if adjudicator["outcome"]["tests_passed"] is True
+                        else "FAIL")
+                    if adjudicator["outcome"]["tests_passed"] is not True:
+                        adjudicator["outcome"]["result_code"] = (
+                            "CANDIDATE_ADJUDICATOR_FAILED")
+                        adjudicator["outcome"]["pipeline"]["result"] = (
+                            "CANDIDATE_ADJUDICATOR_FAILED")
+                        adjudicator["outcome"]["failure_detail"] = str(
+                            adjudicator["behavior"].get("detail", ""))
+                adjudications = [
+                    _adjudicated_candidate_consensus(
+                        root, candidate, adjudicator, candidates, allowed_paths)
+                    for candidate in passing
+                ]
+                adjudicated = next(
+                    (result for result in adjudications if result["agreed"]),
+                    adjudications[-1])
+                consensus = adjudicated
+                if adjudicated["agreed"]:
+                    matched_model = adjudicated["models"][0]
+                    matched = next(candidate for candidate in passing
+                                   if candidate["model"] == matched_model)
+                    passing = [matched, adjudicator]
             if not consensus["agreed"]:
                 return {"id": instance["id"], "passed": False,
                         "stage": "governance", "consensus": consensus,
-                        "detail": consensus["evidence"]["comparison"]}
+                        "result_code": consensus["result_code"],
+                        "candidate_outcomes": consensus["candidate_outcomes"],
+                        "detail": consensus["evidence"].get(
+                            "comparison", consensus["note"])}
+            selected = passing[0]
+            generated_patch = str(selected["patch"])
+            generated = selected["generated"]
+            runtime = candidate_runtimes.get(str(selected["model"]), runtime)
+            provider = DockerOpenCodeProvider(str(selected["model"]))
+        else:
+            primary = _generate_validated_candidate(
+                "A", model, prompt, root, files, allowed_paths, runtime)
+            if primary["patch"] is None:
+                outcome = primary["outcome"]
+                return {"id": instance["id"], "passed": False,
+                        "stage": "patch_validation" if outcome["returned_patch"]
+                        else "patch_contract",
+                        "detail": outcome["failure_detail"],
+                        "result_code": outcome["result_code"],
+                        "candidate_outcomes": {model: outcome}}
+            generated_patch = str(primary["patch"])
+            generated = primary["generated"]
+            provider = DockerOpenCodeProvider(model)
         if not run_tests:
             return {"id": instance["id"], "passed": True,
                     "stage": "patch_validated", "attempts": generated.attempts,
@@ -740,6 +1171,14 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                         "consensus": consensus,
                         "detail": evidence[-7000:]}
+            if consensus_model is not None:
+                # A replacement patch would no longer have two-candidate
+                # approval. Keep the approved patch and block on new evidence.
+                return {"id": instance["id"], "passed": False,
+                        "stage": "tests", "attempts": attempts,
+                        "tokens": tokens, "fail_to_pass": fail_ok,
+                        "pass_to_pass": pass_ok, "consensus": consensus,
+                        "detail": evidence[-7000:]}
             feedback = ("The generated patch was applied, but benchmark tests failed.\n"
                         f"FAIL_TO_PASS ({'passed' if fail_ok else 'failed'}):\n{fail_detail}\n\n"
                         f"PASS_TO_PASS ({'passed' if pass_ok else 'failed'}):\n{pass_detail}\n\n"
@@ -807,6 +1246,8 @@ def main() -> int:
                         help="JSON map of task id to independent consensus evidence")
     parser.add_argument("--consensus-model", default=None,
                         help="independent second model used to validate each patch")
+    parser.add_argument("--adjudicator-model", default=None,
+                        help="optional independent adjudicator for divergent candidates")
     args = parser.parse_args()
     if not args.run_tests:
         parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
@@ -819,13 +1260,27 @@ def main() -> int:
             parser.error("--consensus-file must contain a JSON object keyed by task id")
     selected = workload["tasks"][args.offset:args.offset + args.limit]
     resolver = EnvironmentResolver()
-    results = []
-    for instance in selected:
+    args.out.mkdir(parents=True, exist_ok=True)
+    checkpoint = args.out / "checkpoint.jsonl"
+    completed: dict[int, dict] = {}
+    if checkpoint.is_file():
+        for line in checkpoint.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+                completed[int(entry["index"])] = dict(entry["result"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+    results = [completed[index] for index in range(args.offset, args.offset + args.limit)
+               if index in completed]
+    for index, instance in enumerate(selected, start=args.offset):
+        if index in completed:
+            continue
         environment = resolver.resolve(instance, args.test_image)
+        started = time.monotonic()
         result = run_instance(instance, args.model, args.run_tests,
                               environment.image, environment,
                               consensus_by_id.get(instance.get("id")),
-                              args.consensus_model)
+                              args.consensus_model, args.adjudicator_model)
         result["environment"] = {
             "repo": instance.get("repo", ""),
             "base_commit": instance.get("base_commit", ""),
@@ -836,28 +1291,13 @@ def main() -> int:
             "timeout_seconds": environment.timeout_seconds,
             "metadata": dict(environment.metadata),
         }
+        result["duration_seconds"] = round(time.monotonic() - started, 3)
+        result = _annotate_result(result, environment)
         results.append(result)
-    for result in results:
-        if result.get("passed"):
-            result["failure_class"] = "none"
-        else:
-            result["failure_class"] = _failure_class(
-                result.get("stage", ""), result.get("detail", ""))
-        result["failure_subclass"] = _failure_subclass(
-            result.get("stage", ""), result.get("detail", ""), result)
-        environment_invalid_stages = {
-            "clone", "checkout", "baseline_tests", "test_environment",
-            "test_fixture", "test_selection",
-        }
-        result["environment_valid"] = result.get("stage") not in environment_invalid_stages
-        result["environment_status"] = (
-            "VALID" if result["environment_valid"] else "INVALID")
-        result["agent_attempted"] = result["stage"] not in environment_invalid_stages
-        consensus_result = result.get("consensus") or {}
-        result["consensus_approved"] = bool(consensus_result.get("agreed"))
-        result["patch_valid"] = result.get("stage") == "tests"
-        result["tests_passed"] = bool(
-            result.get("stage") == "tests" and result.get("passed"))
+        with checkpoint.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"index": index, "result": result}) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
     failure_breakdown: dict[str, int] = {}
     for result in results:
         key = f"{result['failure_class']}.{result['failure_subclass']}"
@@ -874,8 +1314,69 @@ def main() -> int:
               "patch_valid": sum(row["patch_valid"] for row in results),
               "tests_passed": sum(row["tests_passed"] for row in results),
               "agent_solved": metrics["agent_solved"],
-              "agent_success_rate": metrics["agent_success_rate"],
-              "end_to_end_success": metrics["agent_solved"],
+               "agent_success_rate": metrics["agent_success_rate"],
+               "candidate_attempts": metrics.get("candidate_attempts", 0),
+               "candidate_retries": metrics.get("candidate_retries", 0),
+               "candidate_returned_patch": metrics.get(
+                   "candidate_returned_patch", 0),
+               "valid_patch": metrics.get("valid_patch", 0),
+               "tests_passed_by_candidate": metrics.get("tests_passed", 0),
+               "static_evidence": metrics.get("static_evidence", 0),
+               "behavioral_evidence": metrics.get("behavioral_evidence", 0),
+               "complete_evidence": metrics.get("complete_evidence", 0),
+               "reliable_candidates": metrics.get("reliable_candidates", 0),
+               "both_valid": metrics.get("both_valid", 0),
+               "agreement": metrics.get("agreement", 0),
+                "candidate_a_patch_valid": metrics.get(
+                    "candidate_a_patch_valid", 0),
+                "candidate_b_patch_valid": metrics.get(
+                    "candidate_b_patch_valid", 0),
+                "candidate_a_valid": metrics.get("candidate_a_valid", 0),
+                "candidate_b_valid": metrics.get("candidate_b_valid", 0),
+                "consensus_success": metrics.get("consensus_success", 0),
+                "candidate_failure_breakdown": metrics.get(
+                    "candidate_failure_breakdown", {"A": {}, "B": {}}),
+                "diagnostic_table": metrics.get("diagnostic_table", {}),
+                "hash_parity": metrics.get("hash_parity", {}),
+                "protocol_parity_tasks": metrics.get(
+                    "protocol_parity_tasks", 0),
+                "protocol_parity": metrics.get("protocol_parity", 0),
+               "candidate_completion_rate": metrics.get(
+                   "candidate_completion_rate", 0.0),
+               "candidate_patch_validity": metrics.get(
+                   "candidate_patch_validity", 0.0),
+               "candidate_behavioral_success": metrics.get(
+                   "candidate_behavioral_success", 0.0),
+               "swebench_evidence_rate": metrics.get(
+                   "swebench_evidence_rate", 0.0),
+               "candidate_behavioral_evidence_rate": metrics.get(
+                   "candidate_behavioral_evidence_rate", 0.0),
+               "candidate_reliability_rate": metrics.get(
+                   "candidate_reliability_rate", 0.0),
+                "candidate_agreement": metrics.get(
+                    "candidate_agreement", 0.0),
+                "candidate_a_success_rate": metrics.get(
+                    "candidate_a_success_rate", 0.0),
+                "candidate_b_success_rate": metrics.get(
+                    "candidate_b_success_rate", 0.0),
+                "candidate_a_patch_validity_rate": metrics.get(
+                    "candidate_a_patch_validity_rate", 0.0),
+                "candidate_b_patch_validity_rate": metrics.get(
+                    "candidate_b_patch_validity_rate", 0.0),
+                "both_valid_rate": metrics.get("both_valid_rate", 0.0),
+                "consensus_success_rate": metrics.get(
+                    "consensus_success_rate", 0.0),
+                "protocol_parity_rate": metrics.get(
+                    "protocol_parity_rate", 0.0),
+               "candidate_failure_results": sum(
+                   1 for row in results
+                   for outcome in (row.get("candidate_outcomes") or {}).values()
+                   if str(outcome.get("result_code", "")).startswith("CANDIDATE_")
+                   and str(outcome.get("result_code", "")).endswith("_FAILED")),
+               "consensus_failure_results": sum(
+                   row.get("result_code") == "CONSENSUS_FAILED"
+                   for row in results),
+               "end_to_end_success": metrics["agent_solved"],
               "end_to_end_success_rate": metrics["end_to_end_success_rate"],
               "patch_applicable": sum(row.get("stage") in {
                   "patch_validated", "tests"} for row in results),
@@ -905,9 +1406,9 @@ def main() -> int:
                   "test_image_override": args.test_image,
                   "consensus_file": str(args.consensus_file)
                   if args.consensus_file is not None else None,
-                  "consensus_model": args.consensus_model,
+                   "consensus_model": args.consensus_model,
+                   "adjudicator_model": args.adjudicator_model,
               }}
-    args.out.mkdir(parents=True, exist_ok=True)
     output = args.out / f"report-{time.strftime('%Y%m%d-%H%M%S')}.json"
     output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({"report": str(output), **report}, indent=2))
