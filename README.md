@@ -18,9 +18,9 @@ governado valida escopo, autorização, consenso, auditoria, commit e recuperaç
 
 ```text
 python -m vial_code_agent --root . --vial-root vendor/vial-core --prompt "inspect the project"
-python benchmark/run_benchmark.py
-python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
-python benchmark/run_benchmark.py --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
+python -m benchmark.run_benchmark
+python -m benchmark.run_benchmark --agent --model openai/gpt-5.6-luna
+python -m benchmark.run_benchmark --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
 ```
 
 O benchmark padrão é um **Unit / Regression Benchmark** sintético: executa 100
@@ -102,6 +102,43 @@ docker run --rm --network none \
 Consenso para mutações pode exigir evidência: cada candidato é aplicado em uma
 cópia descartável e validado estaticamente; quando `--test-command` é usado,
 os testes comportamentais também precisam passar antes do consenso ser aceito.
+
+### Custo da Segurança Fail-Closed
+
+O protocolo de consenso troca custo de inferência por menor risco de aplicar uma
+solução inválida. Em uma execução diagnóstica de 10 tarefas, foram registradas
+48 tentativas de candidato, 28 patches retornados, 23 patches estaticamente
+válidos e 17 candidatos aprovados também pelos testes comportamentais. A
+execução consumiu 199.713 tokens, ou aproximadamente 19.971 tokens por tarefa.
+
+Nesse relatório, `candidate_completion_rate` é a razão entre patches retornados
+e tentativas de candidato (`28/48 = 0,58`). Já
+`candidate_reliability_rate` exige validade estática e aprovação comportamental,
+e usa todas as tentativas como denominador (`17/48 = 0,35`). Retries e respostas
+sem patch permanecem no denominador; portanto, essas métricas tornam visível o
+trabalho de modelo descartado antes da governança. O custo é intencional: o
+fluxo é fail-closed e não muta o workspace sem evidência independente suficiente.
+
+Esses números são diagnósticos de uma execução específica, não uma estimativa
+fixa de custo. Variam conforme modelo, prompt, workload, retries e testes.
+
+### Primeira Evidência SWE-bench Publicada
+
+O primeiro relatório real versionado está disponível em
+[`benchmark/results/swebench-lite-10-consensus-2026-08-23.json`](benchmark/results/swebench-lite-10-consensus-2026-08-23.json).
+Ele cobre 10 tarefas do SWE-bench Lite com dois candidatos independentes,
+validação comportamental e adjudicação quando aplicável. O resultado foi 7/10
+end-to-end, com 6/10 candidatos A válidos, 7/10 candidatos B válidos e 7/10
+consensos aprovados. As três tarefas bloqueadas permanecem no relatório, com
+suas evidências de candidato insuficiente, em vez de serem removidas do score.
+
+Uma comparação sintética de 100 tarefas por adaptador está disponível em
+[`benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json`](benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json).
+Nesse workload, `opencode` e `vial` obtiveram 100/100. O caminho VIAL consumiu
+84.701 tokens contra 66.756 do caminho `opencode` (+26,9%) e teve latência média
+de 9,40 s contra 9,01 s (+4,3%). Essa é uma medida do protocolo completo neste
+benchmark sintético, não do overhead isolado do VIAL Core nem uma estimativa de
+qualidade em SWE-bench.
 
 ## Instalação
 
