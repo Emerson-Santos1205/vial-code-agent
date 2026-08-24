@@ -19,8 +19,8 @@ governado valida escopo, autorização, consenso, auditoria, commit e recuperaç
 ```text
 python -m vial_code_agent --root . --vial-root vendor/vial-core --prompt "inspect the project"
 python -m benchmark.run_benchmark
-python -m benchmark.run_benchmark --agent --model openai/gpt-5.6-luna
-python -m benchmark.run_benchmark --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
+python -m benchmark.run_benchmark --agent --model openai/gpt-5.5
+python -m benchmark.run_benchmark --adapters baseline,opencode,vial --model openai/gpt-5.5
 ```
 
 O benchmark padrão é um **Unit / Regression Benchmark** sintético: executa 100
@@ -34,6 +34,12 @@ configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
 grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
 sucesso, latência, tokens, regressões, falhas de patch, rollbacks e intervenção
 humana.
+
+Os modelos usam o formato `provider/model` aceito pelo CLI OpenCode. Exemplos
+públicos usados neste projeto são `openai/gpt-5.5` e
+`opencode/deepseek-v4-flash-free`; a disponibilidade depende da autenticação e
+da instalação local do provider. Não use aliases internos de uma execução como
+identificadores públicos de configuração.
 
 Nos relatórios SWE-bench, o sucesso é decomposto em duas métricas: `agent_success_rate`
 é soluções corretas dividido pelas tarefas ambientalmente válidas, enquanto
@@ -164,6 +170,12 @@ benchmarks. Em seguida, instale o pacote em modo editável:
 ```text
 python -m pip install -e .
 ```
+
+## Licença
+
+O VIAL Code Agent é distribuído sob a [Apache License 2.0](LICENSE). O VIAL
+Core incluído em `vendor/vial-core` é um submódulo separado, com sua própria
+declaração de licença.
 
 O comando principal é `python -m release_orchestrator`.
 
