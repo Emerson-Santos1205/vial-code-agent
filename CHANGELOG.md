@@ -95,3 +95,4 @@ _Changes since initial release_
 - c18e4a4 Merge branch 'main' into development
 - 7834efd Merge remote-tracking branch 'origin/development' into development
 - 6d746c9 chore: prepare first public release
+- 934a228 chore: add 0.1.0 release metadata
