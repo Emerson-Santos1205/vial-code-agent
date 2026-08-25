@@ -198,7 +198,7 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
 
 def _normalize_astropy_test_id(test: str) -> str:
     """Let Astropy's custom runner select parametrized tests safely."""
-    return re.sub(r"\[[^\]]*\]$", "", test)
+    return re.sub(r"\[[^\]]*\]?$", "", test)
 
 
 def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
@@ -207,7 +207,13 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
                     configured_command: tuple[str, ...] = (),
                     timeout_seconds: int = 900) -> tuple[bool, str]:
     tests = [test for test in tests if "." in test or "::" in test or "/" in test]
-    if root.joinpath("tests", "runtests.py").is_file() and not (root / "astropy").is_dir():
+    tests = [(_normalize_astropy_test_id(test)
+              if "[" in test and not test.endswith("]") else test)
+             for test in tests]
+    if (root.joinpath("tests", "runtests.py").is_file()
+            and not (root / "astropy").is_dir()
+            and not any("[" in test and not test.endswith("]")
+                        for test in tests)):
         tests = [test for test in tests
                  if test.rsplit(".", 1)[-1].startswith("test")]
         tests = [_normalize_astropy_test_id(test) for test in tests]
@@ -290,9 +296,15 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
 
     def command_for(tests: list[str]) -> str:
         tests = [test for test in tests if "." in test or "::" in test or "/" in test]
+        tests = [(_normalize_astropy_test_id(test)
+                  if "[" in test and not test.endswith("]") else test)
+                 for test in tests]
         if not tests:
             return ":"
-        if (root / "tests" / "runtests.py").is_file() and not (root / "astropy").is_dir():
+        if ((root / "tests" / "runtests.py").is_file()
+                and not (root / "astropy").is_dir()
+                and not any("[" in test and not test.endswith("]")
+                            for test in tests)):
             tests = [test for test in tests
                      if test.rsplit(".", 1)[-1].startswith("test")]
             tests = [_normalize_astropy_test_id(test) for test in tests]
@@ -583,35 +595,49 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
                                 allowed_paths: set[str],
                                 behavior: dict[str, object]
                                 ) -> tuple[str, dict, int, int]:
-    """Give one failing consensus candidate its concrete test evidence."""
-    feedback = (
-        "The candidate patch applied but failed the isolated benchmark tests. "
-        "Correct only the causal implementation issue and return a minimal "
-        "unified diff.\n\n" + str(behavior.get("detail", "")))
-    prompt = build_swebench_prompt(
-        instance, root, files, allowed_paths,
-        environment or EnvironmentSpec(
-            python_version="declared-by-image", image=docker_image or "host"),
-        feedback=feedback)
-    retry = CodeAgent(DockerOpenCodeProvider(model), runtime=runtime).generate(
-        prompt, root, files, runtime=runtime)
-    attempts = max(int(retry.attempts or 1), 1)
-    if retry.patch is None:
-        failed = dict(behavior)
-        failed["detail"] = (str(behavior.get("detail", "")) +
-                            "\nBEHAVIORAL RETRY CONTRACT: " +
-                            str(retry.failure_type or "no patch returned"))[-4000:]
-        return patch, failed, attempts, 0
-    try:
-        corrected = _validate_candidate(root, retry.patch, allowed_paths)
-    except PatchError as error:
-        failed = dict(behavior)
-        failed["detail"] = (str(behavior.get("detail", "")) +
-                            "\nBEHAVIORAL RETRY VALIDATION: " + str(error))[-4000:]
-        return patch, failed, attempts, 1
-    corrected_behavior = _evaluate_candidate_behavior(
-        root, corrected, instance, environment, docker_image)
-    return corrected, corrected_behavior, attempts, 1
+    """Give a failing candidate two evidence-driven corrective attempts."""
+    current_patch = patch
+    current_behavior = dict(behavior)
+    total_attempts = total_retries = 0
+    for retry_number in range(2):
+        feedback = (
+            "The candidate patch applied but failed the isolated benchmark tests. "
+            "Infer the causal implementation defect from the FAIL_TO_PASS "
+            "assertion and expected behavior before editing. Re-read every "
+            "target file from the current workspace, preserve existing APIs, "
+            "and return only a minimal unified diff. Do not modify tests.\n\n"
+            f"BEHAVIORAL RETRY {retry_number + 1}/2:\n" +
+            str(current_behavior.get("detail", "")))
+        prompt = build_swebench_prompt(
+            instance, root, files, allowed_paths,
+            environment or EnvironmentSpec(
+                python_version="declared-by-image", image=docker_image or "host"),
+            feedback=feedback)
+        retry = CodeAgent(DockerOpenCodeProvider(model), runtime=runtime).generate(
+            prompt, root, files, runtime=runtime)
+        attempts = max(int(retry.attempts or 1), 1)
+        total_attempts += attempts
+        total_retries += 1
+        if retry.patch is None:
+            current_behavior["detail"] = (
+                str(current_behavior.get("detail", "")) +
+                "\nBEHAVIORAL RETRY CONTRACT: " +
+                str(retry.failure_type or "no patch returned"))[-4000:]
+            continue
+        try:
+            corrected = _validate_candidate(root, retry.patch, allowed_paths)
+        except PatchError as error:
+            current_behavior["detail"] = (
+                str(current_behavior.get("detail", "")) +
+                "\nBEHAVIORAL RETRY VALIDATION: " + str(error))[-4000:]
+            continue
+        corrected_behavior = _evaluate_candidate_behavior(
+            root, corrected, instance, environment, docker_image)
+        current_patch = corrected
+        current_behavior = corrected_behavior
+        if corrected_behavior.get("behavioral_passed") is True:
+            return current_patch, current_behavior, total_attempts, total_retries
+    return current_patch, current_behavior, total_attempts, total_retries
 
 
 def _candidate_outcome(label: str, model: str, *, returned_patch: bool,
@@ -686,9 +712,10 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostics.append(str(error))
             candidate_prompt = prompt + (
                 "\n\nThe previous patch failed static validation against the "
-                "exact workspace. Regenerate it from the original task and "
-                "workspace; do not repeat the failed hunk unchanged. Return "
-                "only a complete minimal unified diff.\n"
+                "exact workspace. Re-read every target file and verify each "
+                "removed line character-for-character before regenerating. "
+                "Do not trust stale line numbers, do not repeat an unanchored "
+                "hunk, and return only a complete minimal unified diff.\n"
                 f"PATCH VALIDATION DIAGNOSTIC: {error}")
             continue
         outcome = _candidate_outcome(

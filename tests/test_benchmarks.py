@@ -9,6 +9,7 @@ from pathlib import Path
 from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
+    _normalize_astropy_test_id,
     _adjudicated_candidate_consensus, _candidate_consensus,
     _candidate_outcome, _candidate_set_consensus, _generate_candidate_set,
     _generate_validated_candidate,
@@ -219,6 +220,16 @@ class BenchmarkMetricTests(unittest.TestCase):
     def test_astropy_environment_allows_initial_extension_build(self) -> None:
         spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
         self.assertEqual(spec.timeout_seconds, 1800)
+
+    def test_astropy_parametrized_test_ids_are_normalized_for_custom_runner(self) -> None:
+        self.assertEqual(
+            _normalize_astropy_test_id(
+                "astropy/table/tests/test_table.py::test_case[param]"),
+            "astropy/table/tests/test_table.py::test_case")
+        self.assertEqual(
+            _normalize_astropy_test_id(
+                "astropy/table/tests/test_table.py::test_case[broken"),
+            "astropy/table/tests/test_table.py::test_case")
 
     def test_astropy_environment_pins_its_build_and_test_dependencies(self) -> None:
         spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
