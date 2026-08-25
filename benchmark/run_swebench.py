@@ -5,6 +5,7 @@ import argparse
 import json
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -195,6 +196,11 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
             stderr=f"command timed out after {timeout}s")
 
 
+def _normalize_astropy_test_id(test: str) -> str:
+    """Let Astropy's custom runner select parametrized tests safely."""
+    return re.sub(r"\[[^\]]*\]$", "", test)
+
+
 def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
                     docker_image: str | None = None,
                     dependencies: tuple[str, ...] = (),
@@ -204,6 +210,7 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
     if root.joinpath("tests", "runtests.py").is_file() and not (root / "astropy").is_dir():
         tests = [test for test in tests
                  if test.rsplit(".", 1)[-1].startswith("test")]
+        tests = [_normalize_astropy_test_id(test) for test in tests]
         command = ["python" if docker_image else sys.executable,
                    "tests/runtests.py", *tests]
     else:
@@ -288,6 +295,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         if (root / "tests" / "runtests.py").is_file() and not (root / "astropy").is_dir():
             tests = [test for test in tests
                      if test.rsplit(".", 1)[-1].startswith("test")]
+            tests = [_normalize_astropy_test_id(test) for test in tests]
             if not tests:
                 return ":"
             return " ".join(shlex.quote(part) for part in
