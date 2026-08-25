@@ -50,11 +50,12 @@ class EnvironmentResolver:
         metadata = tuple(sorted(
             (str(key), str(value))
             for key, value in (instance.get("environment_metadata") or {}).items()))
+        default_timeout = 1800 if repo == "astropy/astropy" else 900
         try:
             timeout = int(instance.get("timeout_seconds") or
-                          instance.get("timeout") or 900)
+                          instance.get("timeout") or default_timeout)
         except (TypeError, ValueError):
-            timeout = 900
+            timeout = default_timeout
         timeout = max(timeout, 1)
         return EnvironmentSpec(
             python_version=python,

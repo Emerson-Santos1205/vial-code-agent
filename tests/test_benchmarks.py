@@ -216,6 +216,10 @@ class BenchmarkMetricTests(unittest.TestCase):
         })
         self.assertEqual(spec.timeout_seconds, 120)
 
+    def test_astropy_environment_allows_initial_extension_build(self) -> None:
+        spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
+        self.assertEqual(spec.timeout_seconds, 1800)
+
     def test_astropy_environment_pins_its_build_and_test_dependencies(self) -> None:
         spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
         self.assertIn("Cython<3", spec.dependencies)

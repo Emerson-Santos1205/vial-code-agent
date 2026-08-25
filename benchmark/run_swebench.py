@@ -327,8 +327,15 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
               f"fail=$?; echo __VIAL_FAIL_END__:$fail; "
               f"echo __VIAL_PASS_BEGIN__ && {command_for(pass_tests)}; "
               f"pass=$?; echo __VIAL_PASS_END__:$pass; exit 0")
-    result = _run_command(["sh", "-lc", script], root, env, docker_image,
-                          timeout=timeout_seconds)
+    script_path = root / ".vial-test-groups.sh"
+    script_path.write_text(script, encoding="utf-8")
+    try:
+        command = (["sh", "/workspace/.vial-test-groups.sh"]
+                   if docker_image else ["sh", "-lc", script])
+        result = _run_command(command, root, env, docker_image,
+                              timeout=timeout_seconds)
+    finally:
+        script_path.unlink(missing_ok=True)
     output = result.stdout + result.stderr
     if "__VIAL_FAIL_END__" not in output or "__VIAL_PASS_END__" not in output:
         detail = (f"test group markers missing (returncode={result.returncode})\n"
