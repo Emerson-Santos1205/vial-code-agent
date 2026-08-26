@@ -60,6 +60,13 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
                           allowed_paths: set[str], environment: EnvironmentSpec,
                           feedback: str = "", max_chars: int = 24000) -> str:
     """Build an explicit, bounded contract for one SWE-bench generation."""
+    fail_tests = _as_tests(instance.get("fail_to_pass"))
+    pass_tests = _as_tests(instance.get("pass_to_pass"))
+    if len(pass_tests) > 50:
+        pass_tests = pass_tests[:50] + [
+            f"[{len(_as_tests(instance.get('pass_to_pass'))) - 50} additional tests "
+            "are mounted and executed by the benchmark]"
+        ]
     sections = [
         f"REPOSITORY:\n{instance.get('repo', '')}",
         f"BASE COMMIT:\n{instance.get('base_commit', '')}",
@@ -69,8 +76,8 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
         "FILES WERE READ FROM:\n" + "\n".join(
             f"- {path.relative_to(root).as_posix()} ({path})" for path in files),
         f"ISSUE:\n{instance.get('problem_statement', '')}",
-        "FAIL_TO_PASS:\n" + "\n".join(_as_tests(instance.get("fail_to_pass"))),
-        "PASS_TO_PASS:\n" + "\n".join(_as_tests(instance.get("pass_to_pass"))),
+        "FAIL_TO_PASS:\n" + "\n".join(fail_tests),
+        "PASS_TO_PASS:\n" + "\n".join(pass_tests),
         "RULES:\n"
         "- Do not modify tests.\n"
         "- Do not create files unless explicitly authorized.\n"
@@ -685,7 +692,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
                                   allowed_paths: set[str],
                                   runtime: VialRuntime) -> dict[str, object]:
     """Generate and statically validate one candidate without peer evidence."""
-    provider = DockerOpenCodeProvider(model)
+    provider = DockerOpenCodeProvider(model, timeout_seconds=900)
     attempts = retries = patch_returns = 0
     diagnostics = []
     generated = None

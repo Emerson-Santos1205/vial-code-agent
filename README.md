@@ -142,6 +142,8 @@ O primeiro piloto do SWE-bench Verified usa 5 instâncias e está disponível em
 [`benchmark/results/swebench-verified-5-consensus-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-2026-08-25.json).
 Ele obteve 2/5 end-to-end, com 4/5 ambientes válidos. Este é um piloto de
 infraestrutura e não uma amostra estatística ou um número de marketing.
+O rerun após as correções do executor está em
+[`benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json): os 5 ambientes foram válidos, com 2/5 end-to-end.
 
 Uma comparação sintética de 100 tarefas por adaptador está disponível em
 [`benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json`](benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json).

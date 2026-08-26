@@ -1,0 +1,1092 @@
+{
+  "benchmark": "swe-bench-verified-real",
+  "total": 5,
+  "tasks": 5,
+  "passed": 2,
+  "environment_valid": 5,
+  "environment_invalid": 0,
+  "environment_valid_rate": 1.0,
+  "agent_attempted": 5,
+  "consensus_approved": 2,
+  "patch_valid": 2,
+  "tests_passed": 2,
+  "agent_solved": 2,
+  "agent_success_rate": 0.4,
+  "candidate_attempts": 34,
+  "candidate_retries": 22,
+  "candidate_returned_patch": 16,
+  "valid_patch": 10,
+  "tests_passed_by_candidate": 8,
+  "static_evidence": 12,
+  "behavioral_evidence": 10,
+  "complete_evidence": 10,
+  "reliable_candidates": 8,
+  "both_valid": 3,
+  "agreement": 2,
+  "candidate_a_patch_valid": 4,
+  "candidate_b_patch_valid": 4,
+  "candidate_a_valid": 4,
+  "candidate_b_valid": 3,
+  "consensus_success": 2,
+  "candidate_failure_breakdown": {
+    "A": {
+      "no_patch": 1
+    },
+    "B": {
+      "behavioral_failure": 1,
+      "no_patch": 1
+    }
+  },
+  "diagnostic_table": {
+    "no_response": {
+      "A": 0,
+      "B": 0
+    },
+    "no_patch": {
+      "A": 1,
+      "B": 1
+    },
+    "invalid_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "patch_not_applicable": {
+      "A": 0,
+      "B": 0
+    },
+    "behavior_fail": {
+      "A": 0,
+      "B": 1
+    },
+    "valid": {
+      "A": 4,
+      "B": 3
+    }
+  },
+  "hash_parity": {
+    "tasks": 5,
+    "prompt_equal": 2,
+    "protocol_equal": 5,
+    "workspace_equal": 5,
+    "all_equal": 2,
+    "known": 5
+  },
+  "protocol_parity_tasks": 5,
+  "protocol_parity": 2,
+  "candidate_completion_rate": 0.47058823529411764,
+  "candidate_patch_validity": 0.625,
+  "candidate_behavioral_success": 0.8,
+  "swebench_evidence_rate": 0.8333333333333334,
+  "candidate_behavioral_evidence_rate": 1.0,
+  "candidate_reliability_rate": 0.23529411764705882,
+  "candidate_agreement": 0.6666666666666666,
+  "candidate_a_success_rate": 0.8,
+  "candidate_b_success_rate": 0.6,
+  "candidate_a_patch_validity_rate": 0.8,
+  "candidate_b_patch_validity_rate": 0.8,
+  "both_valid_rate": 0.6,
+  "consensus_success_rate": 0.4,
+  "protocol_parity_rate": 0.4,
+  "candidate_failure_results": 4,
+  "consensus_failure_results": 1,
+  "end_to_end_success": 2,
+  "end_to_end_success_rate": 0.4,
+  "patch_applicable": 2,
+  "fail_to_pass": 2,
+  "pass_to_pass": 2,
+  "patch_failures": 0,
+  "environment_failures": 0,
+  "test_failures": 0,
+  "governance_failures": 1,
+  "baseline_checked": 2,
+  "baseline_failures": 0,
+  "failure_breakdown": {
+    "none.none": 2,
+    "candidate.candidate_set_insufficient": 2,
+    "governance.authorization": 1
+  },
+  "tokens": 92598,
+  "retries": 0,
+  "results": [
+    {
+      "id": "astropy__astropy-12907",
+      "passed": true,
+      "stage": "tests",
+      "attempts": 1,
+      "tokens": 9914,
+      "fail_to_pass": true,
+      "pass_to_pass": true,
+      "baseline": {
+        "fail_to_pass": false,
+        "pass_to_pass": true,
+        "expected": true,
+        "detail": "     assert_allclose(is_separable(compound_model), result[0])\nE       AssertionError: \nE       Not equal to tolerance rtol=1e-07, atol=0\nE       \nE       Mismatched elements: 2 / 5 (40%)\nE        x: array([False, False,  True, False, False])\nE        y: array([False, False,  True,  True,  True])\n\nastropy/modeling/tests/test_separable.py:151: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6]\nFAILED astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]\n2 failed in 4.65s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.45s\n__VIAL_PASS_END__:0\n\nSTDERR:\n4+=1) {\n      |                                 ^\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/stats/_stats.c:753:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/timeseries/periodograms/lombscargle/implementations/cython_impl.c:752:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n\nPASS_TO_PASS:\n\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.45s\n\n[runner=:0]\nSTDOUT:\n([[ True,  True, False, False],\n       [ True,  True, False, False],\n       [False, False,  True, False],\n       [False, False, False,  True]]))\n\n    @pytest.mark.parametrize(('compound_model', 'result'), compound_models.values())\n    def test_separable(compound_model, result):\n>       assert_allclose(is_separable(compound_model), result[0])\nE       AssertionError: \nE       Not equal to tolerance rtol=1e-07, atol=0\nE       \nE       Mismatched elements: 2 / 4 (50%)\nE        x: array([False, False, False, False])\nE        y: array([False, False,  True,  True])\n\nastropy/modeling/tests/test_separable.py:151: AssertionError\n___________________ test_separable[compound_model9-result9] ____________________\n\ncompound_model = <CompoundModel(angle_0=2., offset_1=1., factor_2=1., factor_3=2.)>\nresult = (array([False, False,  True,  True,  True]), array([[ True,  True, False, False, False],\n       [ True,  True, False, ... False,  True, False, False],\n       [False, False, False,  True, False],\n       [False, False, False, False,  True]]))\n\n    @pytest.mark.parametrize(('compound_model', 'result'), compound_models.values())\n    def test_separable(compound_model, result):\n>       assert_allclose(is_separable(compound_model), result[0])\nE       AssertionError: \nE       Not equal to tolerance rtol=1e-07, atol=0\nE       \nE       Mismatched elements: 2 / 5 (40%)\nE        x: array([False, False,  True, False, False])\nE        y: array([False, False,  True,  True,  True])\n\nastropy/modeling/tests/test_separable.py:151: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6]\nFAILED astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]\n2 failed in 4.65s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.45s\n__VIAL_PASS_END__:0\n\nSTDERR:\n4+=1) {\n      |                                 ^\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/stats/_stats.c:753:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/timeseries/periodograms/lombscargle/implementations/cython_impl.c:752:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+      },
+      "consensus": {
+        "agreed": true,
+        "agreement_ratio": 1.0,
+        "models": [
+          "openai/gpt-5.6-luna",
+          "openai/gpt-5.4"
+        ],
+        "responses": {
+          "openai/gpt-5.6-luna": "--- a/astropy/modeling/separable.py\n+++ b/astropy/modeling/separable.py\n@@ -242,7 +242,7 @@ def _cstack(left, right):\n     else:\n         cright = np.zeros((noutp, right.shape[1]))\n-        cright[-right.shape[0]:, -right.shape[1]:] = 1\n+        cright[-right.shape[0]:, -right.shape[1]:] = right\n \n     return np.hstack([cleft, cright])\n",
+          "openai/gpt-5.4": "--- a/astropy/modeling/separable.py\n+++ b/astropy/modeling/separable.py\n@@ -242,7 +242,7 @@ def _cstack(left, right):\n         cright = _coord_matrix(right, 'right', noutp)\n     else:\n         cright = np.zeros((noutp, right.shape[1]))\n-        cright[-right.shape[0]:, -right.shape[1]:] = 1\n+        cright[-right.shape[0]:, -right.shape[1]:] = right\n \n     return np.hstack([cleft, cright])\n"
+        },
+        "evidence": {
+          "openai/gpt-5.6-luna": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "                                                      [100%]\n2 passed in 6.18s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.50s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.50s\n\n[runner=:0]\nSTDOUT:\ns (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: attrs>=19.2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (26.1.0)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: pytest-filter-subpackage>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: pytest-arraydiff>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.7.0)\nRequirement already satisfied: pytest-openfiles>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.6.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 6.18s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.50s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "openai/gpt-5.4": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "                                                      [100%]\n2 passed in 6.24s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.74s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.74s\n\n[runner=:0]\nSTDOUT:\nckages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-cov>=2.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: pytest-doctestplus>=0.11.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (1.6.0)\nRequirement already satisfied: pytest-openfiles>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.6.0)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: attrs>=19.2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (26.1.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 6.24s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.74s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "comparison": "candidates produce the same workspace result",
+          "behavioral_equivalent": true
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_A_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_A_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "aaaf4de221e8fce832a5db1b725342494d4c81ea049df3c1681672be8480eb8f",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "1343963ded7486fd823202d1fdf073ba7a5bb9764cbbae069ad0c5aa0826e344"
+          },
+          "openai/gpt-5.4": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.4",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_B_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_B_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "aaaf4de221e8fce832a5db1b725342494d4c81ea049df3c1681672be8480eb8f",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "1343963ded7486fd823202d1fdf073ba7a5bb9764cbbae069ad0c5aa0826e344"
+          }
+        },
+        "status": "APPROVED",
+        "result_code": "CONSENSUS_SUCCEEDED",
+        "note": "independent SWE-bench candidate comparison"
+      },
+      "detail": "FAIL_TO_PASS:\n\nInternet access disabled\n..                                                                       [100%]\n2 passed in 2.23s\n\n[runner=:0]\nSTDOUT:\nes (from pytest-astropy==0.9.0) (0.7.0)\nRequirement already satisfied: pytest-openfiles>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.6.0)\nRequirement already satisfied: pytest-cov>=2.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: pytest-filter-subpackage>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 2.23s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.60s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n\nPASS_TO_PASS:\n\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.60s\n\n[runner=:0]\nSTDOUT:\nes (from pytest-astropy==0.9.0) (0.7.0)\nRequirement already satisfied: pytest-openfiles>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.6.0)\nRequirement already satisfied: pytest-cov>=2.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: pytest-filter-subpackage>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 2.23s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.............                                                            [100%]\n13 passed in 2.60s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+      "environment": {
+        "repo": "astropy/astropy",
+        "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+        "python_version": "3.9",
+        "image": "vial-code-agent-swebench-python39:local",
+        "dependencies": [
+          "pytest==7.4.4",
+          "Cython<3",
+          "pytest-astropy==0.9.0",
+          "pytest-astropy-header==0.1.2"
+        ],
+        "test_command": [],
+        "timeout_seconds": 1800,
+        "metadata": {}
+      },
+      "duration_seconds": 870.891,
+      "failure_class": "none",
+      "failure_subclass": "none",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": true,
+      "candidate_outcomes": {
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_A_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_A_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "aaaf4de221e8fce832a5db1b725342494d4c81ea049df3c1681672be8480eb8f",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "1343963ded7486fd823202d1fdf073ba7a5bb9764cbbae069ad0c5aa0826e344"
+        },
+        "openai/gpt-5.4": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.4",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_B_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_B_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "aaaf4de221e8fce832a5db1b725342494d4c81ea049df3c1681672be8480eb8f",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "1343963ded7486fd823202d1fdf073ba7a5bb9764cbbae069ad0c5aa0826e344"
+        }
+      },
+      "result_code": "CONSENSUS_SUCCEEDED",
+      "patch_valid": true,
+      "tests_passed": true
+    },
+    {
+      "id": "astropy__astropy-13033",
+      "passed": false,
+      "stage": "governance",
+      "consensus": {
+        "agreed": false,
+        "agreement_ratio": 0.0,
+        "status": "INSUFFICIENT_CANDIDATES",
+        "result_code": "CANDIDATE_SET_INSUFFICIENT",
+        "models": [
+          "openai/gpt-5.6-luna",
+          "openai/gpt-5.6-sol"
+        ],
+        "responses": {},
+        "evidence": {
+          "qualified_candidates": [
+            "openai/gpt-5.6-luna"
+          ],
+          "diagnostics": {
+            "openai/gpt-5.6-luna": "",
+            "openai/gpt-5.6-sol": "eries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n\n[runner=:0]\nSTDOUT:\n         ts.copy().remove_column('time')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'a'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().remove_columns(['time', 'a'])\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'b'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().rename_column('time', 'banana')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'banana'\")\n    \n        # https://github.com/astropy/astropy/issues/13009\n        ts_2cols_required = ts.copy()\n        ts_2cols_required._required_columns = ['time', 'a']\n        with pytest.raises(ValueError) as exc:\n            ts_2cols_required.remove_column('a')\n>       assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"['time', 'a'] as the first columns but found ['time', 'b']\")\nE       assert \"TimeSeries o... found 'time'\" == \"TimeSeries o...['time', 'b']\"\nE         - TimeSeries object is invalid - expected ['time', 'a'] as the first columns but found ['time', 'b']\nE         ?                                         -      ------                                -      ------\nE         + TimeSeries object is invalid - expected 'time' as the first columns but found 'time'\n\nastropy/timeseries/tests/test_sampled.py:403: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/timeseries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          }
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_A_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 3,
+            "attempts": 3,
+            "retries": 2,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_A_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "2a6dabd76058cf72ec3e28519d55509a040cdd782dbfd458dc98c673f6e7206a",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+          },
+          "openai/gpt-5.4": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.4",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "FAIL",
+              "result": "CANDIDATE_B_FAILED"
+            },
+            "returned_patch": true,
+            "patch_returns": 3,
+            "attempts": 5,
+            "retries": 4,
+            "patch_valid": true,
+            "tests_passed": false,
+            "result_code": "CANDIDATE_B_FAILED",
+            "failure_detail": "eries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.83s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n\n[runner=:0]\nSTDOUT:\n         ts.copy().remove_column('time')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'a'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().remove_columns(['time', 'a'])\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'b'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().rename_column('time', 'banana')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'banana'\")\n    \n        # https://github.com/astropy/astropy/issues/13009\n        ts_2cols_required = ts.copy()\n        ts_2cols_required._required_columns = ['time', 'a']\n        with pytest.raises(ValueError) as exc:\n            ts_2cols_required.remove_column('a')\n>       assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"['time', 'a'] as the first columns but found ['time', 'b']\")\nE       assert \"TimeSeries o... found 'time'\" == \"TimeSeries o...['time', 'b']\"\nE         - TimeSeries object is invalid - expected ['time', 'a'] as the first columns but found ['time', 'b']\nE         ?                                         -      ------                                -      ------\nE         + TimeSeries object is invalid - expected 'time' as the first columns but found 'time'\n\nastropy/timeseries/tests/test_sampled.py:403: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/timeseries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.83s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+            "response_received": true,
+            "prompt_sha256": "2a6dabd76058cf72ec3e28519d55509a040cdd782dbfd458dc98c673f6e7206a",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+          },
+          "openai/gpt-5.6-sol": {
+            "candidate_id": "ADJUDICATOR",
+            "model": "openai/gpt-5.6-sol",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "FAIL",
+              "result": "CANDIDATE_ADJUDICATOR_FAILED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": false,
+            "result_code": "CANDIDATE_ADJUDICATOR_FAILED",
+            "failure_detail": "eries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n\n[runner=:0]\nSTDOUT:\n         ts.copy().remove_column('time')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'a'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().remove_columns(['time', 'a'])\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'b'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().rename_column('time', 'banana')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'banana'\")\n    \n        # https://github.com/astropy/astropy/issues/13009\n        ts_2cols_required = ts.copy()\n        ts_2cols_required._required_columns = ['time', 'a']\n        with pytest.raises(ValueError) as exc:\n            ts_2cols_required.remove_column('a')\n>       assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"['time', 'a'] as the first columns but found ['time', 'b']\")\nE       assert \"TimeSeries o... found 'time'\" == \"TimeSeries o...['time', 'b']\"\nE         - TimeSeries object is invalid - expected ['time', 'a'] as the first columns but found ['time', 'b']\nE         ?                                         -      ------                                -      ------\nE         + TimeSeries object is invalid - expected 'time' as the first columns but found 'time'\n\nastropy/timeseries/tests/test_sampled.py:403: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/timeseries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+            "response_received": true,
+            "prompt_sha256": "14f89c4ef015a4e4714644a6ece29ca6ab6fdb375c1b9a5809e7abcc6835dec2",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+          }
+        },
+        "note": "fewer than two candidates have complete passing evidence"
+      },
+      "result_code": "CANDIDATE_SET_INSUFFICIENT",
+      "candidate_outcomes": {
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_A_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 3,
+          "attempts": 3,
+          "retries": 2,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_A_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "2a6dabd76058cf72ec3e28519d55509a040cdd782dbfd458dc98c673f6e7206a",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+        },
+        "openai/gpt-5.4": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.4",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "FAIL",
+            "result": "CANDIDATE_B_FAILED"
+          },
+          "returned_patch": true,
+          "patch_returns": 3,
+          "attempts": 5,
+          "retries": 4,
+          "patch_valid": true,
+          "tests_passed": false,
+          "result_code": "CANDIDATE_B_FAILED",
+          "failure_detail": "eries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.83s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n\n[runner=:0]\nSTDOUT:\n         ts.copy().remove_column('time')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'a'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().remove_columns(['time', 'a'])\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'b'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().rename_column('time', 'banana')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'banana'\")\n    \n        # https://github.com/astropy/astropy/issues/13009\n        ts_2cols_required = ts.copy()\n        ts_2cols_required._required_columns = ['time', 'a']\n        with pytest.raises(ValueError) as exc:\n            ts_2cols_required.remove_column('a')\n>       assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"['time', 'a'] as the first columns but found ['time', 'b']\")\nE       assert \"TimeSeries o... found 'time'\" == \"TimeSeries o...['time', 'b']\"\nE         - TimeSeries object is invalid - expected ['time', 'a'] as the first columns but found ['time', 'b']\nE         ?                                         -      ------                                -      ------\nE         + TimeSeries object is invalid - expected 'time' as the first columns but found 'time'\n\nastropy/timeseries/tests/test_sampled.py:403: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/timeseries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.83s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.22s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+          "response_received": true,
+          "prompt_sha256": "2a6dabd76058cf72ec3e28519d55509a040cdd782dbfd458dc98c673f6e7206a",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+        },
+        "openai/gpt-5.6-sol": {
+          "candidate_id": "ADJUDICATOR",
+          "model": "openai/gpt-5.6-sol",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "FAIL",
+            "result": "CANDIDATE_ADJUDICATOR_FAILED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": false,
+          "result_code": "CANDIDATE_ADJUDICATOR_FAILED",
+          "failure_detail": "eries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n\n[runner=:0]\nSTDOUT:\n         ts.copy().remove_column('time')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'a'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().remove_columns(['time', 'a'])\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'b'\")\n    \n        with pytest.raises(ValueError) as exc:\n            ts.copy().rename_column('time', 'banana')\n        assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"'time' as the first column but found 'banana'\")\n    \n        # https://github.com/astropy/astropy/issues/13009\n        ts_2cols_required = ts.copy()\n        ts_2cols_required._required_columns = ['time', 'a']\n        with pytest.raises(ValueError) as exc:\n            ts_2cols_required.remove_column('a')\n>       assert exc.value.args[0] == (\"TimeSeries object is invalid - expected \"\n                                     \"['time', 'a'] as the first columns but found ['time', 'b']\")\nE       assert \"TimeSeries o... found 'time'\" == \"TimeSeries o...['time', 'b']\"\nE         - TimeSeries object is invalid - expected ['time', 'a'] as the first columns but found ['time', 'b']\nE         ?                                         -      ------                                -      ------\nE         + TimeSeries object is invalid - expected 'time' as the first columns but found 'time'\n\nastropy/timeseries/tests/test_sampled.py:403: AssertionError\n=========================== short test summary info ============================\nFAILED astropy/timeseries/tests/test_sampled.py::test_required_columns - asse...\n1 failed in 1.64s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n....................                                                     [100%]\n20 passed in 1.19s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+          "response_received": true,
+          "prompt_sha256": "14f89c4ef015a4e4714644a6ece29ca6ab6fdb375c1b9a5809e7abcc6835dec2",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "8abbc43638bf2e8361d7aa9feadfe37920ca66b429eda94fa90323316cbf678b"
+        }
+      },
+      "detail": "fewer than two candidates have complete passing evidence",
+      "environment": {
+        "repo": "astropy/astropy",
+        "base_commit": "298ccb478e6bf092953bca67a3d29dc6c35f6752",
+        "python_version": "3.9",
+        "image": "vial-code-agent-swebench-python39:local",
+        "dependencies": [
+          "pytest==7.4.4",
+          "Cython<3",
+          "pytest-astropy==0.9.0",
+          "pytest-astropy-header==0.1.2"
+        ],
+        "test_command": [],
+        "timeout_seconds": 1800,
+        "metadata": {}
+      },
+      "duration_seconds": 696.015,
+      "failure_class": "candidate",
+      "failure_subclass": "candidate_set_insufficient",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": false,
+      "patch_valid": false,
+      "tests_passed": false
+    },
+    {
+      "id": "astropy__astropy-13236",
+      "passed": true,
+      "stage": "tests",
+      "attempts": 1,
+      "tokens": 82684,
+      "fail_to_pass": true,
+      "pass_to_pass": true,
+      "baseline": {
+        "fail_to_pass": false,
+        "pass_to_pass": true,
+        "expected": true,
+        "detail": "................................................. [ 89%]\n....................................................................     [100%]\n644 passed in 13.23s\n__VIAL_PASS_END__:0\n\nSTDERR:\n/stats/_stats.c:753:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\n./astropy/cosmology/flrw/scalar_inv_efuncs.c: In function \u2018__pyx_f_7astropy_9cosmology_4flrw_17scalar_inv_efuncs_nufunc\u2019:\n./astropy/cosmology/flrw/scalar_inv_efuncs.c:6424:33: warning: comparison of integer expressions of different signedness: \u2018unsigned int\u2019 and \u2018int\u2019 [-Wsign-compare]\n 6424 |   for (__pyx_t_4 = 0; __pyx_t_4 < __pyx_t_3; __pyx_t_4+=1) {\n      |                                 ^\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/timeseries/periodograms/lombscargle/implementations/cython_impl.c:752:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n\nPASS_TO_PASS:\n\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 13.23s\n\n[runner=:0]\nSTDOUT:\nNdarrayMixin([(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')],\\n             dtype=[('f0', '<i4'), ('f1', '<U1')]), <class 'astropy.table.column.Column'>)\n\nastropy/table/tests/test_mixin.py:731: AssertionError\n________________________ test_structured_masked_column _________________________\n\n    def test_structured_masked_column():\n        \"\"\"Test that adding a masked ndarray with a structured dtype works\"\"\"\n        dtype = np.dtype([('z', 'f8'), ('x', 'f8'), ('y', 'i4')])\n        t = Table()\n        t['a'] = np.ma.array([(1, 2, 3),\n                              (4, 5, 6)],\n                             mask=[(False, False, True),\n                                   (False, True, False)],\n                             dtype=dtype)\n>       assert np.all(t['a']['z'].mask == [False, False])\nE       AttributeError: 'NdarrayMixin' object has no attribute 'mask'\n\nastropy/table/tests/test_table.py:2928: AttributeError\n=========================== short test summary info ============================\nFAILED astropy/table/tests/test_mixin.py::test_ndarray_mixin[False] - Asserti...\nFAILED astropy/table/tests/test_table.py::test_structured_masked_column - Att...\n2 failed in 1.45s\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 13.23s\n__VIAL_PASS_END__:0\n\nSTDERR:\n/stats/_stats.c:753:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\n./astropy/cosmology/flrw/scalar_inv_efuncs.c: In function \u2018__pyx_f_7astropy_9cosmology_4flrw_17scalar_inv_efuncs_nufunc\u2019:\n./astropy/cosmology/flrw/scalar_inv_efuncs.c:6424:33: warning: comparison of integer expressions of different signedness: \u2018unsigned int\u2019 and \u2018int\u2019 [-Wsign-compare]\n 6424 |   for (__pyx_t_4 = 0; __pyx_t_4 < __pyx_t_3; __pyx_t_4+=1) {\n      |                                 ^\nIn file included from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1969,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,\n                 from /usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:4,\n                 from ./astropy/timeseries/periodograms/lombscargle/implementations/cython_impl.c:752:\n/usr/local/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning \"Using deprecated NumPy API, disable it with \" \"#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION\" [-Wcpp]\n   17 | #warning \"Using deprecated NumPy API, disable it with \" \\\n      |  ^~~~~~~\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+      },
+      "consensus": {
+        "agreed": true,
+        "agreement_ratio": 1.0,
+        "models": [
+          "openai/gpt-5.6-luna",
+          "openai/gpt-5.4"
+        ],
+        "responses": {
+          "openai/gpt-5.6-luna": "--- a/astropy/table/table.py\n+++ b/astropy/table/table.py\n@@ -1239,13 +1239,6 @@\n                                 f'{fully_qualified_name} '\n                                 'did not return a valid mixin column')\n \n-        # Structured ndarray gets viewed as a mixin unless already a valid\n-        # mixin class\n-        if (not isinstance(data, Column) and not data_is_mixin\n-                and isinstance(data, np.ndarray) and len(data.dtype) > 1):\n-            data = data.view(NdarrayMixin)\n-            data_is_mixin = True\n-\n         # Get the final column name using precedence.  Some objects may not\n         # have an info attribute. Also avoid creating info as a side effect.\n         if not name:\n",
+          "openai/gpt-5.4": "--- a/astropy/table/table.py\n+++ b/astropy/table/table.py\n@@ -1239,13 +1239,6 @@ class Table:\n                                 f'{fully_qualified_name} '\n                                 'did not return a valid mixin column')\n \n-        # Structured ndarray gets viewed as a mixin unless already a valid\n-        # mixin class\n-        if (not isinstance(data, Column) and not data_is_mixin\n-                and isinstance(data, np.ndarray) and len(data.dtype) > 1):\n-            data = data.view(NdarrayMixin)\n-            data_is_mixin = True\n-\n         # Get the final column name using precedence.  Some objects may not\n         # have an info attribute. Also avoid creating info as a side effect.\n         if not name:\n"
+        },
+        "evidence": {
+          "openai/gpt-5.6-luna": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "d to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 12.31s\n\n[runner=:0]\nSTDOUT:\n/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (1.6.0)\nRequirement already satisfied: attrs>=19.2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (26.1.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 1.13s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 12.31s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "openai/gpt-5.4": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "d to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 13.50s\n\n[runner=:0]\nSTDOUT:\nte-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-filter-subpackage>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 1.21s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 13.50s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "comparison": "candidates produce the same workspace result",
+          "behavioral_equivalent": true
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_A_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 4,
+            "retries": 3,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_A_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "5448fc0979e64e80270063f46c50f7f5aac941929fb98ab066334b565b0e06da",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "f4ceed7adb0784e0802fe8b266e5c5d969348c87bc6a9aa2248f04ebb79a1c18"
+          },
+          "openai/gpt-5.4": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.4",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_B_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 2,
+            "attempts": 2,
+            "retries": 1,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_B_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "e3b6315dab07d86818de1d78a8e6f6e0a980c2f6128be626ddec1dbfe189c806",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "f4ceed7adb0784e0802fe8b266e5c5d969348c87bc6a9aa2248f04ebb79a1c18"
+          }
+        },
+        "status": "APPROVED",
+        "result_code": "CONSENSUS_SUCCEEDED",
+        "note": "independent SWE-bench candidate comparison"
+      },
+      "detail": "FAIL_TO_PASS:\n\nInternet access disabled\n..                                                                       [100%]\n2 passed in 0.87s\n\n[runner=:0]\nSTDOUT:\nb/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 0.87s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 12.87s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n\nPASS_TO_PASS:\n\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 12.87s\n\n[runner=:0]\nSTDOUT:\nb/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n..                                                                       [100%]\n2 passed in 0.87s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 44%]\n........................................................................ [ 55%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 89%]\n....................................................................     [100%]\n644 passed in 12.87s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+      "environment": {
+        "repo": "astropy/astropy",
+        "base_commit": "6ed769d58d89380ebaa1ef52b300691eefda8928",
+        "python_version": "3.9",
+        "image": "vial-code-agent-swebench-python39:local",
+        "dependencies": [
+          "pytest==7.4.4",
+          "Cython<3",
+          "pytest-astropy==0.9.0",
+          "pytest-astropy-header==0.1.2"
+        ],
+        "test_command": [],
+        "timeout_seconds": 1800,
+        "metadata": {}
+      },
+      "duration_seconds": 1289.047,
+      "failure_class": "none",
+      "failure_subclass": "none",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": true,
+      "candidate_outcomes": {
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_A_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 4,
+          "retries": 3,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_A_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "5448fc0979e64e80270063f46c50f7f5aac941929fb98ab066334b565b0e06da",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "f4ceed7adb0784e0802fe8b266e5c5d969348c87bc6a9aa2248f04ebb79a1c18"
+        },
+        "openai/gpt-5.4": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.4",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_B_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 2,
+          "attempts": 2,
+          "retries": 1,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_B_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "e3b6315dab07d86818de1d78a8e6f6e0a980c2f6128be626ddec1dbfe189c806",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "f4ceed7adb0784e0802fe8b266e5c5d969348c87bc6a9aa2248f04ebb79a1c18"
+        }
+      },
+      "result_code": "CONSENSUS_SUCCEEDED",
+      "patch_valid": true,
+      "tests_passed": true
+    },
+    {
+      "id": "astropy__astropy-13398",
+      "passed": false,
+      "stage": "governance",
+      "consensus": {
+        "agreed": false,
+        "agreement_ratio": 0.0,
+        "status": "INSUFFICIENT_CANDIDATES",
+        "result_code": "CANDIDATE_SET_INSUFFICIENT",
+        "models": [
+          "openai/gpt-5.6-luna",
+          "openai/gpt-5.4"
+        ],
+        "responses": {},
+        "evidence": {
+          "qualified_candidates": [],
+          "diagnostics": {
+            "openai/gpt-5.6-luna": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:175\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: coordinates/builtin_frames/intermediate_rotation_transforms.py: No such file or directory",
+            "openai/gpt-5.4": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:114\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/itrs.py:3\nerror: astropy/coordinates/builtin_frames/itrs.py: patch does not apply"
+          }
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "FAIL",
+              "static": "FAIL",
+              "behavioral": "NOT_RUN",
+              "result": "CANDIDATE_A_FAILED"
+            },
+            "returned_patch": false,
+            "patch_returns": 0,
+            "attempts": 6,
+            "retries": 5,
+            "patch_valid": false,
+            "tests_passed": null,
+            "result_code": "CANDIDATE_A_FAILED",
+            "failure_detail": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:175\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: coordinates/builtin_frames/intermediate_rotation_transforms.py: No such file or directory",
+            "response_received": true,
+            "prompt_sha256": "0c964dc11646b793e5d2d2afdaca05d3a8b53ad49bedc2ae3a1f63e1aa30b397",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "6026fefa3fcac7d9f086278cd24cebb2b4502fc5e0a3beea1ceb7f8297fa1926"
+          },
+          "openai/gpt-5.4": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.4",
+            "pipeline": {
+              "patch": "FAIL",
+              "static": "FAIL",
+              "behavioral": "NOT_RUN",
+              "result": "CANDIDATE_B_FAILED"
+            },
+            "returned_patch": false,
+            "patch_returns": 0,
+            "attempts": 6,
+            "retries": 5,
+            "patch_valid": false,
+            "tests_passed": null,
+            "result_code": "CANDIDATE_B_FAILED",
+            "failure_detail": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:114\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/itrs.py:3\nerror: astropy/coordinates/builtin_frames/itrs.py: patch does not apply",
+            "response_received": true,
+            "prompt_sha256": "3bf231cf51cbd6ec1c081d2581dab9e82b854b7b6586440df3893b1da57fda83",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "6026fefa3fcac7d9f086278cd24cebb2b4502fc5e0a3beea1ceb7f8297fa1926"
+          }
+        },
+        "note": "fewer than two candidates have complete passing evidence"
+      },
+      "result_code": "CANDIDATE_SET_INSUFFICIENT",
+      "candidate_outcomes": {
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "FAIL",
+            "static": "FAIL",
+            "behavioral": "NOT_RUN",
+            "result": "CANDIDATE_A_FAILED"
+          },
+          "returned_patch": false,
+          "patch_returns": 0,
+          "attempts": 6,
+          "retries": 5,
+          "patch_valid": false,
+          "tests_passed": null,
+          "result_code": "CANDIDATE_A_FAILED",
+          "failure_detail": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:175\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: coordinates/builtin_frames/intermediate_rotation_transforms.py: No such file or directory",
+          "response_received": true,
+          "prompt_sha256": "0c964dc11646b793e5d2d2afdaca05d3a8b53ad49bedc2ae3a1f63e1aa30b397",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "6026fefa3fcac7d9f086278cd24cebb2b4502fc5e0a3beea1ceb7f8297fa1926"
+        },
+        "openai/gpt-5.4": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.4",
+          "pipeline": {
+            "patch": "FAIL",
+            "static": "FAIL",
+            "behavioral": "NOT_RUN",
+            "result": "CANDIDATE_B_FAILED"
+          },
+          "returned_patch": false,
+          "patch_returns": 0,
+          "attempts": 6,
+          "retries": 5,
+          "patch_valid": false,
+          "tests_passed": null,
+          "result_code": "CANDIDATE_B_FAILED",
+          "failure_detail": "PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py:114\nerror: astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py: patch does not apply; corrective attempt: PATCH_CONTRACT: error: patch failed: astropy/coordinates/builtin_frames/itrs.py:3\nerror: astropy/coordinates/builtin_frames/itrs.py: patch does not apply",
+          "response_received": true,
+          "prompt_sha256": "3bf231cf51cbd6ec1c081d2581dab9e82b854b7b6586440df3893b1da57fda83",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "6026fefa3fcac7d9f086278cd24cebb2b4502fc5e0a3beea1ceb7f8297fa1926"
+        }
+      },
+      "detail": "fewer than two candidates have complete passing evidence",
+      "environment": {
+        "repo": "astropy/astropy",
+        "base_commit": "6500928dc0e57be8f06d1162eacc3ba5e2eff692",
+        "python_version": "3.9",
+        "image": "vial-code-agent-swebench-python39:local",
+        "dependencies": [
+          "pytest==7.4.4",
+          "Cython<3",
+          "pytest-astropy==0.9.0",
+          "pytest-astropy-header==0.1.2"
+        ],
+        "test_command": [],
+        "timeout_seconds": 1800,
+        "metadata": {}
+      },
+      "duration_seconds": 1842.265,
+      "failure_class": "candidate",
+      "failure_subclass": "candidate_set_insufficient",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": false,
+      "patch_valid": false,
+      "tests_passed": false
+    },
+    {
+      "id": "astropy__astropy-13453",
+      "passed": false,
+      "stage": "governance",
+      "consensus": {
+        "agreed": false,
+        "agreement_ratio": 0.0,
+        "models": [
+          "openai/gpt-5.4",
+          "openai/gpt-5.6-sol"
+        ],
+        "responses": {
+          "openai/gpt-5.4": "--- a/astropy/io/ascii/html.py\n+++ b/astropy/io/ascii/html.py\n@@ -354,6 +354,11 @@ class HTML(core.BaseReader):\n             self.data.fill_values = [self.data.fill_values]\n \n         self.data._set_fill_values(cols)\n+        col_formats = getattr(self.data, 'formats', {})\n+\n+        for col in cols:\n+            if col.info.name in col_formats:\n+                col.info.format = col_formats[col.info.name]\n \n         lines = []\n \n@@ -429,6 +434,7 @@ class HTML(core.BaseReader):\n                                 for i in range(span):\n                                     # Split up multicolumns into separate columns\n                                     new_col = Column([el[i] for el in col])\n+                                    new_col.info.format = col.info.format\n \n                                     new_col_iter_str_vals = self.fill_values(\n                                         col, new_col.info.iter_str_vals())\n",
+          "openai/gpt-5.6-sol": "diff --git a/astropy/io/ascii/html.py b/astropy/io/ascii/html.py\n--- a/astropy/io/ascii/html.py\n+++ b/astropy/io/ascii/html.py\n@@ -349,11 +349,13 @@ class HTML(core.BaseReader):\n         cols = list(table.columns.values())\n \n         self.data.header.cols = cols\n+        self.data.cols = cols\n \n         if isinstance(self.data.fill_values, tuple):\n             self.data.fill_values = [self.data.fill_values]\n \n         self.data._set_fill_values(cols)\n+        self.data._set_col_formats()\n \n         lines = []\n"
+        },
+        "evidence": {
+          "openai/gpt-5.4": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "                                                        [100%]\n1 passed in 0.33s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.28s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.28s\n\n[runner=:0]\nSTDOUT:\nte-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: pytest-openfiles>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.6.0)\nRequirement already satisfied: pytest-arraydiff>=0.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.7.0)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-cov>=2.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n.                                                                        [100%]\n1 passed in 0.33s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.28s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "openai/gpt-5.6-sol": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "                                                        [100%]\n1 passed in 0.37s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.43s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\nPASS_TO_PASS: \nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.43s\n\n[runner=:0]\nSTDOUT:\n9/site-packages (from pytest-astropy==0.9.0) (0.2.0)\nRequirement already satisfied: pytest-cov>=2.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (7.1.0)\nRequirement already satisfied: hypothesis>=5.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (6.141.1)\nRequirement already satisfied: pytest-mock>=2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (3.15.1)\nRequirement already satisfied: attrs>=19.2.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (26.1.0)\nRequirement already satisfied: pytest-remotedata>=0.3.1 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (0.4.2)\nRequirement already satisfied: pytest-doctestplus>=0.11.0 in /usr/local/lib/python3.9/site-packages (from pytest-astropy==0.9.0) (1.6.0)\nRequirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.9/site-packages (from exceptiongroup>=1.0.0rc8->pytest==7.4.4) (4.16.0)\nRequirement already satisfied: sortedcontainers<3.0.0,>=2.1.0 in /usr/local/lib/python3.9/site-packages (from hypothesis>=5.1->pytest-astropy==0.9.0) (2.4.0)\nRequirement already satisfied: numpy in /usr/local/lib/python3.9/site-packages (from pytest-arraydiff>=0.1->pytest-astropy==0.9.0) (1.21.6)\nRequirement already satisfied: coverage[toml]>=7.10.6 in /usr/local/lib/python3.9/site-packages (from pytest-cov>=2.3.1->pytest-astropy==0.9.0) (7.10.7)\nRequirement already satisfied: psutil in /usr/local/lib/python3.9/site-packages (from pytest-openfiles>=0.3.1->pytest-astropy==0.9.0) (7.2.2)\nRequirement already satisfied: numpy<1.22 in /usr/local/lib/python3.9/site-packages (1.21.6)\n__VIAL_FAIL_BEGIN__\nInternet access disabled\n.                                                                        [100%]\n1 passed in 0.37s\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nInternet access disabled\n.........                                                                [100%]\n9 passed in 0.43s\n__VIAL_PASS_END__:0\n\nSTDERR:\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n\n[notice] A new release of pip is available: 23.0.1 -> 26.0.1\n[notice] To update, run: pip install --upgrade pip\nWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n"
+          },
+          "comparison": "candidates produce different results for astropy/io/ascii/html.py",
+          "behavioral_equivalent": true
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_A_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_A_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "7936f826d88ca33b80c1bb8c6a705462335924e18cc22fc61aa54d2368ad22fe",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+          },
+          "openai/gpt-5.4": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.4",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_B_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 2,
+            "attempts": 3,
+            "retries": 2,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_B_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "c14b8ed3e329391f6a7d4e302ff452628400b22806b5f1bff4e244803599a511",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+          },
+          "openai/gpt-5.6-sol": {
+            "candidate_id": "ADJUDICATOR",
+            "model": "openai/gpt-5.6-sol",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_ADJUDICATOR_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_ADJUDICATOR_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "prompt_sha256": "d03d5fd7d9124787fe1f32acf973f5b9b41030f56dfbea56a72c22da6f4ec006",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+          }
+        },
+        "status": "DISAGREEMENT",
+        "result_code": "CONSENSUS_FAILED",
+        "note": "independent SWE-bench candidate comparison"
+      },
+      "result_code": "CONSENSUS_FAILED",
+      "candidate_outcomes": {
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_A_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_A_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "7936f826d88ca33b80c1bb8c6a705462335924e18cc22fc61aa54d2368ad22fe",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+        },
+        "openai/gpt-5.4": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.4",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_B_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 2,
+          "attempts": 3,
+          "retries": 2,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_B_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "c14b8ed3e329391f6a7d4e302ff452628400b22806b5f1bff4e244803599a511",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+        },
+        "openai/gpt-5.6-sol": {
+          "candidate_id": "ADJUDICATOR",
+          "model": "openai/gpt-5.6-sol",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_ADJUDICATOR_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_ADJUDICATOR_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "prompt_sha256": "d03d5fd7d9124787fe1f32acf973f5b9b41030f56dfbea56a72c22da6f4ec006",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "1934e28cb983eef4b61c5eb33879776f5165b16b27add15a66bd5589d6e149eb"
+        }
+      },
+      "detail": "candidates produce different results for astropy/io/ascii/html.py",
+      "environment": {
+        "repo": "astropy/astropy",
+        "base_commit": "19cc80471739bcb67b7e8099246b391c355023ee",
+        "python_version": "3.9",
+        "image": "vial-code-agent-swebench-python39:local",
+        "dependencies": [
+          "pytest==7.4.4",
+          "Cython<3",
+          "pytest-astropy==0.9.0",
+          "pytest-astropy-header==0.1.2"
+        ],
+        "test_command": [],
+        "timeout_seconds": 1800,
+        "metadata": {}
+      },
+      "duration_seconds": 750.454,
+      "failure_class": "governance",
+      "failure_subclass": "authorization",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": false,
+      "patch_valid": false,
+      "tests_passed": false
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-luna",
+    "run_tests": true,
+    "offset": 0,
+    "limit": 5,
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.4",
+    "adjudicator_model": "openai/gpt-5.6-sol"
+  }
+}
