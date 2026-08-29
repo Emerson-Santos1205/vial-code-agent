@@ -76,8 +76,8 @@ com `--consensus-model`; candidatos divergentes são bloqueados.
 Para Astropy, o ambiente usa a imagem pré-construída
 `vial-code-agent-swebench-python39:local`, que fixa `pytest==7.4.4`, `Cython<3`,
 `pytest-astropy==0.9.0` e `pytest-astropy-header==0.1.2`, compila as extensões
-com `build_ext --inplace` apenas quando ainda não há artefatos, e executa pytest
-com o plugin de warnings desativado,
+com `build_ext --inplace` contra o ABI corrente do container, e executa pytest
+com o plugin de warnings desativado.
 compatível com os commits históricos do SWE-bench.
 
 Validação de testes em sandbox Docker:
@@ -249,8 +249,8 @@ git submodule update --init --recursive
 ```
 
 Confirme que `vendor/vial-core` existe antes de executar a aplicação ou os
-benchmarks. Em seguida, instale o pacote localmente (ou publique esta
-distribuição no PyPI antes de referenciá-la como instalável para terceiros):
+benchmarks. Em seguida, instale o pacote localmente. A publicação no PyPI fica
+planejada para depois da validação de maturidade do produto:
 
 ```text
 python -m pip install .
@@ -272,6 +272,13 @@ a resposta em um editor Markdown.
 
 ```text
 vial --root . --serve
+```
+
+Antes do primeiro uso, diagnostique a instalação sem chamar nenhum modelo:
+
+```text
+vial --root . --doctor
+vial --root . --doctor --json
 ```
 
 O servidor aceita apenas endereços loopback e fixa o workspace no processo que
@@ -306,12 +313,12 @@ python -m release_orchestrator rollback 1.2.3 --dry-run
 - `release`: valida semver, exige `--confirm`, executa checks, atualiza `VERSION` e `CHANGELOG.md`, e cria tag anotada.
 - `rollback`: remove somente a tag criada pela ferramenta.
 
-### Release de pacote
+### Artefatos de release
 
 Tags `vMAJOR.MINOR.PATCH` iniciam o workflow de distribuição. O workflow valida
-os entry points instalando o wheel e publica no PyPI usando trusted publishing;
-nenhum token PyPI é armazenado no repositório. Configure previamente o projeto
-PyPI com o ambiente GitHub Actions `pypi`.
+os entry points instalando o wheel e publica wheel/sdist como artefatos do
+GitHub Actions. O PyPI não faz parte do caminho crítico atual e será habilitado
+quando o produto estiver maduro o suficiente para distribuição pública.
 
 ## Códigos de saída
 

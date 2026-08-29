@@ -36,6 +36,7 @@ except ImportError:
 
 
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
+ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
 
 
 def _workspace_sha256(root: Path) -> str:
@@ -177,6 +178,20 @@ def _validate_candidate(root: Path, patch: str,
     return candidate
 
 
+def _restore_docker_mount_owner(root: Path, image: str) -> None:
+    """Return bind-mounted files to the runner user after rootful Docker runs."""
+    uid = getattr(os, "getuid", lambda: None)()
+    gid = getattr(os, "getgid", lambda: None)()
+    if uid is None or gid is None:
+        return
+    mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
+    subprocess.run(
+        ["docker", "run", "--rm", "--mount", mount, image,
+         "sh", "-lc", f"chown -R {uid}:{gid} /workspace"],
+        capture_output=True, text=True, check=False,
+    )
+
+
 def _run_command(command: list[str], root: Path, env: dict[str, str],
                  docker_image: str | None = None,
                  timeout: int = 900) -> subprocess.CompletedProcess:
@@ -187,15 +202,21 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                                   check=False, env=env)
         mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
         docker_env = ["-e", "PYTHONPATH=/workspace",
-                      "-e", "CFLAGS=-Wno-error=incompatible-pointer-types"]
-        return subprocess.run(
-            ["docker", "run", "--rm", "--workdir", "/workspace",
-             "--mount", mount,
-             "--mount", "type=volume,source=vial-swebench-pip-cache," \
-                         "destination=/root/.cache/pip",
-             *docker_env,
-             docker_image, *command], cwd=root, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout, check=False)
+                      "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
+                      # Candidate workspaces intentionally omit .git; give
+                      # setuptools-scm a stable fallback for source builds.
+                      "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
+        try:
+            return subprocess.run(
+                ["docker", "run", "--rm", "--workdir", "/workspace",
+                 "--mount", mount,
+                 "--mount", "type=volume,source=vial-swebench-pip-cache," \
+                             "destination=/root/.cache/pip",
+                 *docker_env,
+                 docker_image, *command], cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        finally:
+            _restore_docker_mount_owner(root, docker_image)
     except subprocess.TimeoutExpired as error:
         output = error.output or ""
         if isinstance(output, bytes):
@@ -253,11 +274,9 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
                          "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                          "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                          "--disable-pip-version-check")
-            # Baseline setup and the candidate copy share the compiled
-            # extensions. Rebuilding them for every test group can exceed the
-            # executor window on historical Astropy checkouts.
-            setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
-                         "python setup.py build_ext --inplace")
+            # A random .so can be stale or unrelated to Astropy's required
+            # extensions. Always build against the current Python/NumPy ABI.
+            setup.append(ASTROPY_BUILD_COMMAND)
         setup.extend(
             "python -m pip install -r "
             + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
@@ -342,8 +361,9 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                      "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                      "--disable-pip-version-check")
-        setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
-                     "python setup.py build_ext --inplace")
+        # A random .so can be stale or unrelated to Astropy's required
+        # extensions. Always build against the current Python/NumPy ABI.
+        setup.append(ASTROPY_BUILD_COMMAND)
     requirements = [path for path in (
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",
@@ -565,7 +585,8 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
 def _compare_candidate_results(root: Path, first: str, second: str,
                                allowed_paths: set[str]) -> tuple[bool, str]:
     """Compare independently applicable candidates without touching ``root``."""
-    with tempfile.TemporaryDirectory(prefix="vial-consensus-") as directory:
+    with tempfile.TemporaryDirectory(
+            prefix="vial-consensus-", ignore_cleanup_errors=True) as directory:
         first_root = Path(directory) / "first"
         second_root = Path(directory) / "second"
         shutil.copytree(root, first_root, ignore=shutil.ignore_patterns(".vial-state"))
@@ -592,7 +613,8 @@ def _evaluate_candidate_behavior(root: Path, patch: str, instance: dict,
                                  environment: EnvironmentSpec | None,
                                  docker_image: str | None) -> dict[str, object]:
     """Run benchmark tests for one candidate in an isolated copy."""
-    with tempfile.TemporaryDirectory(prefix="vial-candidate-test-") as directory:
+    with tempfile.TemporaryDirectory(
+            prefix="vial-candidate-test-", ignore_cleanup_errors=True) as directory:
         candidate_root = Path(directory) / "repo"
         # Consensus candidates only need source and tests. Excluding repository
         # documentation and generated build metadata avoids duplicating hundreds
@@ -1034,7 +1056,11 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
         raise ValueError("consensus options are only supported by the vial adapter")
     if environment is not None:
         docker_image = environment.image
-    with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
+    # Docker test containers run as root and can leave root-owned files in the
+    # bind mount. GitHub-hosted runners cannot remove those files during the
+    # context-manager cleanup, but the ephemeral workspace is safe to discard.
+    with tempfile.TemporaryDirectory(
+            prefix="vial-swebench-", ignore_cleanup_errors=True) as directory:
         root = Path(directory) / "repo"
         clone = subprocess.run(
             ["git", "clone", "--filter=blob:none", "https://github.com/" +

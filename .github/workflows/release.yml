@@ -1,13 +1,9 @@
-name: Release package
+name: Build release artifacts
 
 on:
   push:
     tags:
       - "v*.*.*"
-
-permissions:
-  contents: read
-  id-token: write
 
 jobs:
   build:
@@ -33,16 +29,3 @@ jobs:
         with:
           name: vial-code-agent-distributions
           path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    steps:
-      - name: Download distributions
-        uses: actions/download-artifact@v4
-        with:
-          name: vial-code-agent-distributions
-          path: dist/
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
