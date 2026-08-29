@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
+# Keep imports working both as ``python -m benchmark.run_benchmark`` and as
+# ``python benchmark/run_benchmark.py`` in CI.
+sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "src"))
 
 from vial_code_agent.agent import CodeAgent
@@ -18,6 +21,7 @@ from vial_code_agent.core import VialCoreReference
 from vial_code_agent.model import OpenCodeProvider, extract_diff
 from vial_code_agent.patches import PatchApplier, PatchError
 from vial_code_agent.vial_runtime import VialRuntime
+from benchmark.report import candidate_metrics
 
 
 def classify_failure(stage: str, detail: str, applied: bool = False,
@@ -119,6 +123,7 @@ def summarize(rows: list[dict]) -> dict:
                                    for row in rows if row["passed"]) /
                                passed if passed else 0.0),
         "vial_agent_score": round(score, 2),
+        **candidate_metrics(rows),
     }
 
 

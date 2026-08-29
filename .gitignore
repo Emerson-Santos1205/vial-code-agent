@@ -11,3 +11,4 @@ build/
 .vial-state/
 .vial-sessions/
 benchmark/results/
+benchmark/results-*/

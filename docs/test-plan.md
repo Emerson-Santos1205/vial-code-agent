@@ -102,7 +102,7 @@ vial --fix "explain how the router selects a tier" --include "*.py"
 **Resultado esperado:**
 - `route: light` (palavra "explain" → tier leve) ou `fast`, dependendo da
   configuração do pool.
-- Com `--model openai/gpt-5.6-luna`, o roteador não analisa o prompt:
+- Com `--model openai/gpt-4o`, o roteador não analisa o prompt:
   `route` = modelo fixado, pool ignorado.
 
 **Verificação:** rodar o mesmo prompt com e sem `--model <provider>/<model>` e
@@ -176,8 +176,8 @@ vial -s <id>   # retoma uma sessão específica
 
 **Prompts dentro do TUI:**
 ```text
-/model openai/gpt-5.6-luna
-/pool add openai/gpt-5.6-luna-fast
+/model openai/gpt-4o
+/pool add openai/gpt-4o-mini
 /status
 /sessions
 /trace <decision_id>

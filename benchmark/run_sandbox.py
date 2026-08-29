@@ -9,9 +9,12 @@ from pathlib import Path
 import sys
 
 BASE = Path(__file__).resolve().parents[1]
+# The direct script entry point otherwise places only ``benchmark/`` on the
+# import path, making ``benchmark.report`` unavailable to run_benchmark.
+sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "src"))
 
-from run_benchmark import expand_workload
+from benchmark.run_benchmark import expand_workload
 from vial_code_agent.patches import PatchApplier
 
 

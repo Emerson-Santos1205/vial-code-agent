@@ -9,20 +9,57 @@ from pathlib import Path
 from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
+    _normalize_astropy_test_id,
     _adjudicated_candidate_consensus, _candidate_consensus,
     _candidate_outcome, _candidate_set_consensus, _generate_candidate_set,
     _generate_validated_candidate,
     _governed_apply,
     _run_test_groups, baseline_is_valid,
+    run_instance,
+    select_shard,
     should_retry_test_failure,
     success_metrics,
 )
 from benchmark.instance import InstanceSpec
-from benchmark.report import candidate_metrics, success_metrics as report_success_metrics
+from benchmark.fetch_swebench import _tests
+from benchmark.report import (
+    candidate_metrics, economics_metrics, success_metrics as report_success_metrics,
+)
+from benchmark.aggregate_swebench import aggregate_reports
 from benchmark.swebench_environment import EnvironmentResolver
 
 
 class BenchmarkMetricTests(unittest.TestCase):
+    def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:
+        report = {
+            "benchmark": "verified", "execution": {
+                "model": "openai/gpt-4o", "adapters": ["vial"]},
+            "results": [{"id": "task-1", "adapter": "vial", "passed": True,
+                          "environment_valid": True}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate result"):
+                aggregate_reports([path, path])
+
+    def test_aggregate_reports_groups_adapters(self) -> None:
+        report = {
+            "benchmark": "verified", "execution": {
+                "model": "openai/gpt-4o", "adapters": ["baseline", "vial"]},
+            "results": [
+                {"id": "task-2", "adapter": "vial", "passed": True,
+                 "environment_valid": True, "duration_seconds": 2},
+                {"id": "task-1", "adapter": "baseline", "passed": False,
+                 "environment_valid": True, "duration_seconds": 1},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            result = aggregate_reports([path])
+        self.assertEqual(result["tasks"], 2)
+        self.assertEqual(result["by_adapter"]["vial"]["metrics"]["agent_solved"], 1)
     def test_candidate_metrics_do_not_turn_disagreement_into_candidate_failure(self) -> None:
         results = [{
             "passed": False,
@@ -147,6 +184,24 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["end_to_end_success_rate"], 1 / 3)
         self.assertEqual(report_success_metrics(results), metrics)
 
+    def test_economics_uses_inference_tokens_and_all_attempted_candidates(self) -> None:
+        results = [
+            {"passed": True, "duration_seconds": 10, "candidate_outcomes": {
+                "a/model": {"input_tokens": 100, "output_tokens": 20},
+                "b/model": {"input_tokens": 80, "output_tokens": 10},
+            }},
+            {"passed": False, "duration_seconds": 30, "candidate_outcomes": {
+                "a/model": {"input_tokens": 50, "output_tokens": 5},
+            }},
+        ]
+
+        metrics = economics_metrics(results)
+
+        self.assertEqual(metrics["total_tokens"], 265)
+        self.assertEqual(metrics["tokens_per_resolved_task"], 265)
+        self.assertEqual(metrics["seconds_per_resolved_task"], 40)
+        self.assertEqual(metrics["sample_size_status"], "diagnostic_only")
+
     def test_instance_contract_is_metadata_only(self) -> None:
         instance = InstanceSpec.from_dict({
             "id": "task-1", "repo": "org/repo", "base_commit": "abc",
@@ -195,6 +250,31 @@ class BenchmarkMetricTests(unittest.TestCase):
         override, _ = select_test_image({"repo": "astropy/astropy"}, "custom:tag")
         self.assertEqual(override, "custom:tag")
 
+    def test_shards_are_balanced_and_cover_the_requested_range_once(self) -> None:
+        tasks = [{"id": str(index)} for index in range(10)]
+        shards = [select_shard(tasks, 1, 8, shard, 3) for shard in range(3)]
+
+        self.assertEqual([[index for index, _ in shard] for shard in shards],
+                         [[1, 2], [3, 4, 5], [6, 7, 8]])
+        self.assertEqual([item["id"] for shard in shards for _, item in shard],
+                         [str(index) for index in range(1, 9)])
+        with self.assertRaises(ValueError):
+            select_shard(tasks, 0, 1, 1, 1)
+
+    def test_swebench_rejects_unknown_adapter_before_creating_a_workspace(self) -> None:
+        with self.assertRaises(ValueError):
+            run_instance({"id": "task"}, "model", adapter="unknown")
+
+    def test_preflight_rejects_unknown_adapter_before_creating_a_workspace(self) -> None:
+        with self.assertRaises(ValueError):
+            run_instance({"id": "task"}, "model", adapter="unknown",
+                         preflight_only=True)
+
+    def test_fetch_normalizes_json_encoded_test_lists(self) -> None:
+        self.assertEqual(_tests('["tests/test_a.py::test_a"]'),
+                         ["tests/test_a.py::test_a"])
+        self.assertEqual(_tests("plain test"), "plain test")
+
     def test_environment_spec_preserves_instance_contract(self) -> None:
         spec = EnvironmentResolver().resolve({
             "repo": "example/project",
@@ -215,6 +295,25 @@ class BenchmarkMetricTests(unittest.TestCase):
             "repo": "example/project", "timeout_seconds": "120",
         })
         self.assertEqual(spec.timeout_seconds, 120)
+
+    def test_historical_requests_uses_python27(self) -> None:
+        spec = EnvironmentResolver().resolve({"repo": "psf/requests"})
+        self.assertEqual(spec.python_version, "2.7")
+        self.assertEqual(spec.image, "vial-code-agent-swebench-python27:local")
+
+    def test_astropy_environment_allows_initial_extension_build(self) -> None:
+        spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
+        self.assertEqual(spec.timeout_seconds, 1800)
+
+    def test_astropy_parametrized_test_ids_are_normalized_for_custom_runner(self) -> None:
+        self.assertEqual(
+            _normalize_astropy_test_id(
+                "astropy/table/tests/test_table.py::test_case[param]"),
+            "astropy/table/tests/test_table.py::test_case")
+        self.assertEqual(
+            _normalize_astropy_test_id(
+                "astropy/table/tests/test_table.py::test_case[broken"),
+            "astropy/table/tests/test_table.py::test_case")
 
     def test_astropy_environment_pins_its_build_and_test_dependencies(self) -> None:
         spec = EnvironmentResolver().resolve({"repo": "astropy/astropy"})
@@ -514,6 +613,8 @@ class BenchmarkMetricTests(unittest.TestCase):
             "assertion failed", "all tests passed"))
         self.assertTrue(baseline_is_valid(False, True))
         self.assertFalse(baseline_is_valid(True, True))
+        self.assertFalse(baseline_is_valid(
+            False, True, "No matching distribution found for pytest==7.4.4"))
 
     def test_swebench_prompt_contains_instance_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

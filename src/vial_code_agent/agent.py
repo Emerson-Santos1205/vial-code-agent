@@ -25,6 +25,8 @@ class GenerationResult:
     quality: float = 1.0
     reuse_outcome: str = "n/a"
     tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     attempts: int = 1
     failure_type: str = ""
 
@@ -98,6 +100,7 @@ class CodeAgent:
         reuse_outcome = "n/a"
         quality = 1.0
         token_usage = 0
+        input_tokens = output_tokens = 0
         task_obj = None
         ctx = None
         runtime = runtime or self.runtime
@@ -195,6 +198,8 @@ class CodeAgent:
                     staged_files.append(target)
             response = self.provider.generate(
                 prompt, directory=staging, files=staged_files)
+            input_tokens += response.input_tokens or 0
+            output_tokens += response.output_tokens or 0
             patch = extract_diff(response.text)
             attempts = 1
             validation_error = ""
@@ -229,6 +234,8 @@ class CodeAgent:
                     "If the requested fix is already present, return a clear explanation "
                     "instead of fabricating a patch.",
                     directory=staging, files=staged_files)
+                input_tokens += response.input_tokens or 0
+                output_tokens += response.output_tokens or 0
                 patch = extract_diff(response.text)
                 if patch is not None:
                     patch = self._normalize_staged_paths(patch, staging, staged_files)
@@ -256,6 +263,8 @@ class CodeAgent:
                         "Previous validation error: "
                         f"{validation_error}",
                         directory=staging, files=staged_files)
+                    input_tokens += response.input_tokens or 0
+                    output_tokens += response.output_tokens or 0
                     patch = extract_diff(response.text)
                     if patch is not None:
                         patch = self._normalize_staged_paths(patch, staging, staged_files)
@@ -283,7 +292,8 @@ class CodeAgent:
             return GenerationResult(
                 response=response, patch=patch, context_id=context_id,
                 route=route or "auto", reused=False, reuse_outcome=reuse_outcome,
-                tokens=token_usage,
+                tokens=token_usage, input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 attempts=attempts,
                 failure_type="" if patch else f"PATCH_CONTRACT: {validation_error}",
                 workspace_changed=self._workspace_changed(before),
@@ -306,13 +316,15 @@ class CodeAgent:
             return GenerationResult(
                 response=response, patch="".join(generated), workspace_changed=True,
                 context_id=context_id, route=route or "auto", reuse_outcome=reuse_outcome,
-                tokens=token_usage, attempts=attempts,
+                tokens=token_usage, input_tokens=input_tokens,
+                output_tokens=output_tokens, attempts=attempts,
                 failure_type=f"PATCH_CONTRACT: {validation_error}",
             )
         return GenerationResult(
             response=response, patch=None, context_id=context_id,
             route=route or "auto", reuse_outcome=reuse_outcome, tokens=token_usage,
-            attempts=attempts, failure_type=f"PATCH_CONTRACT: {validation_error}",
+            input_tokens=input_tokens, output_tokens=output_tokens, attempts=attempts,
+            failure_type=f"PATCH_CONTRACT: {validation_error}",
         )
 
     @staticmethod

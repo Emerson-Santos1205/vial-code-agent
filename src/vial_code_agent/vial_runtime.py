@@ -53,7 +53,12 @@ ACTOR = "vial-code-agent"
 # Cost tiers ordered from cheapest to most expensive (RFC-010 §2.4).
 RESOURCE_TIERS = {"deterministic": 1.0, "light": 3.0, "advanced": 10.0}
 RESOURCE_ORDER = ["deterministic", "light", "advanced"]
-TIER_MODEL = {"deterministic": None, "light": "fast", "advanced": "reasoning"}
+TIER_MODEL = {
+    "deterministic": None,
+    # Internal routing tiers are resolved by the provider boundary.
+    "light": "fast",
+    "advanced": "reasoning",
+}
 
 # Workload price table for the economic cost model (RFC-010 §2.2).
 DEFAULT_PRICE_TABLE = {

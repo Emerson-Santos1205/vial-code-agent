@@ -5,7 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vial-code-agent"
 version = "0.3.0"
-description = "Experimental code agent built on the VIAL core"
+description = "Governed, auditable coding agent with multi-provider model routing"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "VIAL Code Agent contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["coding-agent", "llm", "governance", "software-engineering"]
 requires-python = ">=3.10"
 dependencies = [
     "textual>=0.47",
@@ -20,3 +31,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "vendor/vial-core/tests"]

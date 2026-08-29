@@ -18,9 +18,9 @@ governado valida escopo, autorização, consenso, auditoria, commit e recuperaç
 
 ```text
 python -m vial_code_agent --root . --vial-root vendor/vial-core --prompt "inspect the project"
-python benchmark/run_benchmark.py
-python benchmark/run_benchmark.py --agent --model openai/gpt-5.6-luna
-python benchmark/run_benchmark.py --adapters baseline,opencode,vial --model openai/gpt-5.6-luna
+python -m benchmark.run_benchmark
+python -m benchmark.run_benchmark --agent --model openai/gpt-4o
+python -m benchmark.run_benchmark --adapters baseline,opencode,vial --model openai/gpt-4o
 ```
 
 O benchmark padrão é um **Unit / Regression Benchmark** sintético: executa 100
@@ -34,6 +34,11 @@ configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
 grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
 sucesso, latência, tokens, regressões, falhas de patch, rollbacks e intervenção
 humana.
+
+Os modelos usam o formato `provider/model`. Os defaults públicos são
+`openai/gpt-4o-mini` para tarefas rápidas e `openai/gpt-4o` para raciocínio; a
+disponibilidade depende da autenticação do provider. Não use aliases internos de
+uma execução como identificadores públicos de configuração.
 
 Nos relatórios SWE-bench, o sucesso é decomposto em duas métricas: `agent_success_rate`
 é soluções corretas dividido pelas tarefas ambientalmente válidas, enquanto
@@ -103,6 +108,128 @@ Consenso para mutações pode exigir evidência: cada candidato é aplicado em u
 cópia descartável e validado estaticamente; quando `--test-command` é usado,
 os testes comportamentais também precisam passar antes do consenso ser aceito.
 
+### Custo da Segurança Fail-Closed
+
+O protocolo de consenso troca custo de inferência por menor risco de aplicar uma
+solução inválida. Em uma execução diagnóstica de 10 tarefas, foram registradas
+48 tentativas de candidato, 28 patches retornados, 23 patches estaticamente
+válidos e 17 candidatos aprovados também pelos testes comportamentais. A
+execução consumiu 199.713 tokens, ou aproximadamente 19.971 tokens por tarefa.
+
+Nesse relatório, `candidate_completion_rate` é a razão entre patches retornados
+e tentativas de candidato (`28/48 = 0,58`). Já
+`candidate_reliability_rate` exige validade estática e aprovação comportamental,
+e usa todas as tentativas como denominador (`17/48 = 0,35`). Retries e respostas
+sem patch permanecem no denominador; portanto, essas métricas tornam visível o
+trabalho de modelo descartado antes da governança. O custo é intencional: o
+fluxo é fail-closed e não muta o workspace sem evidência independente suficiente.
+
+Esses números são diagnósticos de uma execução específica, não uma estimativa
+fixa de custo. Variam conforme modelo, prompt, workload, retries e testes.
+
+### Primeira Evidência SWE-bench Publicada
+
+O primeiro relatório real versionado está disponível em
+[`benchmark/results/swebench-lite-10-consensus-2026-08-23.json`](benchmark/results/swebench-lite-10-consensus-2026-08-23.json).
+Ele cobre 10 tarefas do SWE-bench Lite com dois candidatos independentes,
+validação comportamental e adjudicação quando aplicável. O resultado foi 7/10
+end-to-end, com 6/10 candidatos A válidos, 7/10 candidatos B válidos e 7/10
+consensos aprovados. As três tarefas bloqueadas permanecem no relatório, com
+suas evidências de candidato insuficiente, em vez de serem removidas do score.
+
+O primeiro piloto do SWE-bench Verified usa 5 instâncias e está disponível em
+[`benchmark/results/swebench-verified-5-consensus-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-2026-08-25.json).
+Ele obteve 2/5 end-to-end, com 4/5 ambientes válidos. Este é um piloto de
+infraestrutura e não uma amostra estatística ou um número de marketing.
+O rerun após as correções do executor está em
+[`benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json): os 5 ambientes foram válidos, com 2/5 end-to-end.
+
+Uma comparação sintética de 100 tarefas por adaptador está disponível em
+[`benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json`](benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json).
+Nesse workload, `opencode` e `vial` obtiveram 100/100. O caminho VIAL consumiu
+84.701 tokens contra 66.756 do caminho `opencode` (+26,9%) e teve latência média
+de 9,40 s contra 9,01 s (+4,3%). Essa é uma medida do protocolo completo neste
+benchmark sintético, não do overhead isolado do VIAL Core nem uma estimativa de
+qualidade em SWE-bench.
+
+Novas execuções devem usar SWE-bench Verified. O workflow manual padrão busca
+50 instâncias de `princeton-nlp/SWE-bench_Verified`; resultados com menos de 50
+tarefas são marcados como `diagnostic_only`. O relatório inclui `economics` com
+tokens de inferência de todos os candidatos, duração e custo/tempo por tarefa
+resolvida. Tokens de contexto VIAL são mantidos separados e não são vendidos
+como consumo do modelo.
+
+Para executar uma amostra grande sem concentrar todas as instâncias em um único
+job, divida o intervalo em shards balanceados. Cada shard registra os índices
+processados no relatório e pode usar um diretório `--out` próprio para manter o
+checkpoint isolado.
+
+```text
+python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json \
+  --model openai/gpt-4o --run-tests --limit 50 \
+  --shard-index 0 --shard-count 10 --out benchmark/results/verified-00
+```
+
+Repita para `--shard-index` de `0` a `9`. O workflow `SWE-bench Real
+Evaluation` expõe os mesmos campos para disparar cada shard separadamente.
+
+Depois de concluir os shards, consolide-os sem misturar modelos ou workloads:
+
+```text
+python -m benchmark.aggregate_swebench benchmark/results/comparison-*/report-*.json \
+  --out benchmark/results/verified-comparison.json
+```
+
+O agregador rejeita contratos incompatíveis e resultados duplicados por
+`adapter:task_id`.
+
+O workflow manual publica o relatório e o checkpoint de cada shard como
+artefato do GitHub Actions. Baixe todos os artefatos, extraia os relatórios e
+execute o agregador localmente para gerar o resultado consolidado.
+
+O executor real também compara os três protocolos sobre a mesma seleção de
+instâncias. `baseline` faz uma chamada direta ao provider, `opencode` usa o
+`CodeAgent` sem runtime e `vial` usa o runtime governado. O relatório cria
+`by_adapter` com sucesso e economia para cada caminho, e mantém checkpoints por
+`adapter:index` para que uma interrupção não misture resultados.
+
+```text
+python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json \
+  --model openai/gpt-4o --run-tests --limit 50 \
+  --adapters baseline,opencode,vial --shard-index 0 --shard-count 10 \
+  --out benchmark/results/comparison-00
+```
+
+Quando `vial` recebe `--consensus-model`, somente esse adapter usa o segundo
+modelo e a validação de consenso; `baseline` e `opencode` permanecem medidas de
+um candidato no mesmo modelo primário.
+
+Monte pilotos com repositórios distintos para não medir apenas a infraestrutura
+de uma única base histórica:
+
+```text
+python benchmark/fetch_swebench.py --dataset princeton-nlp/SWE-bench_Verified \
+  --split test --length 10 --unique-repos --out benchmark/swebench-verified-diverse-10.json
+```
+
+Antes do comparativo, valide cada ambiente uma única vez. `--preflight-only`
+executa `FAIL_TO_PASS` e `PASS_TO_PASS`, mas não chama modelo nem cria patches;
+instâncias cujo comportamento base não corresponde ao contrato ficam marcadas
+como `baseline_tests` e não devem entrar no score comercial.
+
+```text
+python benchmark/run_swebench.py --workload benchmark/swebench-verified-diverse-10.json \
+  --run-tests --preflight-only --limit 10 --out benchmark/results/preflight
+```
+
+Para repositórios cuja versão Python não possui imagem histórica dedicada,
+construa a imagem genérica correspondente antes do preflight:
+
+```text
+docker build --build-arg PYTHON_VERSION=3.12 -f docker/swebench-generic.Dockerfile \
+  -t vial-code-agent-swebench-python312:local .
+```
+
 ## Instalação
 
 O projeto depende do VIAL Core em `vendor/vial-core`, configurado como um
@@ -122,11 +249,39 @@ git submodule update --init --recursive
 ```
 
 Confirme que `vendor/vial-core` existe antes de executar a aplicação ou os
-benchmarks. Em seguida, instale o pacote em modo editável:
+benchmarks. Em seguida, instale o pacote localmente (ou publique esta
+distribuição no PyPI antes de referenciá-la como instalável para terceiros):
 
 ```text
-python -m pip install -e .
+python -m pip install .
 ```
+
+### Providers e VS Code
+
+Configure provedores OpenAI-compatíveis sem depender de aliases do OpenCode:
+
+```text
+vial --root . --add-server local http://127.0.0.1:11434/v1
+vial --root . --add-model local/qwen2.5-coder
+vial --root . --pool-set local/qwen2.5-coder openai/gpt-4o
+```
+
+Para a extensão VS Code, inicie o processo no diretório do projeto e use o
+comando `VIAL: Open Chat`. A extensão conserva o identificador da sessão e abre
+a resposta em um editor Markdown.
+
+```text
+vial --root . --serve
+```
+
+O servidor aceita apenas endereços loopback e fixa o workspace no processo que
+o iniciou; ele não aceita caminhos de workspace vindos da extensão.
+
+## Licença
+
+O VIAL Code Agent é distribuído sob a [Apache License 2.0](LICENSE). O VIAL
+Core incluído em `vendor/vial-core` é um submódulo separado, com sua própria
+declaração de licença.
 
 O comando principal é `python -m release_orchestrator`.
 
@@ -150,6 +305,13 @@ python -m release_orchestrator rollback 1.2.3 --dry-run
 - `check`: valida README, testes, segredos, suíte de testes e working tree.
 - `release`: valida semver, exige `--confirm`, executa checks, atualiza `VERSION` e `CHANGELOG.md`, e cria tag anotada.
 - `rollback`: remove somente a tag criada pela ferramenta.
+
+### Release de pacote
+
+Tags `vMAJOR.MINOR.PATCH` iniciam o workflow de distribuição. O workflow valida
+os entry points instalando o wheel e publica no PyPI usando trusted publishing;
+nenhum token PyPI é armazenado no repositório. Configure previamente o projeto
+PyPI com o ambiente GitHub Actions `pypi`.
 
 ## Códigos de saída
 

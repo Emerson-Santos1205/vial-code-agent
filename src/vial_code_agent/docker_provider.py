@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -27,25 +28,39 @@ class DockerOpenCodeProvider:
         if not auth.is_file():
             raise RuntimeError(f"OpenCode credentials not found: {auth}")
         workspace = Path(directory).resolve().as_posix()
+        prompt_path = Path(directory) / ".vial-opencode-prompt.txt"
+        prompt_path.write_text(
+            f"{prompt} Return only a unified diff.", encoding="utf-8")
+        file_args = " ".join(
+            shlex.quote(f"--file=/workspace/{path.relative_to(directory).as_posix()}")
+            for path in files or [])
+        shell_command = (
+            "opencode run --agent build --format json "
+            f"--model {shlex.quote(self.model)} "
+            '"$(cat /workspace/.vial-opencode-prompt.txt)"'
+            + (f" {file_args}" if file_args else ""))
         command = [
             self.docker, "run", "--rm",
             "--mount", f"type=bind,src={workspace},dst=/workspace",
             "--mount", f"type=bind,src={auth.resolve().as_posix()},dst=/root/.local/share/opencode/auth.json,readonly",
-            self.image, "run", "--agent", "build", "--format", "json",
-            "--model", self.model, f"{prompt} Return only a unified diff.",
+            "--entrypoint", "sh", self.image, "-lc", shell_command,
         ]
-        for path in files or []:
-            command.append(f"--file=/workspace/{path.relative_to(directory).as_posix()}")
         try:
             process = subprocess.run(
-                command, cwd=directory, capture_output=True, text=True,
+                command, cwd=directory,
+                capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=self.timeout_seconds,
                 check=False,
             )
         except FileNotFoundError as error:
+            if getattr(error, "winerror", None) == 206:
+                raise RuntimeError(
+                    "model prompt is too large for Windows command-line limits") from error
             raise RuntimeError("Docker executable not found") from error
         except subprocess.TimeoutExpired as error:
             raise RuntimeError(f"Docker provider timed out after {self.timeout_seconds}s") from error
+        finally:
+            prompt_path.unlink(missing_ok=True)
         text_parts: list[str] = []
         usage: dict[str, int | None] = {}
         for line in process.stdout.splitlines():
