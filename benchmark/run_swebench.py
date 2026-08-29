@@ -36,6 +36,7 @@ except ImportError:
 
 
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
+ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
 
 
 def _workspace_sha256(root: Path) -> str:
@@ -201,7 +202,10 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                                   check=False, env=env)
         mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
         docker_env = ["-e", "PYTHONPATH=/workspace",
-                      "-e", "CFLAGS=-Wno-error=incompatible-pointer-types"]
+                      "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
+                      # Candidate workspaces intentionally omit .git; give
+                      # setuptools-scm a stable fallback for source builds.
+                      "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
         try:
             return subprocess.run(
                 ["docker", "run", "--rm", "--workdir", "/workspace",
@@ -270,11 +274,9 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
                          "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                          "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                          "--disable-pip-version-check")
-            # Baseline setup and the candidate copy share the compiled
-            # extensions. Rebuilding them for every test group can exceed the
-            # executor window on historical Astropy checkouts.
-            setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
-                         "python setup.py build_ext --inplace")
+            # A random .so can be stale or unrelated to Astropy's required
+            # extensions. Always build against the current Python/NumPy ABI.
+            setup.append(ASTROPY_BUILD_COMMAND)
         setup.extend(
             "python -m pip install -r "
             + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
@@ -359,8 +361,9 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                      "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                      "--disable-pip-version-check")
-        setup.append("test -n \"$(find astropy -name '*.so' -print -quit)\" || "
-                     "python setup.py build_ext --inplace")
+        # A random .so can be stale or unrelated to Astropy's required
+        # extensions. Always build against the current Python/NumPy ABI.
+        setup.append(ASTROPY_BUILD_COMMAND)
     requirements = [path for path in (
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",

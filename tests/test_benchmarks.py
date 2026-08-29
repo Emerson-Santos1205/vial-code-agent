@@ -8,6 +8,7 @@ from pathlib import Path
 
 from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
+    ASTROPY_BUILD_COMMAND,
     _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
     _normalize_astropy_test_id,
     _adjudicated_candidate_consensus, _candidate_consensus,
@@ -249,6 +250,10 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertEqual(django_python, "3.8")
         override, _ = select_test_image({"repo": "astropy/astropy"}, "custom:tag")
         self.assertEqual(override, "custom:tag")
+
+    def test_astropy_setup_always_builds_current_extensions(self) -> None:
+        self.assertEqual(ASTROPY_BUILD_COMMAND,
+                         "python setup.py build_ext --inplace")
 
     def test_shards_are_balanced_and_cover_the_requested_range_once(self) -> None:
         tasks = [{"id": str(index)} for index in range(10)]
