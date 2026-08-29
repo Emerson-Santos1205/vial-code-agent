@@ -23,6 +23,14 @@ class EnvironmentResolver:
     REPOSITORY_PYTHON = {
         "astropy/astropy": "3.9",
         "django/django": "3.8",
+        "matplotlib/matplotlib": "3.7",
+        "mwaskom/seaborn": "3.8",
+        "pallets/flask": "3.8",
+        "psf/requests": "2.7",
+        "pydata/xarray": "3.7",
+        "pylint-dev/pylint": "3.7",
+        "pytest-dev/pytest": "3.7",
+        "scikit-learn/scikit-learn": "3.7",
     }
     REPOSITORY_DEPENDENCIES = {
         "astropy/astropy": (
@@ -31,14 +39,18 @@ class EnvironmentResolver:
         ),
     }
 
-    def resolve(self, instance: dict[str, Any], override: str | None = None) -> EnvironmentSpec:
+    def resolve(self, instance: dict[str, Any], override: str | None = None,
+                official_images: bool = False) -> EnvironmentSpec:
         repo = str(instance.get("repo", ""))
         python = str(instance.get("python_version") or
                       instance.get("test_python") or
                       self.REPOSITORY_PYTHON.get(repo, "3.12"))
         compact = python.replace(".", "")
+        official_image = "swebench/sweb.eval.x86_64." + str(
+            instance.get("id", "")).lower().replace("__", "_1776_") + ":latest"
         image = (override or instance.get("test_image") or
-                 f"vial-code-agent-swebench-python{compact}:local")
+                 (official_image if official_images else
+                  f"vial-code-agent-swebench-python{compact}:local"))
         dependencies = tuple(dict.fromkeys(
             self.REPOSITORY_DEPENDENCIES.get(repo, ()) +
             tuple(str(item) for item in instance.get("dependencies", ()))))
@@ -57,6 +69,8 @@ class EnvironmentResolver:
         except (TypeError, ValueError):
             timeout = default_timeout
         timeout = max(timeout, 1)
+        if official_images:
+            metadata = tuple(sorted((*metadata, ("official_image", "true"))))
         return EnvironmentSpec(
             python_version=python,
             image=str(image),

@@ -53,8 +53,9 @@ class OpenCodeProvider:
     """Adapter for the local opencode CLI; never invokes a model implicitly."""
 
     MODEL_ALIASES = {
-        "fast": "openai/gpt-5.6-luna-fast",
-        "reasoning": "openai/gpt-5.6-luna",
+        # Stable provider model ids, not deployment-local aliases.
+        "fast": "openai/gpt-4o-mini",
+        "reasoning": "openai/gpt-4o",
     }
 
     def __init__(

@@ -208,3 +208,31 @@ def success_metrics(results: list[dict]) -> dict[str, float | int]:
            for row in results):
         metrics.update(candidate_metrics(results))
     return metrics
+
+
+def economics_metrics(results: list[dict]) -> dict[str, float | int | str]:
+    """Summarize measured inference cost without treating context as model usage."""
+    candidates = []
+    for row in results:
+        raw = row.get("candidate_outcomes") or (row.get("consensus") or {}).get(
+            "candidate_outcomes", {})
+        candidates.extend(raw.values() if isinstance(raw, dict) else raw or [])
+    input_tokens = sum(int(item.get("input_tokens", 0) or 0) for item in candidates)
+    output_tokens = sum(int(item.get("output_tokens", 0) or 0) for item in candidates)
+    total_tokens = input_tokens + output_tokens
+    tasks = len(results)
+    solved = sum(bool(row.get("passed")) for row in results)
+    duration_seconds = sum(float(row.get("duration_seconds", 0) or 0) for row in results)
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "tokens_per_task": total_tokens / tasks if tasks else 0.0,
+        "tokens_per_resolved_task": total_tokens / solved if solved else 0.0,
+        "duration_seconds": duration_seconds,
+        "seconds_per_task": duration_seconds / tasks if tasks else 0.0,
+        "seconds_per_resolved_task": duration_seconds / solved if solved else 0.0,
+        "sample_size": tasks,
+        "sample_size_status": (
+            "marketing_ready" if tasks >= 50 else "diagnostic_only"),
+    }

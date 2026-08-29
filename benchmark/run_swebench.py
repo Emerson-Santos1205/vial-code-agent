@@ -13,6 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
@@ -20,13 +21,14 @@ sys.path.insert(0, str(BASE / "src"))
 from vial_code_agent.agent import CodeAgent
 from vial_code_agent.core import VialCoreReference
 from vial_code_agent.docker_provider import DockerOpenCodeProvider
+from vial_code_agent.model import extract_diff
 from vial_code_agent.patches import PatchApplier, PatchError
 from vial_code_agent.patch_review import PatchReviewGate
 from vial_code_agent.vial_runtime import VialRuntime
 try:
-    from .report import candidate_metrics
+    from .report import candidate_metrics, economics_metrics
 except ImportError:
-    from report import candidate_metrics
+    from report import candidate_metrics, economics_metrics
 try:
     from .environment import EnvironmentResolver, EnvironmentSpec
 except ImportError:
@@ -322,14 +324,19 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         return " ".join(shlex.quote(part) for part in
                          ["python", "-m", "pytest", "-p", "no:warnings", "-q", *tests])
 
-    setup = [
+    official_image = bool(docker_image and docker_image.startswith("swebench/"))
+    setup = ([
+        "if python -c \"import sys; raise SystemExit(sys.version_info[0] != 2)\"; then "
+        "python -m pip install 'pytest<5' --disable-pip-version-check; "
+        "else python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
+    ] if official_image else [
         "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
         "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
         "python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
-    ]
-    if not (root / "astropy").is_dir():
+    ])
+    if not official_image and not (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
-    if (root / "astropy").is_dir():
+    if not official_image and (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install 'setuptools<60' "
                      "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
@@ -341,15 +348,17 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",
     ) if path.is_file()]
-    setup.extend("python -m pip install -r "
-                 + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
-                 + " --disable-pip-version-check" for path in requirements)
-    if dependencies:
+    if not official_image:
+        setup.extend("python -m pip install -r "
+                     + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
+                     + " --disable-pip-version-check" for path in requirements)
+    if not official_image and dependencies:
         setup.append("python -m pip install " + " ".join(shlex.quote(item)
                                                          for item in dependencies))
-    if (root / "astropy").is_dir():
+    if not official_image and (root / "astropy").is_dir():
         setup.append("python -m pip install 'numpy<1.22' --disable-pip-version-check")
-    script = (" && ".join(setup) + " && "
+    setup_prefix = (" && ".join(setup) + " && ") if setup else ""
+    script = (setup_prefix +
               f"echo __VIAL_FAIL_BEGIN__ && {command_for(fail_tests)}; "
               f"fail=$?; echo __VIAL_FAIL_END__:$fail; "
               f"echo __VIAL_PASS_BEGIN__ && {command_for(pass_tests)}; "
@@ -405,9 +414,14 @@ def _failure_class(stage: str, detail: str = "") -> str:
             "failed to create task for container", "executable file not found",
             "command timed out", "subprocess-exited-with-error",
             "error: command '/usr/bin/gcc'", "metadata-generation-failed",
+            "could not find a version that satisfies the requirement",
+            "no matching distribution found",
             "[runner=:4]", "test group markers missing",
         )
-        return "environment" if any(marker in detail for marker in environment_markers) else "tests"
+        normalized_detail = detail.lower()
+        return ("environment" if any(marker.lower() in normalized_detail
+                                      for marker in environment_markers)
+                else "tests")
     return "unknown"
 
 
@@ -464,9 +478,12 @@ def should_retry_test_failure(fail_detail: str, pass_detail: str) -> bool:
     return _failure_class("tests", evidence) != "environment"
 
 
-def baseline_is_valid(fail_to_pass: bool, pass_to_pass: bool) -> bool:
+def baseline_is_valid(fail_to_pass: bool, pass_to_pass: bool,
+                      fail_detail: str = "", pass_detail: str = "") -> bool:
     """The unpatched base must fail only the target behavior."""
-    return not fail_to_pass and pass_to_pass
+    evidence = f"{fail_detail}\n{pass_detail}"
+    return (not fail_to_pass and pass_to_pass and
+            _failure_class("tests", evidence) != "environment")
 
 
 def success_metrics(results: list[dict]) -> dict[str, float | int]:
@@ -488,6 +505,19 @@ def success_metrics(results: list[dict]) -> dict[str, float | int]:
            for row in results):
         metrics.update(candidate_metrics(results))
     return metrics
+
+
+def select_shard(tasks: list[dict], offset: int, limit: int,
+                 shard_index: int = 0, shard_count: int = 1) -> list[tuple[int, dict]]:
+    """Select one balanced, deterministic shard from the requested task range."""
+    if shard_count < 1:
+        raise ValueError("shard_count must be at least 1")
+    if not 0 <= shard_index < shard_count:
+        raise ValueError("shard_index must be in [0, shard_count)")
+    selected = tasks[offset:offset + limit]
+    start = len(selected) * shard_index // shard_count
+    end = len(selected) * (shard_index + 1) // shard_count
+    return list(enumerate(selected[start:end], start=offset + start))
 
 
 def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
@@ -620,8 +650,17 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
             environment or EnvironmentSpec(
                 python_version="declared-by-image", image=docker_image or "host"),
             feedback=feedback)
-        retry = CodeAgent(DockerOpenCodeProvider(model), runtime=runtime).generate(
-            prompt, root, files, runtime=runtime)
+        try:
+            retry = CodeAgent(DockerOpenCodeProvider(
+                model, timeout_seconds=900), runtime=runtime).generate(
+                prompt, root, files, runtime=runtime)
+        except (OSError, RuntimeError) as error:
+            current_behavior["detail"] = (
+                str(current_behavior.get("detail", "")) +
+                "\nBEHAVIORAL RETRY PROVIDER: " + str(error))[-4000:]
+            total_attempts += 1
+            total_retries += 1
+            continue
         attempts = max(int(retry.attempts or 1), 1)
         total_attempts += attempts
         total_retries += 1
@@ -687,6 +726,13 @@ def _candidate_outcome(label: str, model: str, *, returned_patch: bool,
     }
 
 
+def _token_count(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                   root: Path, files: list[Path],
                                   allowed_paths: set[str],
@@ -698,8 +744,18 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     generated = None
     candidate_prompt = prompt
     for attempt in range(2):
-        generated = CodeAgent(provider, runtime=runtime).generate(
-            candidate_prompt, root, files, runtime=runtime)
+        try:
+            generated = CodeAgent(provider, runtime=runtime).generate(
+                candidate_prompt, root, files, runtime=runtime)
+        except (OSError, RuntimeError) as error:
+            diagnostics.append(f"provider error: {error}")
+            attempts += 1
+            retries += int(attempt > 0)
+            candidate_prompt = prompt + (
+                "\n\nThe previous model request failed before returning a "
+                "patch. Retry once and return only a complete minimal unified "
+                "diff.\nPROVIDER DIAGNOSTIC: " + str(error))
+            continue
         generated_attempts = max(int(generated.attempts or 1), 1)
         attempts += generated_attempts
         retries += max(generated_attempts - 1, 0) + int(attempt > 0)
@@ -731,6 +787,9 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             patch_returns=patch_returns)
         outcome["response_received"] = bool(
             getattr(getattr(generated, "response", None), "text", ""))
+        outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
+        outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
+        outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
         outcome["prompt_sha256"] = hashlib.sha256(
             candidate_prompt.encode("utf-8")).hexdigest()
         outcome["protocol"] = {
@@ -749,7 +808,10 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         tests_passed=None, detail=detail, attempts=attempts, retries=retries,
         patch_returns=patch_returns)
     outcome["response_received"] = bool(
-        getattr(getattr(generated, "response", None), "text", ""))
+        generated and getattr(getattr(generated, "response", None), "text", ""))
+    outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
+    outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
+    outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
     outcome["prompt_sha256"] = hashlib.sha256(
         candidate_prompt.encode("utf-8")).hexdigest()
     outcome["protocol"] = {
@@ -761,6 +823,43 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         outcome["protocol"], sort_keys=True).encode("utf-8")).hexdigest()
     outcome["workspace_sha256"] = _workspace_sha256(root)
     return {"model": model, "patch": None, "generated": generated,
+            "outcome": outcome, "behavior": None}
+
+
+def _generate_baseline_candidate(label: str, model: str, prompt: str,
+                                 root: Path, files: list[Path],
+                                 allowed_paths: set[str]) -> dict[str, object]:
+    """Run one raw provider request without CodeAgent or VIAL processing."""
+    try:
+        response = DockerOpenCodeProvider(model, timeout_seconds=900).generate(
+            prompt, directory=root, files=files)
+    except (OSError, RuntimeError) as error:
+        response = None
+        detail = f"provider error: {error}"
+    else:
+        detail = ""
+    patch = extract_diff(response.text) if response is not None else None
+    returned_patch = patch is not None
+    if patch is not None:
+        try:
+            patch = _validate_candidate(root, patch, allowed_paths)
+        except PatchError as error:
+            detail = str(error)
+            patch = None
+    generated = SimpleNamespace(
+        response=response or SimpleNamespace(text="", input_tokens=0, output_tokens=0),
+        context_id="", tokens=0, input_tokens=(response.input_tokens or 0) if response else 0,
+        output_tokens=(response.output_tokens or 0) if response else 0, attempts=1,
+    )
+    outcome = _candidate_outcome(
+        label, model, returned_patch=returned_patch,
+        patch_valid=patch is not None, tests_passed=None, detail=detail, attempts=1,
+        patch_returns=int(patch is not None))
+    outcome["response_received"] = bool(response and response.text)
+    outcome["input_tokens"] = generated.input_tokens
+    outcome["output_tokens"] = generated.output_tokens
+    outcome["context_tokens"] = 0
+    return {"model": model, "patch": patch, "generated": generated,
             "outcome": outcome, "behavior": None}
 
 
@@ -922,11 +1021,17 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
 
 
 def run_instance(instance: dict, model: str, run_tests: bool = False,
-                 docker_image: str | None = None,
-                 environment: EnvironmentSpec | None = None,
-                 consensus: dict | None = None,
-                 consensus_model: str | None = None,
-                 adjudicator_model: str | None = None) -> dict:
+                  docker_image: str | None = None,
+                  environment: EnvironmentSpec | None = None,
+                  consensus: dict | None = None,
+                  consensus_model: str | None = None,
+                  adjudicator_model: str | None = None,
+                  adapter: str = "vial", preflight_only: bool = False) -> dict:
+    if adapter not in {"baseline", "opencode", "vial"}:
+        raise ValueError(f"unknown adapter: {adapter}")
+    if adapter != "vial" and (consensus_model is not None or consensus is not None
+                               or adjudicator_model is not None):
+        raise ValueError("consensus options are only supported by the vial adapter")
     if environment is not None:
         docker_image = environment.image
     with tempfile.TemporaryDirectory(prefix="vial-swebench-") as directory:
@@ -974,7 +1079,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             baseline = {
                 "fail_to_pass": baseline_fail,
                 "pass_to_pass": baseline_pass,
-                "expected": baseline_is_valid(baseline_fail, baseline_pass),
+                "expected": baseline_is_valid(
+                    baseline_fail, baseline_pass, baseline_fail_detail,
+                    baseline_pass_detail),
                 "detail": (f"FAIL_TO_PASS:\n{baseline_fail_detail}\n\n"
                             f"PASS_TO_PASS:\n{baseline_pass_detail}")[-7000:],
             }
@@ -982,6 +1089,10 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests", "baseline": baseline,
                         "detail": baseline["detail"]}
+            if preflight_only:
+                return {"id": instance["id"], "passed": True,
+                        "stage": "preflight", "baseline": baseline,
+                        "adapter": "preflight"}
         if consensus_model is not None and consensus_model == model:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
@@ -996,15 +1107,18 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
                     "detail": "adjudicator model requires a consensus model"}
-        runtime = VialRuntime(
-            VialCoreReference(BASE / "vendor" / "vial-core"),
-            root / ".vial-state", persist_state=False)
-        runtime.set_workspace_root(root)
+        runtime = None
+        if adapter == "vial":
+            runtime = VialRuntime(
+                VialCoreReference(BASE / "vendor" / "vial-core"),
+                root / ".vial-state", persist_state=False)
+            runtime.set_workspace_root(root)
         prompt = build_swebench_prompt(
             instance, root, files, allowed_paths,
             environment or EnvironmentSpec(
                 python_version="declared-by-image",
                 image=docker_image or "host"))
+        candidate_outcomes: dict[str, object] = {}
         if consensus_model is not None:
             review_runtime = VialRuntime(
                 VialCoreReference(BASE / "vendor" / "vial-core"),
@@ -1126,8 +1240,11 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             runtime = candidate_runtimes.get(str(selected["model"]), runtime)
             provider = DockerOpenCodeProvider(str(selected["model"]))
         else:
-            primary = _generate_validated_candidate(
-                "A", model, prompt, root, files, allowed_paths, runtime)
+            primary = (_generate_baseline_candidate(
+                "A", model, prompt, root, files, allowed_paths)
+                if adapter == "baseline" else _generate_validated_candidate(
+                    "A", model, prompt, root, files, allowed_paths, runtime))
+            candidate_outcomes = {model: primary["outcome"]}
             if primary["patch"] is None:
                 outcome = primary["outcome"]
                 return {"id": instance["id"], "passed": False,
@@ -1135,22 +1252,31 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         else "patch_contract",
                         "detail": outcome["failure_detail"],
                         "result_code": outcome["result_code"],
-                        "candidate_outcomes": {model: outcome}}
+                        "candidate_outcomes": candidate_outcomes, "adapter": adapter}
             generated_patch = str(primary["patch"])
             generated = primary["generated"]
             provider = DockerOpenCodeProvider(model)
         if not run_tests:
             return {"id": instance["id"], "passed": True,
                     "stage": "patch_validated", "attempts": generated.attempts,
-                    "tokens": generated.tokens}
-        applied, apply_error, apply_metadata = _governed_apply(
-            runtime, root, generated_patch, generated.context_id,
-            allowed_paths, consensus=consensus)
+                    "tokens": generated.tokens, "candidate_outcomes": candidate_outcomes,
+                    "adapter": adapter}
+        if adapter == "vial":
+            applied, apply_error, apply_metadata = _governed_apply(
+                runtime, root, generated_patch, generated.context_id,
+                allowed_paths, consensus=consensus)
+        else:
+            try:
+                PatchApplier(root).apply(generated_patch)
+                applied, apply_error, apply_metadata = True, "", {}
+            except PatchError as error:
+                applied, apply_error, apply_metadata = False, str(error), {}
         if not applied:
             return {"id": instance["id"], "passed": False,
                         "stage": "governance", "detail": apply_error or
                         "patch application rejected by VialRuntime",
-                    "governance": apply_metadata, "consensus": consensus}
+                    "governance": apply_metadata, "consensus": consensus,
+                    "candidate_outcomes": candidate_outcomes, "adapter": adapter}
         if (root / "astropy").is_dir():
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
@@ -1220,13 +1346,14 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                         "consensus": consensus,
                         "detail": evidence[-7000:]}
-            if consensus_model is not None:
+            if adapter != "vial" or consensus_model is not None:
                 # A replacement patch would no longer have two-candidate
                 # approval. Keep the approved patch and block on new evidence.
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts,
                         "tokens": tokens, "fail_to_pass": fail_ok,
                         "pass_to_pass": pass_ok, "consensus": consensus,
+                        "candidate_outcomes": candidate_outcomes, "adapter": adapter,
                         "detail": evidence[-7000:]}
             feedback = ("The generated patch was applied, but benchmark tests failed.\n"
                         f"FAIL_TO_PASS ({'passed' if fail_ok else 'failed'}):\n{fail_detail}\n\n"
@@ -1275,6 +1402,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                 "baseline": baseline,
                 "consensus": consensus,
+                "candidate_outcomes": candidate_outcomes, "adapter": adapter,
                 "detail": (f"FAIL_TO_PASS:\n{fail_detail}\n\n"
                             f"PASS_TO_PASS:\n{pass_detail}")[-7000:]}
 
@@ -1282,12 +1410,25 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workload", type=Path, required=True)
-    parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--limit", type=int, default=None,
+                        help="maximum workload instances; defaults to all")
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--model", default="openai/gpt-5.6-luna")
+    parser.add_argument("--shard-index", type=int, default=0,
+                        help="zero-based shard index within --shard-count")
+    parser.add_argument("--shard-count", type=int, default=1,
+                        help="number of balanced shards for the selected range")
+    parser.add_argument("--model", default="openai/gpt-4o")
+    parser.add_argument("--adapter", choices=["baseline", "opencode", "vial"],
+                        default="vial", help="generation protocol to evaluate")
+    parser.add_argument("--adapters",
+                        help="comma-separated generation protocols to compare")
     parser.add_argument("--run-tests", action="store_true")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="validate base environments without invoking a model")
     parser.add_argument("--test-image", default=None,
                         help="run install and tests in a Docker Python image")
+    parser.add_argument("--official-images", action="store_true",
+                        help="use SWE-bench's official per-instance images")
     parser.add_argument("--out", type=Path,
                         default=Path(__file__).with_name("results"),
                         help="directory for the reproducible JSON report")
@@ -1301,57 +1442,91 @@ def main() -> int:
     if not args.run_tests:
         parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
+    if args.limit is None:
+        args.limit = max(0, len(workload["tasks"]) - args.offset)
+    adapters = (["preflight"] if args.preflight_only else
+                args.adapters.split(",") if args.adapters else [args.adapter])
+    invalid_adapters = set(adapters) - {"baseline", "opencode", "vial", "preflight"}
+    if invalid_adapters or not adapters:
+        parser.error("--adapters must contain baseline, opencode and/or vial")
+    if len(adapters) != len(set(adapters)):
+        parser.error("--adapters must not contain duplicates")
     consensus_by_id = {}
     if args.consensus_file is not None:
         consensus_by_id = json.loads(
             args.consensus_file.read_text(encoding="utf-8"))
         if not isinstance(consensus_by_id, dict):
             parser.error("--consensus-file must contain a JSON object keyed by task id")
-    selected = workload["tasks"][args.offset:args.offset + args.limit]
+    try:
+        selected = select_shard(
+            workload["tasks"], args.offset, args.limit,
+            args.shard_index, args.shard_count)
+    except ValueError as error:
+        parser.error(str(error))
     resolver = EnvironmentResolver()
     args.out.mkdir(parents=True, exist_ok=True)
     checkpoint = args.out / "checkpoint.jsonl"
-    completed: dict[int, dict] = {}
+    completed: dict[str, dict] = {}
     if checkpoint.is_file():
         for line in checkpoint.read_text(encoding="utf-8").splitlines():
             try:
                 entry = json.loads(line)
-                completed[int(entry["index"])] = dict(entry["result"])
+                key = str(entry.get("adapter", "vial")) + ":" + str(int(entry["index"]))
+                completed[key] = dict(entry["result"])
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
-    results = [completed[index] for index in range(args.offset, args.offset + args.limit)
-               if index in completed]
-    for index, instance in enumerate(selected, start=args.offset):
-        if index in completed:
-            continue
-        environment = resolver.resolve(instance, args.test_image)
-        started = time.monotonic()
-        result = run_instance(instance, args.model, args.run_tests,
-                              environment.image, environment,
-                              consensus_by_id.get(instance.get("id")),
-                              args.consensus_model, args.adjudicator_model)
-        result["environment"] = {
-            "repo": instance.get("repo", ""),
-            "base_commit": instance.get("base_commit", ""),
-            "python_version": environment.python_version,
-            "image": environment.image,
-            "dependencies": list(environment.dependencies),
-            "test_command": list(environment.test_command),
-            "timeout_seconds": environment.timeout_seconds,
-            "metadata": dict(environment.metadata),
-        }
-        result["duration_seconds"] = round(time.monotonic() - started, 3)
-        result = _annotate_result(result, environment)
-        results.append(result)
-        with checkpoint.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({"index": index, "result": result}) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+    results = [completed[f"{adapter}:{index}"] for adapter in adapters
+               for index, _ in selected if f"{adapter}:{index}" in completed]
+    for adapter in adapters:
+        for index, instance in selected:
+            key = f"{adapter}:{index}"
+            if key in completed:
+                continue
+            environment = resolver.resolve(instance, args.test_image,
+                                            args.official_images)
+            started = time.monotonic()
+            result = run_instance(instance, args.model, args.run_tests,
+                                  environment.image, environment,
+                                  (consensus_by_id.get(instance.get("id"))
+                                   if adapter == "vial" else None),
+                                  args.consensus_model if adapter == "vial" else None,
+                                  args.adjudicator_model if adapter == "vial" else None,
+                                  "vial" if adapter == "preflight" else adapter,
+                                  args.preflight_only)
+            result["adapter"] = adapter
+            result["environment"] = {
+                "repo": instance.get("repo", ""),
+                "base_commit": instance.get("base_commit", ""),
+                "python_version": environment.python_version,
+                "image": environment.image,
+                "dependencies": list(environment.dependencies),
+                "test_command": list(environment.test_command),
+                "timeout_seconds": environment.timeout_seconds,
+                "metadata": dict(environment.metadata),
+            }
+            result["duration_seconds"] = round(time.monotonic() - started, 3)
+            result = _annotate_result(result, environment)
+            results.append(result)
+            with checkpoint.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"adapter": adapter, "index": index,
+                                         "result": result}) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
     failure_breakdown: dict[str, int] = {}
     for result in results:
         key = f"{result['failure_class']}.{result['failure_subclass']}"
         failure_breakdown[key] = failure_breakdown.get(key, 0) + 1
     metrics = success_metrics(results)
+    economics = economics_metrics(results)
+    by_adapter = {
+        adapter: {
+            "metrics": success_metrics([row for row in results
+                                         if row.get("adapter") == adapter]),
+            "economics": economics_metrics([row for row in results
+                                              if row.get("adapter") == adapter]),
+        }
+        for adapter in adapters
+    }
     report = {"benchmark": workload.get("name", "swebench"),
               "total": len(results), "tasks": len(results),
               "passed": sum(row["passed"] for row in results),
@@ -1444,14 +1619,20 @@ def main() -> int:
                                        for row in results),
               "failure_breakdown": failure_breakdown,
               "tokens": sum(row.get("tokens", 0) or 0 for row in results),
-              "retries": sum(max((row.get("attempts", 1) or 1) - 1, 0)
-                             for row in results),
+               "retries": sum(max((row.get("attempts", 1) or 1) - 1, 0)
+                              for row in results),
+               "economics": economics,
+               "by_adapter": by_adapter,
               "results": results,
               "execution": {
-                  "model": args.model,
+                   "model": args.model,
+                   "adapters": adapters,
                   "run_tests": args.run_tests,
-                  "offset": args.offset,
-                  "limit": args.limit,
+                   "offset": args.offset,
+                   "limit": args.limit,
+                   "shard_index": args.shard_index,
+                   "shard_count": args.shard_count,
+                   "selected_indices": [index for index, _ in selected],
                   "test_image_override": args.test_image,
                   "consensus_file": str(args.consensus_file)
                   if args.consensus_file is not None else None,

@@ -187,7 +187,7 @@ vial --status                          # snapshot organizacional completo
 vial --status --trace DEC-0001         # porquê de uma decisão (audit trail)
 vial --fix "trim trailing whitespace"  # rota determinística (sem modelo)
 vial --fix "implement persistence"     # rota de modelo (custo) via orquestrador
-vial --model openai/gpt-5.6-luna       # seleção explícita de LLM
+vial --model openai/gpt-4o            # seleção explícita de LLM
 vial --providers / --models            # descoberta de provedores/modelos
 ```
 

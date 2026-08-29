@@ -8,14 +8,29 @@ on:
         required: false
         default: "0"
       length:
-        description: Number of SWE-bench Lite rows to evaluate
+        description: Number of SWE-bench Verified rows to evaluate
+        required: false
+        default: "50"
+      dataset:
+        description: Hugging Face SWE-bench dataset id
+        required: false
+        default: princeton-nlp/SWE-bench_Verified
+      shard_index:
+        description: Zero-based shard to run
+        required: false
+        default: "0"
+      shard_count:
+        description: Total number of balanced shards
         required: false
         default: "10"
-      run_tests:
-        description: Apply test fixtures and execute benchmark tests
+      adapters:
+        description: Comma-separated protocols to evaluate
         required: false
-        type: boolean
-        default: true
+        default: baseline,opencode,vial
+      consensus_model:
+        description: Independent model used only by the VIAL consensus gate
+        required: false
+        default: openai/gpt-4o-mini
 
 jobs:
   swebench:
@@ -53,12 +68,19 @@ jobs:
       - name: Fetch workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          python benchmark/fetch_swebench.py --split test \
+            python benchmark/fetch_swebench.py --dataset ${{ inputs.dataset }} --split test \
             --offset ${{ inputs.offset }} --length ${{ inputs.length }} \
-            --out benchmark/swebench-lite-real-ci.json
+            --out benchmark/swebench-verified-real-ci.json
       - name: Run real evaluation
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          args="--workload benchmark/swebench-lite-real-ci.json --model openai/gpt-5.6-luna --offset 0 --limit ${{ inputs.length }}"
-          if [ "${{ inputs.run_tests }}" = "true" ]; then args="$args --run-tests"; fi
+          args="--workload benchmark/swebench-verified-real-ci.json --model openai/gpt-4o --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
+          args="$args --run-tests --out benchmark/results/verified-${{ inputs.shard_index }}"
           python benchmark/run_swebench.py $args
+      - name: Upload benchmark evidence
+        if: ${{ always() && env.HAS_OPENCODE_AUTH == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: swebench-verified-shard-${{ inputs.shard_index }}
+          path: benchmark/results/verified-${{ inputs.shard_index }}/
+          if-no-files-found: error

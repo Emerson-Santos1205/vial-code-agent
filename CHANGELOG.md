@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+### feat
+- align package metadata and public model defaults for distribution
+
 ## 0.1.0
 _Changes since initial release_
 

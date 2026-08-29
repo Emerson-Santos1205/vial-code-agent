@@ -30,8 +30,9 @@ from .vial_runtime import VialRuntime
 from .workspace import select_files
 
 MODEL_ALIASES = {
-    "fast": "openai/gpt-5.6-luna-fast",
-    "reasoning": "openai/gpt-5.6-luna",
+    # Stable provider model ids, not deployment-local aliases.
+    "fast": "openai/gpt-4o-mini",
+    "reasoning": "openai/gpt-4o",
 }
 
 
@@ -101,6 +102,20 @@ def build_parser() -> argparse.ArgumentParser:
                         help="list model providers")
     parser.add_argument("--run", metavar="COMMAND",
                         help="run an allowlisted command through the governed tool")
+    parser.add_argument("--serve", action="store_true",
+                        help="start the loopback HTTP server for the VS Code extension")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="HTTP server host (loopback only)")
+    parser.add_argument("--port", type=int, default=8765,
+                        help="HTTP server port")
+    parser.add_argument("--add-server", nargs=2, metavar=("NAME", "URL"),
+                        help="register an OpenAI-compatible provider")
+    parser.add_argument("--api-key-env", default="",
+                        help="environment variable holding the added provider key")
+    parser.add_argument("--add-model", metavar="SERVER/MODEL",
+                        help="register a model on a configured HTTP provider")
+    parser.add_argument("--pool-set", nargs="+", metavar="MODEL",
+                        help="set the auto-routing model pool")
 
     # Selection, verification and provider controls.
     parser.add_argument("--include", action="append")
@@ -156,6 +171,33 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, RuntimeError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
+
+    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+        print("error: --host must be a loopback address", file=sys.stderr)
+        return 2
+    registry = ServerRegistry(root)
+    try:
+        if args.add_server:
+            server = registry.add_server(*args.add_server, args.api_key_env)
+            print(f"server added: {server.name} ({server.base_url})")
+            return 0
+        if args.add_model:
+            server_name, model_name = registry.server_and_model(args.add_model)
+            registry.add_model(server_name, model_name)
+            print(f"model added: {args.add_model}")
+            return 0
+        if args.pool_set:
+            registry.pool_set(args.pool_set)
+            print(f"pool set: {', '.join(registry.pool)}")
+            return 0
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    if args.serve:
+        from .web_server import serve
+        serve(root, config, args.host, args.port)
+        return 0
 
     try:
         runtime = _build_runtime(root, config, vial)
