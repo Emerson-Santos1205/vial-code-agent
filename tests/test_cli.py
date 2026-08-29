@@ -105,6 +105,16 @@ class _FakeRuntime:
 
 
 class CliIntegrationTests(unittest.TestCase):
+    def test_doctor_reports_missing_model_as_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                result = main(["--doctor", "--json", "--root", directory])
+            report = json.loads(output.getvalue())
+        self.assertEqual(result, 1)
+        self.assertFalse(report["ok"])
+        self.assertFalse(report["checks"]["model"]["ok"])
+
     def test_review_validates_and_prints_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

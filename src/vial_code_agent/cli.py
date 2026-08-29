@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -104,6 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run an allowlisted command through the governed tool")
     parser.add_argument("--serve", action="store_true",
                         help="start the loopback HTTP server for the VS Code extension")
+    parser.add_argument("--doctor", action="store_true",
+                        help="diagnose workspace, VIAL core and model configuration")
+    parser.add_argument("--json", action="store_true",
+                        help="format --doctor output as JSON")
     parser.add_argument("--host", default="127.0.0.1",
                         help="HTTP server host (loopback only)")
     parser.add_argument("--port", type=int, default=8765,
@@ -176,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --host must be a loopback address", file=sys.stderr)
         return 2
     registry = ServerRegistry(root)
+    if args.doctor:
+        return _run_doctor(root, vial_root.resolve(), config, registry, args.json)
     try:
         if args.add_server:
             server = registry.add_server(*args.add_server, args.api_key_env)
@@ -259,6 +266,42 @@ def main(argv: list[str] | None = None) -> int:
 # --------------------------------------------------------------------------- #
 # Non-interactive actions
 # --------------------------------------------------------------------------- #
+def _run_doctor(root: Path, vial_root: Path, config: AgentConfig,
+                registry: ServerRegistry, as_json: bool = False) -> int:
+    """Report actionable installation checks without invoking a model."""
+    models = registry.all_models()
+    configured_model = config.model if config.model != "auto" else ""
+    has_model = bool(configured_model or models)
+    opencode_needed = any(registry.provider_kind(model) == "opencode"
+                          for model in models)
+    if configured_model and "/" not in configured_model:
+        opencode_needed = True
+    checks = {
+        "workspace": {"ok": root.is_dir(), "value": str(root)},
+        "vial_core": {"ok": vial_root.is_dir(), "value": str(vial_root)},
+        "model": {"ok": has_model,
+                   "value": configured_model or (models[0] if models else "")},
+        "opencode": {
+            "ok": not opencode_needed or shutil.which(config.opencode_executable) is not None,
+            "value": config.opencode_executable,
+            "required": opencode_needed,
+        },
+    }
+    passed = all(bool(check["ok"]) for check in checks.values())
+    report = {"ok": passed, "checks": checks}
+    if as_json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print(f"VIAL doctor: {'OK' if passed else 'needs attention'}")
+        for name, check in checks.items():
+            state = "OK" if check["ok"] else "FAIL"
+            print(f"[{state}] {name}: {check['value']}")
+        if not has_model:
+            print("Configure a model with --add-server/--add-model/--pool-set "
+                  "or set model in .vial.json")
+    return 0 if passed else 1
+
+
 def _run_review(root: Path, args, telemetry) -> int:
     patch_path = Path(args.review)
     if not patch_path.is_absolute():

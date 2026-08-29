@@ -274,6 +274,13 @@ a resposta em um editor Markdown.
 vial --root . --serve
 ```
 
+Antes do primeiro uso, diagnostique a instalação sem chamar nenhum modelo:
+
+```text
+vial --root . --doctor
+vial --root . --doctor --json
+```
+
 O servidor aceita apenas endereços loopback e fixa o workspace no processo que
 o iniciou; ele não aceita caminhos de workspace vindos da extensão.
 
