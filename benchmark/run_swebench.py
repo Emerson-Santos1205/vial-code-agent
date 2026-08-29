@@ -177,6 +177,20 @@ def _validate_candidate(root: Path, patch: str,
     return candidate
 
 
+def _restore_docker_mount_owner(root: Path, image: str) -> None:
+    """Return bind-mounted files to the runner user after rootful Docker runs."""
+    uid = getattr(os, "getuid", lambda: None)()
+    gid = getattr(os, "getgid", lambda: None)()
+    if uid is None or gid is None:
+        return
+    mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
+    subprocess.run(
+        ["docker", "run", "--rm", "--mount", mount, image,
+         "sh", "-lc", f"chown -R {uid}:{gid} /workspace"],
+        capture_output=True, text=True, check=False,
+    )
+
+
 def _run_command(command: list[str], root: Path, env: dict[str, str],
                  docker_image: str | None = None,
                  timeout: int = 900) -> subprocess.CompletedProcess:
@@ -188,14 +202,17 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
         mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
         docker_env = ["-e", "PYTHONPATH=/workspace",
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types"]
-        return subprocess.run(
-            ["docker", "run", "--rm", "--workdir", "/workspace",
-             "--mount", mount,
-             "--mount", "type=volume,source=vial-swebench-pip-cache," \
-                         "destination=/root/.cache/pip",
-             *docker_env,
-             docker_image, *command], cwd=root, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        try:
+            return subprocess.run(
+                ["docker", "run", "--rm", "--workdir", "/workspace",
+                 "--mount", mount,
+                 "--mount", "type=volume,source=vial-swebench-pip-cache," \
+                             "destination=/root/.cache/pip",
+                 *docker_env,
+                 docker_image, *command], cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        finally:
+            _restore_docker_mount_owner(root, docker_image)
     except subprocess.TimeoutExpired as error:
         output = error.output or ""
         if isinstance(output, bytes):
