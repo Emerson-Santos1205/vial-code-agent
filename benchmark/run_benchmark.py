@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
+# Keep imports working both as ``python -m benchmark.run_benchmark`` and as
+# ``python benchmark/run_benchmark.py`` in CI.
+sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "src"))
 
 from vial_code_agent.agent import CodeAgent
