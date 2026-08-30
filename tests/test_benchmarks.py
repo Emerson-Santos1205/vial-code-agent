@@ -3,7 +3,7 @@ import unittest
 import subprocess
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 from benchmark.run_benchmark import classify_failure, summarize
@@ -325,6 +325,21 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("Cython<3", spec.dependencies)
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
+
+    def test_astropy_runner_disables_incompatible_external_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "astropy").mkdir()
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+                run_command.side_effect = capture
+                _run_test_groups(root, ["astropy/tests/test_one.py"], [], {},
+                                 "vial-code-agent-swebench-python39:local", (), (), 30)
+            self.assertIn("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", captured["script"])
 
     def test_baseline_empty_groups_keep_swebench_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
