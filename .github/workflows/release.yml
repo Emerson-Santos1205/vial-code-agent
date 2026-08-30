@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "release-orchestrator-v*.*.*"
 
 jobs:
   build:
@@ -21,9 +22,20 @@ jobs:
           python -m build --sdist --wheel
       - name: Validate distributions
         run: |
-          python -m pip install dist/*.whl
-          vial --help
-          release-orchestrator --help
+          python -m venv "$RUNNER_TEMP/wheel-env"
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/wheel-env/bin/python" -c "import vial_code_agent, release_orchestrator"
+          "$RUNNER_TEMP/wheel-env/bin/vial" --help
+          "$RUNNER_TEMP/wheel-env/bin/release-orchestrator" --help
+      - name: Validate source distribution
+        run: |
+          python -m venv "$RUNNER_TEMP/sdist-env"
+          "$RUNNER_TEMP/sdist-env/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/sdist-env/bin/python" -m pip install dist/*.tar.gz
+          "$RUNNER_TEMP/sdist-env/bin/python" -c "import vial_code_agent, release_orchestrator"
+          "$RUNNER_TEMP/sdist-env/bin/vial" --help
+          "$RUNNER_TEMP/sdist-env/bin/release-orchestrator" --help
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:

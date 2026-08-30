@@ -329,7 +329,7 @@ Todos os erros são enviados para `stderr`.
 
 ## Limitações
 
-- Usa apenas a biblioteca padrão do Python.
+- Usa a biblioteca padrão do Python e `textual` para a interface TUI.
 - Requer `git` e `python -m unittest` disponíveis no ambiente.
 - `changelog` recusa sobrescrever `CHANGELOG.md` sem `--force`.
 - `rollback` remove apenas tags no formato `release-orchestrator-vMAJOR.MINOR.PATCH`.
