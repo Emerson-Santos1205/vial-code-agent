@@ -6,7 +6,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .model import ModelResponse, OpenCodeProvider, _find_diff_text
+from .model import (ModelResponse, OpenCodeProvider, _extract_error,
+                    _find_diff_text, _parse_events)
 
 
 class DockerOpenCodeProvider:
@@ -61,21 +62,7 @@ class DockerOpenCodeProvider:
             raise RuntimeError(f"Docker provider timed out after {self.timeout_seconds}s") from error
         finally:
             prompt_path.unlink(missing_ok=True)
-        text_parts: list[str] = []
-        usage: dict[str, int | None] = {}
-        for line in process.stdout.splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "text":
-                text_parts.append(event.get("part", {}).get("text", ""))
-            elif event.get("type") == "step_finish":
-                tokens = event.get("part", {}).get("tokens", {}) or {}
-                usage = {"input_tokens": tokens.get("input"),
-                         "output_tokens": tokens.get("output"),
-                         "total_tokens": tokens.get("total")}
-        text = "".join(text_parts)
+        text, usage = _parse_events(process.stdout)
         if not text:
             for line in process.stdout.splitlines():
                 try:
@@ -88,6 +75,6 @@ class DockerOpenCodeProvider:
                     break
         response = ModelResponse(
             text=text, returncode=process.returncode,
-            stderr=process.stderr.strip(), **usage)
+            stderr=_extract_error(process), **usage)
         self.last_response = response
         return response

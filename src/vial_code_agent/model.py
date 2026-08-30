@@ -82,7 +82,7 @@ class OpenCodeProvider:
         task: str | None = None,
         files: list[Path] | None = None,
     ) -> ModelResponse:
-        timeout_seconds = self.timeout_seconds
+        timeout_seconds = timeout_seconds or self.timeout_seconds
         instruction = f"{prompt} Return only a unified diff."
         executable = self.executable
         if not os.path.dirname(executable):
@@ -109,23 +109,8 @@ class OpenCodeProvider:
             raise RuntimeError(f"model executable not found: {self.executable}") from error
         except subprocess.TimeoutExpired as error:
             raise RuntimeError(f"model request timed out after {timeout_seconds}s") from error
-        text_parts: list[str] = []
-        usage: dict[str, int | None] = {}
-        for line in process.stdout.splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "text":
-                text_parts.append(event.get("part", {}).get("text", ""))
-            elif event.get("type") == "step_finish":
-                tokens = event.get("part", {}).get("tokens", {}) or {}
-                usage = {
-                    "input_tokens": tokens.get("input"),
-                    "output_tokens": tokens.get("output"),
-                    "total_tokens": tokens.get("total"),
-                }
-        if not text_parts:
+        text, usage = _parse_events(process.stdout)
+        if not text:
             # Keep compatibility with opencode event variants that nest the final
             # answer differently while preserving the JSON protocol.
             for line in process.stdout.splitlines():
@@ -133,12 +118,12 @@ class OpenCodeProvider:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                text = _find_diff_text(event)
-                if text is not None:
-                    text_parts.append(text)
+                found = _find_diff_text(event)
+                if found is not None:
+                    text = found
                     break
         return ModelResponse(
-            text="".join(text_parts),
+            text=text,
             returncode=process.returncode,
             stderr=_extract_error(process),
             **usage,
@@ -158,7 +143,7 @@ class OpenCodeProvider:
         """
         if history:
             prompt = _with_history(prompt, history)
-        timeout_seconds = self.timeout_seconds
+        timeout_seconds = timeout_seconds or self.timeout_seconds
         executable = self.executable
         if not os.path.dirname(executable):
             executable = _resolve_executable(executable)
@@ -173,11 +158,7 @@ class OpenCodeProvider:
             encoding="utf-8", errors="replace", timeout=timeout_seconds, check=False,
             input=prompt if uses_stdin else None,
         )
-        text = "".join(
-            json.loads(line).get("part", {}).get("text", "")
-            for line in process.stdout.splitlines()
-            if _is_text_event(line)
-        )
+        text, _ = _parse_events(process.stdout)
         return ModelResponse(text, process.returncode, _extract_error(process))
 
     def chat_stream(
@@ -435,7 +416,34 @@ def _is_text_event(line: str) -> bool:
         event = json.loads(line)
     except json.JSONDecodeError:
         return False
-    return event.get("type") == "text"
+    return isinstance(event, dict) and event.get("type") == "text"
+
+
+def _parse_events(stdout: str) -> tuple[str, dict[str, int | None]]:
+    """Extract text and usage without trusting optional event fields."""
+    text_parts: list[str] = []
+    usage: dict[str, int | None] = {}
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        part = event.get("part")
+        if event.get("type") == "text" and isinstance(part, dict):
+            text = part.get("text")
+            if isinstance(text, str):
+                text_parts.append(text)
+        elif event.get("type") == "step_finish" and isinstance(part, dict):
+            tokens = part.get("tokens")
+            if isinstance(tokens, dict):
+                usage = {
+                    "input_tokens": tokens.get("input"),
+                    "output_tokens": tokens.get("output"),
+                    "total_tokens": tokens.get("total"),
+                }
+    return "".join(text_parts), usage
 
 
 def _extract_error(process: subprocess.CompletedProcess) -> str:

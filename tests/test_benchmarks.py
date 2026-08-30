@@ -295,6 +295,18 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertEqual(spec.timeout_seconds, 900)
         self.assertEqual(dict(spec.metadata)["source"], "fixture")
 
+    def test_environment_spec_splits_string_test_command(self) -> None:
+        spec = EnvironmentResolver().resolve({
+            "repo": "example/project",
+            "test_command": "python -m pytest tests/test_api.py",
+        })
+        self.assertEqual(spec.test_command,
+                         ("python", "-m", "pytest", "tests/test_api.py"))
+
+    def test_environment_spec_rejects_invalid_python_version(self) -> None:
+        with self.assertRaises(ValueError):
+            EnvironmentResolver().resolve({"python_version": "latest"})
+
     def test_environment_timeout_is_resolved_from_instance(self) -> None:
         spec = EnvironmentResolver().resolve({
             "repo": "example/project", "timeout_seconds": "120",
@@ -326,7 +338,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
 
-    def test_astropy_runner_disables_incompatible_external_plugins(self) -> None:
+    def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "astropy").mkdir()
@@ -339,7 +351,7 @@ class BenchmarkMetricTests(unittest.TestCase):
                 run_command.side_effect = capture
                 _run_test_groups(root, ["astropy/tests/test_one.py"], [], {},
                                  "vial-code-agent-swebench-python39:local", (), (), 30)
-            self.assertIn("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", captured["script"])
+            self.assertIn("-p no:astropy_header", captured["script"])
 
     def test_baseline_empty_groups_keep_swebench_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -347,6 +359,12 @@ class BenchmarkMetricTests(unittest.TestCase):
                 Path(directory), [], [], {}, None, (), (), 30)
         self.assertEqual(result[0], False)
         self.assertEqual(result[2], True)
+
+    def test_provider_failures_have_a_distinct_failure_class(self) -> None:
+        self.assertEqual(_failure_class("provider", "empty response"), "provider")
+        self.assertEqual(_failure_subclass(
+            "provider", "model returned an empty response", {"failure_class": "provider"}),
+            "model_response")
 
     def test_independent_candidates_must_produce_the_same_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

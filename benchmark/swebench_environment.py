@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import shlex
+import re
 from typing import Any
 
 
@@ -45,6 +47,8 @@ class EnvironmentResolver:
         python = str(instance.get("python_version") or
                       instance.get("test_python") or
                       self.REPOSITORY_PYTHON.get(repo, "3.12"))
+        if not re.fullmatch(r"\d+\.\d+", python):
+            raise ValueError(f"invalid Python version: {python}")
         compact = python.replace(".", "")
         official_image = "swebench/sweb.eval.x86_64." + str(
             instance.get("id", "")).lower().replace("__", "_1776_") + ":latest"
@@ -56,7 +60,7 @@ class EnvironmentResolver:
             tuple(str(item) for item in instance.get("dependencies", ()))))
         command = instance.get("test_command", ())
         if isinstance(command, str):
-            command = (command,)
+            command = tuple(shlex.split(command))
         else:
             command = tuple(str(item) for item in command)
         metadata = tuple(sorted(

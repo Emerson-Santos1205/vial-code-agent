@@ -344,7 +344,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         if (root / "astropy").is_dir():
             # pytest-astropy-header targets newer Astropy checkouts and fails
             # during plugin discovery on historical SWE-bench revisions.
-            pytest_command = ["env", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", *pytest_command]
+            pytest_command[3:3] = ["-p", "no:astropy_header"]
         return " ".join(shlex.quote(part) for part in pytest_command)
 
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
@@ -431,6 +431,8 @@ def _failure_class(stage: str, detail: str = "") -> str:
         return "patch"
     if stage == "governance":
         return "governance"
+    if stage in {"provider", "provider_health"}:
+        return "provider"
     if stage == "tests":
         environment_markers = (
             "ModuleNotFoundError", "ImportError while loading conftest",
@@ -484,6 +486,14 @@ def _failure_subclass(stage: str, detail: str = "", result: dict | None = None) 
         return "apply_failure"
     if stage == "governance":
         return "authorization"
+    if stage in {"provider", "provider_health"}:
+        if "timeout" in text:
+            return "timeout"
+        if "auth" in text or "401" in text or "403" in text:
+            return "authentication"
+        if "model" in text or "empty response" in text:
+            return "model_response"
+        return "infrastructure"
     if stage in {"clone", "checkout", "test_environment", "test_fixture",
                  "test_selection", "baseline_tests"}:
         if "python" in text or "version" in text:
@@ -833,6 +843,11 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         label, model, returned_patch=patch_returns > 0, patch_valid=False,
         tests_passed=None, detail=detail, attempts=attempts, retries=retries,
         patch_returns=patch_returns)
+    response = getattr(generated, "response", None)
+    if (detail.startswith("provider error:") or
+            (response is not None and (getattr(response, "returncode", 0) != 0 or
+                                       not getattr(response, "text", "").strip()))):
+        outcome["failure_stage"] = "provider"
     outcome["response_received"] = bool(
         generated and getattr(getattr(generated, "response", None), "text", ""))
     outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
@@ -1278,8 +1293,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if primary["patch"] is None:
                 outcome = primary["outcome"]
                 return {"id": instance["id"], "passed": False,
-                        "stage": "patch_validation" if outcome["returned_patch"]
-                        else "patch_contract",
+                        "stage": str(outcome.get("failure_stage") or (
+                            "patch_validation" if outcome["returned_patch"]
+                            else "patch_contract")),
                         "detail": outcome["failure_detail"],
                         "result_code": outcome["result_code"],
                         "candidate_outcomes": candidate_outcomes, "adapter": adapter}
