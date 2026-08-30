@@ -49,6 +49,17 @@ class BenchmarkMetricTests(unittest.TestCase):
             {"python": "python@sha256:abc"},
         )
 
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_environment_image_validation_returns_local_image_id(self, run) -> None:
+        run.side_effect = [
+            SimpleNamespace(returncode=0, stdout="[]"),
+            SimpleNamespace(returncode=0, stdout="sha256:local"),
+        ]
+        self.assertEqual(
+            validate_environment_images({"python:local"}),
+            {"python:local": "sha256:local"},
+        )
+
     def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:
         report = {
             "benchmark": "verified", "execution": {
