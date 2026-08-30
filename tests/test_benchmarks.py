@@ -326,7 +326,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
 
-    def test_astropy_runner_disables_incompatible_external_plugins(self) -> None:
+    def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "astropy").mkdir()
@@ -339,7 +339,7 @@ class BenchmarkMetricTests(unittest.TestCase):
                 run_command.side_effect = capture
                 _run_test_groups(root, ["astropy/tests/test_one.py"], [], {},
                                  "vial-code-agent-swebench-python39:local", (), (), 30)
-            self.assertIn("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", captured["script"])
+            self.assertIn("-p no:astropy_header", captured["script"])
 
     def test_baseline_empty_groups_keep_swebench_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

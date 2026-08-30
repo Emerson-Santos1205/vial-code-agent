@@ -344,7 +344,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         if (root / "astropy").is_dir():
             # pytest-astropy-header targets newer Astropy checkouts and fails
             # during plugin discovery on historical SWE-bench revisions.
-            pytest_command = ["env", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", *pytest_command]
+            pytest_command[4:4] = ["-p", "no:astropy_header"]
         return " ".join(shlex.quote(part) for part in pytest_command)
 
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
