@@ -459,7 +459,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
     if not official_image and not prepared_image and dependencies:
         setup.append("python -m pip install " + " ".join(shlex.quote(item)
                                                          for item in dependencies))
-    if not official_image and (root / "astropy").is_dir():
+    if not official_image and not prepared_image and (root / "astropy").is_dir():
         setup.append("python -m pip install 'numpy<1.22' --disable-pip-version-check")
     setup_prefix = (" && ".join(setup) + " && ") if setup else ""
     script = (setup_prefix +
