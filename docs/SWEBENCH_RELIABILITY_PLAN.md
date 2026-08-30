@@ -25,7 +25,7 @@ reliable before running the full 50-task evaluation again.
 - [x] Harden JSON event parsing for malformed optional event fields.
 - [ ] Harden streaming timeouts and process-tree cleanup.
 - [x] Add provider failure and health-check unit tests.
-- [x] Validate the provider changes with the full test suite (`398 passed`).
+- [x] Validate the provider changes with the full test suite (`400 passed`).
 
 ### P1: SWE-bench Environments
 
