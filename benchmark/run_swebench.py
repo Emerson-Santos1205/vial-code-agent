@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from dataclasses import replace
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -37,6 +38,78 @@ except ImportError:
 
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
 ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
+
+
+def validate_environment_images(images: set[str], docker: str = "docker") -> dict[str, str]:
+    """Validate images and return immutable digest references for execution."""
+    missing = []
+    resolved: dict[str, str] = {}
+    for image in sorted(images):
+        result = subprocess.run(
+            [docker, "image", "inspect", "--format", "{{json .RepoDigests}}", image],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", check=False)
+        if result.returncode:
+            missing.append(image)
+            continue
+        try:
+            digests = json.loads(result.stdout.strip() or "[]")
+        except json.JSONDecodeError:
+            digests = []
+        if isinstance(digests, list) and digests:
+            resolved[image] = str(sorted(digests)[0])
+        else:
+            # Local images may not have RepoDigests. Their immutable image ID
+            # is still suitable for inspection and is recorded in artifacts.
+            identity = subprocess.run(
+                [docker, "image", "inspect", "--format", "{{.Id}}", image],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", check=False)
+            if identity.returncode or not identity.stdout.strip():
+                missing.append(image)
+            else:
+                # A local image ID is directly runnable; combining it with a
+                # tag makes Docker treat it as a remote repository reference.
+                resolved[image] = identity.stdout.strip()
+    if missing:
+        raise RuntimeError("required Docker images are unavailable: " +
+                           ", ".join(missing))
+    return resolved
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Replace a report atomically so interrupted writes cannot corrupt it."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _append_checkpoint(path: Path, entry: dict) -> None:
+    """Append one complete checkpoint record with a single durable write."""
+    payload = (json.dumps(entry, sort_keys=True) + "\n").encode("utf-8")
+    descriptor = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o644)
+    try:
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _checkpoint_identity(workload: dict, args: argparse.Namespace,
+                         selected: list[tuple[int, dict]]) -> str:
+    payload = {
+        "workload": hashlib.sha256(json.dumps(
+            workload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest(),
+        "model": args.model,
+        "consensus_model": args.consensus_model,
+        "adjudicator_model": args.adjudicator_model,
+        "adapters": args.adapters or args.adapter,
+        "indices": [index for index, _ in selected],
+    }
+    return hashlib.sha256(json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
 
 
 def _workspace_sha256(root: Path) -> str:
@@ -201,14 +274,23 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                                   encoding="utf-8", errors="replace", timeout=timeout,
                                   check=False, env=env)
         mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
+        uid = getattr(os, "getuid", lambda: 65532)()
+        gid = getattr(os, "getgid", lambda: 65532)()
         docker_env = ["-e", "PYTHONPATH=/workspace",
+                      "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
                       # Candidate workspaces intentionally omit .git; give
                       # setuptools-scm a stable fallback for source builds.
                       "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
         try:
             return subprocess.run(
-                ["docker", "run", "--rm", "--workdir", "/workspace",
+                ["docker", "run", "--rm", "--network", "none",
+                 "--read-only", "--cap-drop=ALL",
+                 "--security-opt", "no-new-privileges:true",
+                 "--cpus", "2", "--memory", "8g", "--pids-limit", "512",
+                 "--user", f"{uid}:{gid}", "--tmpfs",
+                 "/tmp:rw,nosuid,nodev,noexec,size=1g",
+                 "--workdir", "/workspace",
                  "--mount", mount,
                  "--mount", "type=volume,source=vial-swebench-pip-cache," \
                              "destination=/root/.cache/pip",
@@ -348,23 +430,22 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         return " ".join(shlex.quote(part) for part in pytest_command)
 
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
-    setup = ([
-        "if python -c \"import sys; raise SystemExit(sys.version_info[0] != 2)\"; then "
-        "python -m pip install 'pytest<5' --disable-pip-version-check; "
-        "else python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
-    ] if official_image else [
+    prepared_image = bool(docker_image and
+                          docker_image.startswith("vial-code-agent-swebench-"))
+    setup = ([] if official_image or prepared_image else [
         "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
         "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
         "python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
     ])
-    if not official_image and not (root / "astropy").is_dir():
+    if not official_image and not prepared_image and not (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
-    if not official_image and (root / "astropy").is_dir():
+    if not official_image and not prepared_image and (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install 'setuptools<60' "
                      "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                      "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                      "--disable-pip-version-check")
+    if not official_image and (root / "astropy").is_dir():
         # A random .so can be stale or unrelated to Astropy's required
         # extensions. Always build against the current Python/NumPy ABI.
         setup.append(ASTROPY_BUILD_COMMAND)
@@ -372,14 +453,14 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",
     ) if path.is_file()]
-    if not official_image:
+    if not official_image and not prepared_image:
         setup.extend("python -m pip install -r "
                      + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
                      + " --disable-pip-version-check" for path in requirements)
-    if not official_image and dependencies:
+    if not official_image and not prepared_image and dependencies:
         setup.append("python -m pip install " + " ".join(shlex.quote(item)
                                                          for item in dependencies))
-    if not official_image and (root / "astropy").is_dir():
+    if not official_image and not prepared_image and (root / "astropy").is_dir():
         setup.append("python -m pip install 'numpy<1.22' --disable-pip-version-check")
     setup_prefix = (" && ".join(setup) + " && ") if setup else ""
     script = (setup_prefix +
@@ -1055,7 +1136,8 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
         "image": environment.image,
         "dependencies": list(environment.dependencies),
         "test_command": list(environment.test_command),
-        "timeout_seconds": environment.timeout_seconds,
+                 "timeout_seconds": environment.timeout_seconds,
+        "fingerprint": environment.fingerprint,
         "metadata": dict(environment.metadata),
     }
     return result
@@ -1081,17 +1163,26 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
     with tempfile.TemporaryDirectory(
             prefix="vial-swebench-", ignore_cleanup_errors=True) as directory:
         root = Path(directory) / "repo"
-        clone = subprocess.run(
-            ["git", "clone", "--filter=blob:none", "https://github.com/" +
-             instance["repo"] + ".git", str(root)], capture_output=True,
-            text=True, encoding="utf-8", errors="replace", check=False)
+        try:
+            clone = subprocess.run(
+                ["git", "clone", "--filter=blob:none", "https://github.com/" +
+                 instance["repo"] + ".git", str(root)], capture_output=True,
+                text=True, encoding="utf-8", errors="replace", check=False,
+                timeout=300)
+        except subprocess.TimeoutExpired:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "clone", "detail": "clone timed out after 300s"}
         if clone.returncode:
             return {"id": instance["id"], "passed": False,
                     "stage": "clone", "detail": clone.stderr[-1000:]}
-        checkout = subprocess.run(
-            ["git", "checkout", instance["base_commit"]], cwd=root,
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            check=False)
+        try:
+            checkout = subprocess.run(
+                ["git", "checkout", instance["base_commit"]], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                check=False, timeout=120)
+        except subprocess.TimeoutExpired:
+            return {"id": instance["id"], "passed": False,
+                    "stage": "checkout", "detail": "checkout timed out after 120s"}
         if checkout.returncode:
             return {"id": instance["id"], "passed": False,
                     "stage": "checkout", "detail": checkout.stderr[-1000:]}
@@ -1114,13 +1205,15 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if not baseline_applied:
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests", "detail": baseline_error}
-            baseline_fail, baseline_fail_detail, baseline_pass, baseline_pass_detail = (
-                _run_test_groups(root, baseline_fail_tests, baseline_pass_tests,
-                                  os.environ.copy(), docker_image,
-                                  environment.dependencies if environment else (),
-                                  environment.test_command if environment else (),
-                                  environment.timeout_seconds if environment else 900))
-            PatchApplier(root).reverse(baseline_patch)
+            try:
+                baseline_fail, baseline_fail_detail, baseline_pass, baseline_pass_detail = (
+                    _run_test_groups(root, baseline_fail_tests, baseline_pass_tests,
+                                      os.environ.copy(), docker_image,
+                                      environment.dependencies if environment else (),
+                                      environment.test_command if environment else (),
+                                      environment.timeout_seconds if environment else 900))
+            finally:
+                PatchApplier(root).reverse(baseline_patch)
             baseline = {
                 "fail_to_pass": baseline_fail,
                 "pass_to_pass": baseline_pass,
@@ -1511,12 +1604,18 @@ def main() -> int:
         parser.error(str(error))
     resolver = EnvironmentResolver()
     args.out.mkdir(parents=True, exist_ok=True)
-    checkpoint = args.out / "checkpoint.jsonl"
+    identity = _checkpoint_identity(workload, args, selected)
+    checkpoint = args.out / f"checkpoint-{identity[:16]}.jsonl"
+    image_refs = validate_environment_images({resolver.resolve(
+        instance, args.test_image, args.official_images).image
+        for _, instance in selected})
     completed: dict[str, dict] = {}
     if checkpoint.is_file():
         for line in checkpoint.read_text(encoding="utf-8").splitlines():
             try:
                 entry = json.loads(line)
+                if entry.get("identity") != identity:
+                    continue
                 key = str(entry.get("adapter", "vial")) + ":" + str(int(entry["index"]))
                 completed[key] = dict(entry["result"])
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -1530,6 +1629,7 @@ def main() -> int:
                 continue
             environment = resolver.resolve(instance, args.test_image,
                                             args.official_images)
+            environment = replace(environment, image=image_refs[environment.image])
             started = time.monotonic()
             result = run_instance(instance, args.model, args.run_tests,
                                   environment.image, environment,
@@ -1548,16 +1648,15 @@ def main() -> int:
                 "dependencies": list(environment.dependencies),
                 "test_command": list(environment.test_command),
                 "timeout_seconds": environment.timeout_seconds,
+                "fingerprint": environment.fingerprint,
                 "metadata": dict(environment.metadata),
             }
             result["duration_seconds"] = round(time.monotonic() - started, 3)
             result = _annotate_result(result, environment)
             results.append(result)
-            with checkpoint.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps({"adapter": adapter, "index": index,
-                                         "result": result}) + "\n")
-                stream.flush()
-                os.fsync(stream.fileno())
+            _append_checkpoint(checkpoint, {"adapter": adapter, "index": index,
+                                            "identity": identity,
+                                            "result": result})
     failure_breakdown: dict[str, int] = {}
     for result in results:
         key = f"{result['failure_class']}.{result['failure_subclass']}"
@@ -1686,7 +1785,7 @@ def main() -> int:
                    "adjudicator_model": args.adjudicator_model,
               }}
     output = args.out / f"report-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _atomic_write(output, json.dumps(report, indent=2) + "\n")
     print(json.dumps({"report": str(output), **report}, indent=2))
     return 0 if report["passed"] == report["tasks"] else 1
 

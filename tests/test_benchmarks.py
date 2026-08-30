@@ -16,6 +16,7 @@ from benchmark.run_swebench import (
     _generate_validated_candidate,
     _governed_apply,
     _run_test_groups, baseline_is_valid,
+    validate_environment_images,
     run_instance,
     select_shard,
     should_retry_test_failure,
@@ -31,6 +32,34 @@ from benchmark.swebench_environment import EnvironmentResolver
 
 
 class BenchmarkMetricTests(unittest.TestCase):
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_environment_image_validation_reports_all_missing_images(self, run) -> None:
+        run.return_value.returncode = 1
+        with self.assertRaisesRegex(RuntimeError, "first.*second"):
+            validate_environment_images({"second", "first"})
+        self.assertEqual(run.call_count, 2)
+
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_environment_image_validation_returns_digest_reference(self, run) -> None:
+        run.side_effect = [
+            SimpleNamespace(returncode=0, stdout='["python@sha256:abc"]'),
+        ]
+        self.assertEqual(
+            validate_environment_images({"python"}),
+            {"python": "python@sha256:abc"},
+        )
+
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_environment_image_validation_returns_local_image_id(self, run) -> None:
+        run.side_effect = [
+            SimpleNamespace(returncode=0, stdout="[]"),
+            SimpleNamespace(returncode=0, stdout="sha256:local"),
+        ]
+        self.assertEqual(
+            validate_environment_images({"python:local"}),
+            {"python:local": "sha256:local"},
+        )
+
     def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:
         report = {
             "benchmark": "verified", "execution": {
@@ -294,6 +323,32 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertEqual(spec.test_command[-1], "tests")
         self.assertEqual(spec.timeout_seconds, 900)
         self.assertEqual(dict(spec.metadata)["source"], "fixture")
+        self.assertEqual(len(spec.fingerprint), 64)
+
+    def test_environment_fingerprint_changes_with_effective_contract(self) -> None:
+        resolver = EnvironmentResolver()
+        first = resolver.resolve({"repo": "example/project", "python_version": "3.11"})
+        second = resolver.resolve({"repo": "example/project", "python_version": "3.12"})
+        self.assertNotEqual(first.fingerprint, second.fingerprint)
+
+    def test_environment_contract_normalizes_dependencies_and_revision(self) -> None:
+        resolver = EnvironmentResolver()
+        first = resolver.resolve({
+            "repo": "example/project", "base_commit": "abc",
+            "dependencies": ["wheel", "pytest==8.0.0", "wheel"],
+        })
+        second = resolver.resolve({
+            "repo": "example/project", "base_commit": "abc",
+            "dependencies": ["pytest==8.0.0", "wheel"],
+        })
+        changed = resolver.resolve({
+            "repo": "example/project", "base_commit": "def",
+            "dependencies": ["pytest==8.0.0", "wheel"],
+        })
+        self.assertEqual(first.dependencies, ("pytest==8.0.0", "wheel"))
+        self.assertEqual(first.fingerprint, second.fingerprint)
+        self.assertNotEqual(first.fingerprint, changed.fingerprint)
+        self.assertEqual(dict(first.metadata)["catalog_key"], "example/project@abc")
 
     def test_environment_spec_splits_string_test_command(self) -> None:
         spec = EnvironmentResolver().resolve({
@@ -337,6 +392,27 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("Cython<3", spec.dependencies)
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
+
+    def test_prepared_image_does_not_reinstall_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "astropy").mkdir()
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout="__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n"
+                               "__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:0\n",
+                        stderr="",
+                    )
+                run_command.side_effect = capture
+                _run_test_groups(root, [], [], {},
+                                 "vial-code-agent-swebench-python39:local",
+                                 ("pytest==7.4.4",), (), 30)
+            self.assertNotIn("pip install", captured["script"])
+            self.assertIn("build_ext --inplace", captured["script"])
 
     def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

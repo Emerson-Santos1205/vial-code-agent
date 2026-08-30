@@ -9,18 +9,19 @@ from vial_code_agent.docker_provider import DockerOpenCodeProvider
 
 
 class DockerProviderTests(unittest.TestCase):
-    @patch("vial_code_agent.docker_provider.subprocess.run")
-    def test_uses_staged_workspace_and_read_only_credentials(self, run) -> None:
-        run.return_value.returncode = 0
-        run.return_value.stdout = '{"type":"text","part":{"text":"diff --git a/a.py b/a.py"}}\n'
-        run.return_value.stderr = ""
+    @patch("vial_code_agent.docker_provider.subprocess.Popen")
+    def test_uses_staged_workspace_and_read_only_credentials(self, popen) -> None:
+        process = popen.return_value
+        process.returncode = 0
+        process.communicate.return_value = (
+            '{"type":"text","part":{"text":"diff --git a/a.py b/a.py"}}\n', "")
         provider = DockerOpenCodeProvider("fast")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.py").write_text("", encoding="utf-8")
             with patch("vial_code_agent.docker_provider.Path.is_file", return_value=True):
                 response = provider.generate("fix", root, [root / "a.py"])
-        command = run.call_args.args[0]
+        command = popen.call_args.args[0]
         self.assertIn("--mount", command)
         self.assertIn("dst=/workspace", " ".join(command))
         self.assertIn("readonly", " ".join(command))
@@ -47,15 +48,29 @@ class DockerProviderTests(unittest.TestCase):
         self.assertEqual(result["status"], "healthy")
         self.assertTrue(result["response_received"])
 
-    @patch("vial_code_agent.docker_provider.subprocess.run")
-    def test_docker_provider_preserves_json_error_event(self, run) -> None:
-        run.return_value.returncode = 1
-        run.return_value.stdout = (
-            '{"type":"error","error":{"message":"model unavailable"}}\n')
-        run.return_value.stderr = ""
+    @patch("vial_code_agent.docker_provider.subprocess.Popen")
+    def test_docker_provider_preserves_json_error_event(self, popen) -> None:
+        process = popen.return_value
+        process.returncode = 1
+        process.communicate.return_value = (
+            '{"type":"error","error":{"message":"model unavailable"}}\n', "")
         provider = DockerOpenCodeProvider("model")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch("vial_code_agent.docker_provider.Path.is_file", return_value=True):
                 response = provider.generate("fix", root, [])
         self.assertIn("model unavailable", response.stderr)
+
+    @patch("vial_code_agent.docker_provider._terminate_process_tree")
+    @patch("vial_code_agent.docker_provider.subprocess.Popen")
+    def test_docker_provider_timeout_cleans_process_tree(self, popen, terminate) -> None:
+        process = popen.return_value
+        process.communicate.side_effect = __import__("subprocess").TimeoutExpired(
+            ["docker", "run"], 1)
+        process.poll.return_value = None
+        provider = DockerOpenCodeProvider("model", timeout_seconds=1)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("vial_code_agent.docker_provider.Path.is_file", return_value=True):
+                with self.assertRaisesRegex(RuntimeError, "timed out"):
+                    provider.generate("fix", Path(directory), [])
+        terminate.assert_called_once_with(process)

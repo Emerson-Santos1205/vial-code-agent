@@ -23,24 +23,44 @@ reliable before running the full 50-task evaluation again.
 - [x] Preserve provider error text and JSON error events in the Docker provider.
 - [x] Separate provider failures from patch-contract failures in candidate results.
 - [x] Harden JSON event parsing for malformed optional event fields.
-- [ ] Harden streaming timeouts and process-tree cleanup.
+- [x] Harden streaming timeouts and process-tree cleanup.
 - [x] Add provider failure and health-check unit tests.
-- [x] Validate the provider changes with the full test suite (`400 passed`).
+- [x] Validate the provider changes with the full test suite (`403 passed`).
 
 ### P1: SWE-bench Environments
 
-- [ ] Validate every required image before execution.
+- [x] Validate every required image before execution.
 - [x] Reject malformed Python version declarations.
-- [ ] Make dependency and image resolution deterministic.
+- [x] Make dependency and image resolution deterministic.
 - [x] Parse string test commands into argv safely.
-- [ ] Record environment fingerprints in benchmark artifacts.
+- [x] Record environment fingerprints in benchmark artifacts.
 
 ### P2: Isolation and CI Safety
 
-- [ ] Add job and stage timeouts.
-- [ ] Make checkpoints atomic and configuration-scoped.
-- [ ] Add container resource and privilege restrictions.
-- [ ] Add concurrency protection for shard output directories.
+- [x] Add job and stage timeouts.
+- [x] Make checkpoints atomic and configuration-scoped.
+- [x] Add container resource and privilege restrictions.
+- [x] Add concurrency protection for shard output directories.
+
+## Execution Status
+
+The local implementation phases completed with `405 passed`, including
+provider timeout cleanup, environment fingerprints, image preflight,
+configuration-scoped checkpoints, and Docker privilege restrictions.
+
+The following rollout gates still require the CI runtime and are intentionally
+not marked as executed locally:
+
+- Docker image builds and availability for every selected SWE-bench instance;
+- provider health checks with the configured credentials and both models;
+- one-task, two-task, five-task, and full SWE-bench smoke/evaluation runs;
+- deterministic fingerprints across separate CI shard executions.
+
+Dependency installation remains outside the network-isolated test container
+contract until all required dependencies are baked into pinned images. The
+resolver now emits a versioned repository/revision catalog key and canonical
+dependency contract; Docker preflight converts every selected image to an
+immutable digest or image ID before execution.
 
 ## Incident Diagnosis
 

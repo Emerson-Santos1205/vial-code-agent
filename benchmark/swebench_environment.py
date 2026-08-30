@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 import shlex
 import re
 from typing import Any
+
+
+ENVIRONMENT_CATALOG_VERSION = "2026-08-30"
 
 
 @dataclass(frozen=True)
@@ -17,6 +22,21 @@ class EnvironmentSpec:
     test_command: tuple[str, ...] = ()
     timeout_seconds: int = 900
     metadata: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def fingerprint(self) -> str:
+        """Stable identity for the effective environment contract."""
+        payload = {
+            "python_version": self.python_version,
+            "image": self.image,
+            "dependencies": self.dependencies,
+            "test_command": self.test_command,
+            "timeout_seconds": self.timeout_seconds,
+            "metadata": self.metadata,
+        }
+        return hashlib.sha256(json.dumps(
+            payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
 
 
 class EnvironmentResolver:
@@ -41,6 +61,11 @@ class EnvironmentResolver:
         ),
     }
 
+    @staticmethod
+    def _catalog_key(repo: str, revision: str) -> str:
+        """Identify the catalog contract without relying on dict ordering."""
+        return f"{repo}@{revision or 'unspecified'}"
+
     def resolve(self, instance: dict[str, Any], override: str | None = None,
                 official_images: bool = False) -> EnvironmentSpec:
         repo = str(instance.get("repo", ""))
@@ -55,17 +80,25 @@ class EnvironmentResolver:
         image = (override or instance.get("test_image") or
                  (official_image if official_images else
                   f"vial-code-agent-swebench-python{compact}:local"))
-        dependencies = tuple(dict.fromkeys(
+        declared_dependencies = instance.get("dependencies", ())
+        if isinstance(declared_dependencies, str):
+            declared_dependencies = (declared_dependencies,)
+        dependencies = tuple(sorted(set(
             self.REPOSITORY_DEPENDENCIES.get(repo, ()) +
-            tuple(str(item) for item in instance.get("dependencies", ()))))
+            tuple(str(item) for item in declared_dependencies))))
         command = instance.get("test_command", ())
         if isinstance(command, str):
             command = tuple(shlex.split(command))
         else:
             command = tuple(str(item) for item in command)
+        revision = str(instance.get("base_commit") or "")
         metadata = tuple(sorted(
             (str(key), str(value))
             for key, value in (instance.get("environment_metadata") or {}).items()))
+        metadata = tuple(sorted((*metadata, (
+            "catalog_version", ENVIRONMENT_CATALOG_VERSION),
+            ("catalog_key", self._catalog_key(repo, revision)),
+            ("base_commit", revision))))
         default_timeout = 1800 if repo == "astropy/astropy" else 900
         try:
             timeout = int(instance.get("timeout_seconds") or
