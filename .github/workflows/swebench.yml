@@ -39,6 +39,10 @@ on:
 jobs:
   swebench:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: swebench-verified-${{ inputs.shard_index }}-${{ inputs.model }}-${{ inputs.consensus_model }}
+      cancel-in-progress: false
     env:
       HAS_OPENCODE_AUTH: ${{ secrets.OPENCODE_AUTH_JSON != '' }}
     steps:
@@ -80,22 +84,32 @@ jobs:
           python benchmark/check_provider.py --model "${{ inputs.consensus_model }}" \
             --image vial-code-agent-opencode:1.18.18 \
             --out "benchmark/results/verified-${{ inputs.shard_index }}/provider-consensus.json"
-      - name: Build historical Astropy test image
-        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
-        run: docker build -f docker/swebench-test.Dockerfile -t vial-code-agent-swebench-python39:local .
-      - name: Build historical Django test image
-        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
-        run: docker build -f docker/swebench-django-test.Dockerfile -t vial-code-agent-swebench-python38:local .
       - name: Fetch workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-            python benchmark/fetch_swebench.py --dataset ${{ inputs.dataset }} --split test \
+          python benchmark/fetch_swebench.py --dataset ${{ inputs.dataset }} --split test \
             --offset ${{ inputs.offset }} --length ${{ inputs.length }} \
             --out benchmark/swebench-verified-real-ci.json
+      - name: Pull official SWE-bench environments
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: |
+          python - <<'PY'
+          import json
+          from benchmark.swebench_environment import EnvironmentResolver
+          workload = json.load(open("benchmark/swebench-verified-real-ci.json", encoding="utf-8"))
+          resolver = EnvironmentResolver()
+          images = sorted({resolver.resolve(task, official_images=True).image for task in workload["tasks"]})
+          with open("/tmp/swebench-images.txt", "w", encoding="utf-8") as stream:
+              stream.write("\n".join(images) + "\n")
+          PY
+          while IFS= read -r image; do
+            test -n "$image"
+            docker pull "$image"
+          done < /tmp/swebench-images.txt
       - name: Run real evaluation
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          args="--workload benchmark/swebench-verified-real-ci.json --model ${{ inputs.model }} --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
+          args="--workload benchmark/swebench-verified-real-ci.json --model ${{ inputs.model }} --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }} --official-images"
           args="$args --run-tests --out benchmark/results/verified-${{ inputs.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
