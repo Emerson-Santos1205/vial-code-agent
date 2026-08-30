@@ -393,6 +393,27 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
 
+    def test_prepared_image_does_not_reinstall_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "astropy").mkdir()
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout="__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n"
+                               "__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:0\n",
+                        stderr="",
+                    )
+                run_command.side_effect = capture
+                _run_test_groups(root, [], [], {},
+                                 "vial-code-agent-swebench-python39:local",
+                                 ("pytest==7.4.4",), (), 30)
+            self.assertNotIn("pip install", captured["script"])
+            self.assertIn("build_ext --inplace", captured["script"])
+
     def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -430,14 +430,16 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         return " ".join(shlex.quote(part) for part in pytest_command)
 
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
-    setup = ([] if official_image else [
+    prepared_image = bool(docker_image and
+                          docker_image.startswith("vial-code-agent-swebench-"))
+    setup = ([] if official_image or prepared_image else [
         "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
         "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
         "python -m pip install 'pytest==7.4.4' --disable-pip-version-check; fi",
     ])
-    if not official_image and not (root / "astropy").is_dir():
+    if not official_image and not prepared_image and not (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
-    if not official_image and (root / "astropy").is_dir():
+    if not official_image and not prepared_image and (root / "astropy").is_dir():
         setup.insert(0, "python -m pip install 'setuptools<60' "
                      "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
@@ -450,11 +452,11 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         root / "tests" / "requirements" / "py3.txt",
         root / "requirements" / "test.txt",
     ) if path.is_file()]
-    if not official_image:
+    if not official_image and not prepared_image:
         setup.extend("python -m pip install -r "
                      + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
                      + " --disable-pip-version-check" for path in requirements)
-    if not official_image and dependencies:
+    if not official_image and not prepared_image and dependencies:
         setup.append("python -m pip install " + " ".join(shlex.quote(item)
                                                          for item in dependencies))
     if not official_image and (root / "astropy").is_dir():
