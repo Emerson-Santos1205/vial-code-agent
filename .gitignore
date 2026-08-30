@@ -10,5 +10,6 @@ build/
 .vial-cache/
 .vial-state/
 .vial-sessions/
+logs/
 benchmark/results/
 benchmark/results-*/
