@@ -29,6 +29,13 @@ PATCH = """--- a/value.txt
 """
 
 
+def _evidence() -> dict[str, dict[str, object]]:
+    return {
+        "a/x": {"static_valid": True, "behavioral_passed": None},
+        "b/y": {"static_valid": True, "behavioral_passed": None},
+    }
+
+
 class ConsensusGateTests(unittest.TestCase):
     def test_read_only_tool_never_requires_consensus(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -90,11 +97,28 @@ class ConsensusGateTests(unittest.TestCase):
             decision = runtime.propose_patch_decision("")
             runtime.record_consensus(
                 decision.id, True, 0.9, models=["a/x", "b/y"],
-                responses={"a/x": "same", "b/y": "same"})
+                responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
             result = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=decision)
             self.assertTrue(result.ok())
             self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
+
+    def test_positive_consensus_without_validation_evidence_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "value.txt"
+            source.write_text("old\n", encoding="utf-8")
+            runtime = _runtime(Path(directory) / "state")
+            decision = runtime.propose_patch_decision("")
+            runtime.record_consensus(
+                decision.id, True, 1.0, models=["a/x", "b/y"],
+                responses={"a/x": "same", "b/y": "same"})
+            result = runtime.apply_patch(
+                PatchApplier(root), PATCH, decision=decision)
+            self.assertEqual(result.status, "REJECTED")
+            self.assertEqual(
+                result.metadata.get("error_code"), "CONSENSUS_EVIDENCE_REQUIRED")
+            self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
 
     def test_governed_reverse_uses_the_same_mutation_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -105,7 +129,7 @@ class ConsensusGateTests(unittest.TestCase):
             decision = runtime.propose_patch_decision("")
             runtime.record_consensus(
                 decision.id, True, 0.9, models=["a/x", "b/y"],
-                responses={"a/x": "same", "b/y": "same"})
+                responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
             applied = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=decision)
             self.assertTrue(applied.ok())
@@ -113,7 +137,7 @@ class ConsensusGateTests(unittest.TestCase):
             rollback_decision = runtime.propose_patch_decision("")
             runtime.record_consensus(
                 rollback_decision.id, True, 0.9, models=["a/x", "b/y"],
-                responses={"a/x": "same", "b/y": "same"})
+                responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
             reverted = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=rollback_decision,
                 reverse=True)
@@ -166,13 +190,20 @@ class ConsensusGateTests(unittest.TestCase):
             runtime = _runtime(Path(directory) / "state")
             decision = runtime.propose_patch_decision("")
             runtime.approve_decision(
-                decision.id, "operator",
+                decision.id, runtime.authority,
                 note="consensus skipped by operator flag --no-consensus")
             result = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=decision)
             self.assertTrue(result.ok())
             self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
             self.assertNotIn(decision.id, runtime.consensus_records)
+
+    def test_approval_requires_runtime_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = _runtime(Path(directory) / "state")
+            decision = runtime.propose_patch_decision("")
+            with self.assertRaises(PermissionError):
+                runtime.approve_decision(decision.id, "operator")
 
 
 class ConsensusPersistenceTests(unittest.TestCase):

@@ -85,6 +85,7 @@ RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 POLICY_INSPECT = "inspect"
 POLICY_DEVELOPMENT = "development"
 POLICY_CODE_APPLY = "code-apply"
+CONSENSUS_MIN_AGREEMENT = 0.6
 
 _LOCAL_SECRET = "local-vial-dev-secret"
 
@@ -722,11 +723,32 @@ class VialRuntime:
         (SDK-005 §350, RUNTIME-006 §8)."""
         if decision_id not in self.decision_engine.decisions:
             raise KeyError(decision_id)
+        if approver != self.authority:
+            raise PermissionError(
+                f"approval must be recorded by authority '{self.authority}'")
         record = ApprovalRecord(decision_id=decision_id,
                                 approver=approver, note=note)
         self.approvals[decision_id] = record
         self.persist()
         return record
+
+    @staticmethod
+    def _verified_consensus(record: ConsensusRecord) -> bool:
+        """Return whether a positive consensus carries independent evidence.
+
+        A persisted boolean alone is not sufficient to authorize a mutation:
+        the gate requires two distinct model responses, a qualifying agreement
+        ratio, and static validation evidence for each reviewed response.
+        """
+        models = list(dict.fromkeys(record.models))
+        if len(models) < 2 or not (CONSENSUS_MIN_AGREEMENT <= record.agreement_ratio <= 1.0):
+            return False
+        if any(not str(record.responses.get(model, "")).strip() for model in models):
+            return False
+        return all(
+            record.evidence.get(model, {}).get("static_valid") is True
+            and record.evidence.get(model, {}).get("behavioral_passed") is not False
+            for model in models)
 
     # ------------------------------------------------------------------ #
     # Cross-model consensus gate (TOOLS-001 side-effect classification)
@@ -792,8 +814,17 @@ class VialRuntime:
                       "before invocation",
                 metadata={"tool_id": tool.tool_id, "error_code": "CONSENSUS_REQUIRED",
                           "decision_id": decision.id})
-        if record.agreed:
+        if record.agreed and self._verified_consensus(record):
             return None
+        if record.agreed:
+            self.persist()
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_REJECTED,
+                error=f"consensus for Decision '{decision.id}' lacks independent validation evidence",
+                metadata={"tool_id": tool.tool_id,
+                          "error_code": "CONSENSUS_EVIDENCE_REQUIRED",
+                          "decision_id": decision.id,
+                          "agreement_ratio": record.agreement_ratio})
         self.persist()
         return self._tool.ToolResult(
             status=self._tool.STATUS_REJECTED,
@@ -988,13 +1019,22 @@ class VialRuntime:
             try:
                 self.coordinator.commit(op_id)
             except Exception as exc:
+                rollback_error = ""
+                try:
+                    applier.reverse(patch)
+                    self.coordinator.abort(op_id)
+                except Exception as rollback_exc:
+                    rollback_error = str(rollback_exc)
                 self._record_decision_outcome(decision, {
                     "operation_id": op_id, "status": self._tool.STATUS_FAILED,
                     "error": f"commit failed after apply: {exc}"})
                 return self._tool.ToolResult(
                     status=self._tool.STATUS_FAILED,
-                    error=f"commit failed after apply: {exc}",
-                    metadata={"operation_id": op_id})
+                    error=(f"commit failed after apply: {exc}; patch rollback "
+                           f"{'failed: ' + rollback_error if rollback_error else 'completed'}"),
+                    metadata={"operation_id": op_id,
+                              "rollback_completed": not bool(rollback_error),
+                              "rollback_error": rollback_error})
             self._reconcile_files(applier.root)
             self._record_decision_outcome(decision, {
                 "operation_id": op_id, "status": result.status,

@@ -521,7 +521,8 @@ class ChatController:
         if len(pool) < 2:
             return ChatCommandResult(True, f"blocked: consensus requires >=2 models; decision_id={decision.id}")
         try:
-            consensus, _ = self.routing.dispatch_consensus(task, self.root, models=pool)
+            consensus, _ = self.routing.dispatch_consensus(
+                task, self.root, models=pool, require_evidence=True)
             self.runtime.record_consensus(
                 decision.id, consensus.agreed, consensus.agreement_ratio,
                 models=list(consensus.responses),

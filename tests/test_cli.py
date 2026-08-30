@@ -174,7 +174,9 @@ class CliIntegrationTests(unittest.TestCase):
                     return_value=ConsensusResult(
                         True, ModelResponse("same", 0), 1.0,
                         {"a/x": ModelResponse("same", 0),
-                         "b/y": ModelResponse("same", 0)}),
+                         "b/y": ModelResponse("same", 0)},
+                        {"a/x": {"static_valid": True, "behavioral_passed": None},
+                         "b/y": {"static_valid": True, "behavioral_passed": None}}, True),
                 ):
                     result = main(
                         [
@@ -214,7 +216,9 @@ class CliIntegrationTests(unittest.TestCase):
                     return_value=ConsensusResult(
                         True, ModelResponse("same", 0), 1.0,
                         {"a/x": ModelResponse("same", 0),
-                         "b/y": ModelResponse("same", 0)}),
+                         "b/y": ModelResponse("same", 0)},
+                        {"a/x": {"static_valid": True, "behavioral_passed": None},
+                         "b/y": {"static_valid": True, "behavioral_passed": None}}, True),
                 ):
                     result = main(
                         [
@@ -866,7 +870,7 @@ class ConsensusCliTests(unittest.TestCase):
                 (root / "source.txt").read_text(encoding="utf-8"), "new\n")
             runtime = _runtime(root)
             approval = next(iter(runtime.approvals.values()))
-            self.assertEqual(approval.approver, "operator")
+            self.assertEqual(approval.approver, "org-root")
             self.assertIn("skipped by operator flag --no-consensus", approval.note)
 
     def test_fix_disagreement_prints_candidates_to_stderr(self) -> None:
