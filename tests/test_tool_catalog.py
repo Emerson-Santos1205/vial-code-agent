@@ -28,6 +28,15 @@ def _runtime(state: Path) -> VialRuntime:
     return VialRuntime(_reference(), state)
 
 
+def _record_verified_consensus(runtime: VialRuntime, decision) -> None:
+    models = ["a/reviewer", "b/reviewer"]
+    runtime.record_consensus(
+        decision.id, True, 1.0, models=models,
+        responses={model: "validated candidate" for model in models},
+        evidence={model: {"static_valid": True, "behavioral_passed": None}
+                  for model in models})
+
+
 PATCH = """--- a/value.txt
 +++ b/value.txt
 @@ -1 +1 @@
@@ -99,7 +108,7 @@ class ToolCatalogTests(unittest.TestCase):
             decision = runtime.propose_decision(
                 "git status", "run_git", policy="development",
                 risk=RISK_HIGH)
-            runtime.record_consensus(decision.id, True, 1.0)
+            _record_verified_consensus(runtime, decision)
             rejected = runtime.invoke_tool(
                 "TOOL-RUN-GIT", {"args": ["status"]}, objective="git status",
                 decision=decision)
@@ -123,7 +132,7 @@ class ToolCatalogTests(unittest.TestCase):
             runtime = _runtime(Path(directory) / "state")
             context = runtime.build_context("update value", root, [source])
             decision = runtime.propose_patch_decision(context.context_id)
-            runtime.record_consensus(decision.id, True, 1.0)
+            _record_verified_consensus(runtime, decision)
             runtime.apply_patch(PatchApplier(root), PATCH,
                                 context_id=context.context_id,
                                 decision=decision)

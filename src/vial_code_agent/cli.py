@@ -465,7 +465,7 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             consensus = None
             if args.no_consensus:
                 runtime.approve_decision(
-                    decision.id, "operator",
+                    decision.id, runtime.authority,
                     note="consensus skipped by operator flag --no-consensus")
                 print("consensus: skipped by operator (--no-consensus)")
             else:
