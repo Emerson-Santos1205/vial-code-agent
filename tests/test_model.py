@@ -15,6 +15,7 @@ from vial_code_agent.model import (
     _extract_error,
     _find_diff_text,
     _is_text_event,
+    _parse_events,
     _trim_messages,
     _with_history,
     extract_diff,
@@ -93,6 +94,15 @@ class ExtractDiffTests(unittest.TestCase):
         self.assertTrue(_is_text_event('{"type":"text","part":{"text":"hi"}}'))
         self.assertFalse(_is_text_event("not json"))
         self.assertFalse(_is_text_event('{"type":"step_finish"}'))
+
+    def test_parse_events_ignores_malformed_optional_parts(self) -> None:
+        text, usage = _parse_events(
+            '{"type":"text","part":null}\n'
+            '{"type":"text","part":{"text":"ok"}}\n'
+            '{"type":"step_finish","part":null}'
+        )
+        self.assertEqual(text, "ok")
+        self.assertEqual(usage, {})
 
 class OpenCodeProviderTests(unittest.TestCase):
     def test_model_alias_resolves(self) -> None:

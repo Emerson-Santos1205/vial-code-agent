@@ -30,7 +30,11 @@ on:
       consensus_model:
         description: Independent model used only by the VIAL consensus gate
         required: false
-        default: openai/gpt-4o-mini
+        default: openai/gpt-5.6-luna
+      model:
+        description: Primary model used for candidate generation
+        required: false
+        default: openai/gpt-5.6-luna
 
 jobs:
   swebench:
@@ -64,6 +68,18 @@ jobs:
       - name: Build provider image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+      - name: Check primary provider
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: |
+          python benchmark/check_provider.py --model "${{ inputs.model }}" \
+            --image vial-code-agent-opencode:1.18.18 \
+            --out "benchmark/results/verified-${{ inputs.shard_index }}/provider-primary.json"
+      - name: Check consensus provider
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
+        run: |
+          python benchmark/check_provider.py --model "${{ inputs.consensus_model }}" \
+            --image vial-code-agent-opencode:1.18.18 \
+            --out "benchmark/results/verified-${{ inputs.shard_index }}/provider-consensus.json"
       - name: Build historical Astropy test image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: docker build -f docker/swebench-test.Dockerfile -t vial-code-agent-swebench-python39:local .
@@ -79,7 +95,7 @@ jobs:
       - name: Run real evaluation
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          args="--workload benchmark/swebench-verified-real-ci.json --model openai/gpt-5.6-luna --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
+          args="--workload benchmark/swebench-verified-real-ci.json --model ${{ inputs.model }} --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
           args="$args --run-tests --out benchmark/results/verified-${{ inputs.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
