@@ -79,7 +79,7 @@ jobs:
       - name: Run real evaluation
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          args="--workload benchmark/swebench-verified-real-ci.json --model openai/gpt-4o --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
+          args="--workload benchmark/swebench-verified-real-ci.json --model openai/gpt-5.6-luna --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
           args="$args --run-tests --out benchmark/results/verified-${{ inputs.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
