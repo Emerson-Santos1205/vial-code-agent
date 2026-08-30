@@ -57,7 +57,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         ]
         self.assertEqual(
             validate_environment_images({"python:local"}),
-            {"python:local": "sha256:local"},
+            {"python:local": "python:local"},
         )
 
     def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:

@@ -68,9 +68,9 @@ def validate_environment_images(images: set[str], docker: str = "docker") -> dic
             if identity.returncode or not identity.stdout.strip():
                 missing.append(image)
             else:
-                # A local image ID is directly runnable; combining it with a
-                # tag makes Docker treat it as a remote repository reference.
-                resolved[image] = identity.stdout.strip()
+                # Keep the local tag for execution. The ID was validated above,
+                # but Docker treats a tag combined with an ID as a registry ref.
+                resolved[image] = image
     if missing:
         raise RuntimeError("required Docker images are unavailable: " +
                            ", ".join(missing))
