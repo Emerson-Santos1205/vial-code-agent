@@ -273,7 +273,7 @@ def _prepare_astropy_extensions(root: Path, image: str,
         return True, "already prepared"
     mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
     result = subprocess.run(
-        ["docker", "run", "--rm", "--network", "none", "--cap-drop=ALL",
+        ["docker", "run", "--rm", "--network", "none",
          "--security-opt", "no-new-privileges:true", "--cpus", "2",
          "--memory", "8g", "--pids-limit", "512", "--workdir", "/workspace",
          "--mount", mount, "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
