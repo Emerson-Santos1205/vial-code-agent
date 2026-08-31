@@ -112,10 +112,17 @@ jobs:
           done < /tmp/swebench-images.txt
       - name: Build test image override
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image != '' }}
+        env:
+          TEST_IMAGE: ${{ inputs.test_image }}
         run: |
-          case "${{ inputs.test_image }}" in
+          case "$TEST_IMAGE" in
             vial-code-agent-swebench-python39:local)
-              docker build -f docker/swebench-test.Dockerfile -t "${{ inputs.test_image }}" .
+              docker build -f docker/swebench-test.Dockerfile -t "$TEST_IMAGE" .
+              ;;
+            vial-code-agent-swebench-python39:local@sha256:*)
+              # Digest references must already exist; never replace an
+              # immutable request with a newly built, different image.
+              docker image inspect "$TEST_IMAGE" >/dev/null
               ;;
             *)
               echo "Unsupported test_image override" >&2

@@ -38,6 +38,15 @@ except ImportError:
 
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
 ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
+PREPARED_IMAGE_PREFIX = "vial-code-agent-swebench-"
+
+
+def is_prepared_test_image(image: str | None) -> bool:
+    """Recognize prepared images before or after immutable digest resolution."""
+    if not image:
+        return False
+    reference = str(image).split("@", 1)[0]
+    return reference.startswith(PREPARED_IMAGE_PREFIX)
 
 
 def validate_environment_images(images: set[str], docker: str = "docker") -> dict[str, str]:
@@ -57,7 +66,10 @@ def validate_environment_images(images: set[str], docker: str = "docker") -> dic
         except json.JSONDecodeError:
             digests = []
         if isinstance(digests, list) and digests:
-            resolved[image] = str(sorted(digests)[0])
+            # An explicit digest is already the caller's immutable contract.
+            # Do not silently replace its repository/tag spelling with the
+            # first RepoDigest returned by Docker.
+            resolved[image] = image if "@sha256:" in image else str(sorted(digests)[0])
         else:
             # Local images may not have RepoDigests. Their immutable image ID
             # is still suitable for inspection and is recorded in artifacts.
@@ -230,6 +242,17 @@ def _apply_fixture(root: Path, patch: str) -> tuple[bool, str]:
     return applied.returncode == 0, applied.stderr[-2000:]
 
 
+def _reverse_fixture(root: Path, patch: str) -> tuple[bool, str]:
+    """Rollback evaluator-owned files without leaking an exception."""
+    if not patch:
+        return True, ""
+    try:
+        PatchApplier(root).reverse(patch)
+    except (OSError, PatchError) as error:
+        return False, str(error)
+    return True, ""
+
+
 def _validate_candidate(root: Path, patch: str,
                         allowed_paths: set[str]) -> str:
     """Validate a model patch, repairing only uniquely locatable hunks."""
@@ -374,8 +397,7 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
         ]
         if not (root / "astropy").is_dir():
             setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
-        prepared_image = bool(docker_image and
-                             docker_image.startswith("vial-code-agent-swebench-"))
+        prepared_image = is_prepared_test_image(docker_image)
         if (root / "astropy").is_dir() and not prepared_image:
             setup.insert(0, "python -m pip install 'setuptools<60' "
                          "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
@@ -453,11 +475,32 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
             # pytest-astropy-header targets newer Astropy checkouts and fails
             # during plugin discovery on historical SWE-bench revisions.
             pytest_command[3:3] = ["-p", "no:astropy_header"]
+        selected = " ".join(shlex.quote(part) for part in tests)
+        if configured_command:
+            configured_parts = [str(part) for part in configured_command]
+            # A catalog command may be a custom runner, but it must still be
+            # scoped to the SWE-bench group. Support explicit placeholders and
+            # the common pytest/runtests forms; unknown runners are left
+            # untouched rather than inventing an incompatible CLI contract.
+            if any("{tests}" in part or "{test}" in part
+                   for part in configured_parts):
+                rendered = []
+                for part in configured_parts:
+                    if "{tests}" in part or "{test}" in part:
+                        rendered.append(part.replace("{tests}", selected).replace(
+                            "{test}", selected))
+                    else:
+                        rendered.append(shlex.quote(part))
+                return " ".join(rendered)
+            configured = " ".join(shlex.quote(part) for part in configured_parts)
+            if any("pytest" in part or "runtests.py" in part
+                   for part in configured_parts):
+                return f"{configured} {selected}".rstrip()
+            return configured
         return " ".join(shlex.quote(part) for part in pytest_command)
 
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
-    prepared_image = bool(docker_image and
-                          docker_image.startswith("vial-code-agent-swebench-"))
+    prepared_image = is_prepared_test_image(docker_image)
     if prepared_image and (root / "astropy").is_dir():
         prepared, detail = _prepare_astropy_extensions(root, docker_image,
                                                        timeout_seconds)
@@ -652,6 +695,20 @@ def success_metrics(results: list[dict]) -> dict[str, float | int]:
            for row in results):
         metrics.update(candidate_metrics(results))
     return metrics
+
+
+def resolution_summary(results: list[dict], expected_results: int) -> dict[str, object]:
+    """Report resolution without treating missing or failed rows as success."""
+    passed = sum(row.get("passed") is True for row in results)
+    complete = (expected_results > 0 and len(results) == expected_results and
+                passed == expected_results)
+    return {
+        "percent": 100.0 if complete else (
+            100.0 * passed / expected_results if expected_results else 0.0),
+        "is_100_percent": complete,
+        "definition": ("100% is declared only when every selected instance "
+                       "and adapter result has passed=True."),
+    }
 
 
 def select_shard(tasks: list[dict], offset: int, limit: int,
@@ -1189,6 +1246,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
         raise ValueError("consensus options are only supported by the vial adapter")
     if environment is not None:
         docker_image = environment.image
+    prepared_image = is_prepared_test_image(docker_image)
     # Docker test containers run as root and can leave root-owned files in the
     # bind mount. GitHub-hosted runners cannot remove those files during the
     # context-manager cleanup, but the ephemeral workspace is safe to discard.
@@ -1244,8 +1302,17 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                                       environment.dependencies if environment else (),
                                       environment.test_command if environment else (),
                                       environment.timeout_seconds if environment else 900))
+            except (OSError, RuntimeError, subprocess.SubprocessError,
+                    TimeoutError) as error:
+                baseline_fail, baseline_pass = False, False
+                baseline_fail_detail = "baseline environment error: " + str(error)
+                baseline_pass_detail = "baseline environment was not completed"
             finally:
-                PatchApplier(root).reverse(baseline_patch)
+                restored, restore_error = _reverse_fixture(root, baseline_patch)
+            if not restored:
+                return {"id": instance["id"], "passed": False,
+                        "stage": "baseline_tests",
+                        "detail": "baseline fixture rollback failed: " + restore_error}
             baseline = {
                 "fail_to_pass": baseline_fail,
                 "pass_to_pass": baseline_pass,
@@ -1448,7 +1515,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "patch application rejected by VialRuntime",
                     "governance": apply_metadata, "consensus": consensus,
                     "candidate_outcomes": candidate_outcomes, "adapter": adapter}
-        if (root / "astropy").is_dir():
+        if (root / "astropy").is_dir() and not prepared_image:
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
                   "extension-helpers<1.0", "setuptools_scm<7", "wheel",
@@ -1707,8 +1774,11 @@ def main() -> int:
         }
         for adapter in adapters
     }
+    expected_results = len(selected) * len(adapters)
+    resolution = resolution_summary(results, expected_results)
+    all_instances_passed = bool(resolution["is_100_percent"])
     report = {"benchmark": workload.get("name", "swebench"),
-              "total": len(results), "tasks": len(results),
+              "total": expected_results, "tasks": expected_results,
               "passed": sum(row["passed"] for row in results),
               "environment_valid": sum(row["environment_valid"] for row in results),
               "environment_invalid": sum(not row["environment_valid"] for row in results),
@@ -1780,8 +1850,9 @@ def main() -> int:
                "consensus_failure_results": sum(
                    row.get("result_code") == "CONSENSUS_FAILED"
                    for row in results),
-               "end_to_end_success": metrics["agent_solved"],
+              "end_to_end_success": metrics["agent_solved"],
               "end_to_end_success_rate": metrics["end_to_end_success_rate"],
+              "resolution": resolution,
               "patch_applicable": sum(row.get("stage") in {
                   "patch_validated", "tests"} for row in results),
               "fail_to_pass": sum(row.get("fail_to_pass", False) for row in results),
@@ -1822,7 +1893,7 @@ def main() -> int:
     output = args.out / f"report-{time.strftime('%Y%m%d-%H%M%S')}.json"
     _atomic_write(output, json.dumps(report, indent=2) + "\n")
     print(json.dumps({"report": str(output), **report}, indent=2))
-    return 0 if report["passed"] == report["tasks"] else 1
+    return 0 if all_instances_passed else 1
 
 
 if __name__ == "__main__":

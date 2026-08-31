@@ -10,12 +10,15 @@ from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     ASTROPY_BUILD_COMMAND,
     _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
+    is_prepared_test_image,
+    resolution_summary,
     _normalize_astropy_test_id,
     _adjudicated_candidate_consensus, _candidate_consensus,
     _candidate_outcome, _candidate_set_consensus, _generate_candidate_set,
     _generate_validated_candidate,
     _governed_apply,
     _run_test_groups, baseline_is_valid,
+    _reverse_fixture,
     validate_environment_images,
     run_instance,
     select_shard,
@@ -29,6 +32,7 @@ from benchmark.report import (
 )
 from benchmark.aggregate_swebench import aggregate_reports
 from benchmark.swebench_environment import EnvironmentResolver
+from vial_code_agent.patches import PatchError
 
 
 class BenchmarkMetricTests(unittest.TestCase):
@@ -50,6 +54,13 @@ class BenchmarkMetricTests(unittest.TestCase):
         )
 
     @patch("benchmark.run_swebench.subprocess.run")
+    def test_environment_image_validation_preserves_explicit_digest(self, run) -> None:
+        run.return_value = SimpleNamespace(
+            returncode=0, stdout='["registry.example/python@sha256:other"]')
+        requested = "python:3.9@sha256:requested"
+        self.assertEqual(validate_environment_images({requested}), {requested: requested})
+
+    @patch("benchmark.run_swebench.subprocess.run")
     def test_environment_image_validation_returns_local_image_id(self, run) -> None:
         run.side_effect = [
             SimpleNamespace(returncode=0, stdout="[]"),
@@ -59,6 +70,15 @@ class BenchmarkMetricTests(unittest.TestCase):
             validate_environment_images({"python:local"}),
             {"python:local": "python:local"},
         )
+
+    def test_prepared_image_recognition_accepts_tags_and_digests(self) -> None:
+        self.assertTrue(is_prepared_test_image(
+            "vial-code-agent-swebench-python39:local"))
+        self.assertTrue(is_prepared_test_image(
+            "vial-code-agent-swebench-python39:local@sha256:abc"))
+        self.assertFalse(is_prepared_test_image(
+            "swebench/sweb.eval.x86_64.task:latest@sha256:abc"))
+        self.assertFalse(is_prepared_test_image(None))
 
     def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:
         report = {
@@ -213,6 +233,18 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertEqual(metrics["agent_success_rate"], 0.5)
         self.assertAlmostEqual(metrics["end_to_end_success_rate"], 1 / 3)
         self.assertEqual(report_success_metrics(results), metrics)
+
+    def test_resolution_never_declares_partial_work_as_100_percent(self) -> None:
+        self.assertEqual(
+            resolution_summary([{"passed": True}], 2),
+            {
+                "percent": 50.0,
+                "is_100_percent": False,
+                "definition": ("100% is declared only when every selected "
+                               "instance and adapter result has passed=True."),
+            })
+        self.assertTrue(resolution_summary(
+            [{"passed": True}, {"passed": True}], 2)["is_100_percent"])
 
     def test_economics_uses_inference_tokens_and_all_attempted_candidates(self) -> None:
         results = [
@@ -411,9 +443,37 @@ class BenchmarkMetricTests(unittest.TestCase):
                     )
                 run_command.side_effect = capture
                 _run_test_groups(root, [], [], {},
-                                 "vial-code-agent-swebench-python39:local",
+                                 "vial-code-agent-swebench-python39:local@sha256:abc",
                                  ("pytest==7.4.4",), (), 30)
             self.assertNotIn("pip install", captured["script"])
+
+    def test_configured_pytest_command_is_scoped_to_each_test_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout="__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n"
+                               "__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:0\n",
+                        stderr="",
+                    )
+                run_command.side_effect = capture
+                _run_test_groups(root, ["tests/test_api.py::test_fix"],
+                                 ["tests/test_api.py::test_other"], {},
+                                 "python:3.9",
+                                 (), ("python", "-m", "pytest", "-q"), 30)
+            self.assertIn("tests/test_api.py::test_fix", captured["script"])
+            self.assertIn("tests/test_api.py::test_other", captured["script"])
+
+    def test_fixture_rollback_failure_is_reported(self) -> None:
+        with patch("benchmark.run_swebench.PatchApplier") as applier:
+            applier.return_value.reverse.side_effect = PatchError("rollback failed")
+            restored, detail = _reverse_fixture(Path("."), "fixture")
+        self.assertFalse(restored)
+        self.assertIn("rollback failed", detail)
 
     def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
