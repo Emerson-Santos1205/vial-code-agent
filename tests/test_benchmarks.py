@@ -57,7 +57,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         ]
         self.assertEqual(
             validate_environment_images({"python:local"}),
-            {"python:local": "sha256:local"},
+            {"python:local": "python:local"},
         )
 
     def test_aggregate_reports_rejects_duplicate_tasks(self) -> None:
@@ -399,6 +399,8 @@ class BenchmarkMetricTests(unittest.TestCase):
             (root / "astropy").mkdir()
             captured = {}
             with patch("benchmark.run_swebench._run_command") as run_command:
+              with patch("benchmark.run_swebench._prepare_astropy_extensions",
+                         return_value=(True, "prepared")):
                 def capture(command, *args, **kwargs):
                     captured["script"] = (root / ".vial-test-groups.sh").read_text()
                     return SimpleNamespace(
@@ -412,7 +414,6 @@ class BenchmarkMetricTests(unittest.TestCase):
                                  "vial-code-agent-swebench-python39:local",
                                  ("pytest==7.4.4",), (), 30)
             self.assertNotIn("pip install", captured["script"])
-            self.assertIn("build_ext --inplace", captured["script"])
 
     def test_astropy_runner_disables_incompatible_header_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -420,6 +421,8 @@ class BenchmarkMetricTests(unittest.TestCase):
             (root / "astropy").mkdir()
             captured = {}
             with patch("benchmark.run_swebench._run_command") as run_command:
+              with patch("benchmark.run_swebench._prepare_astropy_extensions",
+                         return_value=(True, "prepared")):
                 def capture(command, *args, **kwargs):
                     captured["script"] = (root / ".vial-test-groups.sh").read_text()
                     return SimpleNamespace(returncode=0, stdout="", stderr="")

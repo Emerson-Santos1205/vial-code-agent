@@ -68,9 +68,9 @@ def validate_environment_images(images: set[str], docker: str = "docker") -> dic
             if identity.returncode or not identity.stdout.strip():
                 missing.append(image)
             else:
-                # A local image ID is directly runnable; combining it with a
-                # tag makes Docker treat it as a remote repository reference.
-                resolved[image] = identity.stdout.strip()
+                # Keep the local tag for execution. The ID was validated above,
+                # but Docker treats a tag combined with an ID as a registry ref.
+                resolved[image] = image
     if missing:
         raise RuntimeError("required Docker images are unavailable: " +
                            ", ".join(missing))
@@ -265,6 +265,30 @@ def _restore_docker_mount_owner(root: Path, image: str) -> None:
     )
 
 
+def _prepare_astropy_extensions(root: Path, image: str,
+                                timeout: int = 1800) -> tuple[bool, str]:
+    """Build historical Astropy extensions before entering read-only tests."""
+    marker = root / ".vial-astropy-prepared"
+    if marker.is_file():
+        return True, "already prepared"
+    mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--network", "none",
+         "--security-opt", "no-new-privileges:true", "--cpus", "2",
+         "--memory", "8g", "--pids-limit", "512", "--workdir", "/workspace",
+         "--mount", mount, "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
+         "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial", image,
+         "sh", "-lc", ASTROPY_BUILD_COMMAND],
+        cwd=root, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=timeout, check=False,
+    )
+    _restore_docker_mount_owner(root, image)
+    if result.returncode:
+        return False, (result.stderr or result.stdout)[-4000:]
+    marker.write_text("prepared\n", encoding="utf-8")
+    return True, "prepared"
+
+
 def _run_command(command: list[str], root: Path, env: dict[str, str],
                  docker_image: str | None = None,
                  timeout: int = 900) -> subprocess.CompletedProcess:
@@ -432,6 +456,12 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
     official_image = bool(docker_image and docker_image.startswith("swebench/"))
     prepared_image = bool(docker_image and
                           docker_image.startswith("vial-code-agent-swebench-"))
+    if prepared_image and (root / "astropy").is_dir():
+        prepared, detail = _prepare_astropy_extensions(root, docker_image,
+                                                       timeout_seconds)
+        if not prepared:
+            output = f"Astropy extension preparation failed: {detail}"
+            return False, output, False, output
     setup = ([] if official_image or prepared_image else [
         "if [ \"${VIAL_SWEBENCH_ASTROPY:-}\" = 1 ] || "
         "[ \"${VIAL_SWEBENCH_DJANGO:-}\" = 1 ]; then :; else "
