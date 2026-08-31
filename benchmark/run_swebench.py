@@ -475,7 +475,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
                      "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
                      "'pytest-astropy==0.9.0' 'pytest-astropy-header==0.1.2' "
                      "--disable-pip-version-check")
-    if not official_image and (root / "astropy").is_dir():
+    if not official_image and not prepared_image and (root / "astropy").is_dir():
         # A random .so can be stale or unrelated to Astropy's required
         # extensions. Always build against the current Python/NumPy ABI.
         setup.append(ASTROPY_BUILD_COMMAND)
