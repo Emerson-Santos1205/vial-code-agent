@@ -374,7 +374,9 @@ def _run_test_group(root: Path, tests: list[str], env: dict[str, str],
         ]
         if not (root / "astropy").is_dir():
             setup.insert(0, "python -m pip install -e . --no-deps --no-build-isolation")
-        if (root / "astropy").is_dir():
+        prepared_image = bool(docker_image and
+                             docker_image.startswith("vial-code-agent-swebench-"))
+        if (root / "astropy").is_dir() and not prepared_image:
             setup.insert(0, "python -m pip install 'setuptools<60' "
                          "'extension-helpers<1.0' 'setuptools_scm<7' 'numpy<1.22' "
                          "'pyerfa<3' 'PyYAML>=3.13' 'Cython<3' "
@@ -1459,11 +1461,14 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
         if not fixture_ok:
             return {"id": instance["id"], "passed": False,
                     "stage": "test_fixture", "detail": fixture_error}
-        install = _run_command(
-            ["python", "-m", "pip", "install", "-e", ".", "--no-deps",
-             "--no-build-isolation"], root, {}, docker_image)
         test_env = os.environ.copy()
-        if install.returncode:
+        if prepared_image:
+            test_env["PYTHONPATH"] = "/workspace"
+        else:
+            install = _run_command(
+                ["python", "-m", "pip", "install", "-e", ".", "--no-deps",
+                 "--no-build-isolation"], root, {}, docker_image)
+        if not prepared_image and install.returncode:
             # Some historical projects require native compilers unavailable on
             # the host. Source-tree tests can still run without installing the
             # package, provided the checkout is first on PYTHONPATH.
@@ -1473,7 +1478,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             root / "tests" / "requirements" / "py3.txt",
             root / "requirements" / "test.txt",
         ]
-        for requirements in requirement_files:
+        for requirements in ([] if prepared_image else requirement_files):
             if not requirements.is_file():
                 continue
             requirement_path = (f"/workspace/{requirements.relative_to(root).as_posix()}"
@@ -1485,7 +1490,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
                         "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
-        if docker_image and not (root / "tests" / "runtests.py").is_file():
+        if docker_image and not prepared_image and not (root / "tests" / "runtests.py").is_file():
             test_runner = _run_command(
                 ["python", "-m", "pip", "install", "pytest<8",
                  "--disable-pip-version-check"], root, test_env, docker_image)
