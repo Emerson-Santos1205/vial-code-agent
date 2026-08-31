@@ -1419,6 +1419,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "pipeline": candidate["outcome"].get("pipeline"),
                         "behavioral_detail": (candidate.get("behavior") or {}).get(
                             "detail", "")[-1500:],
+                        "patch": candidate.get("patch"),
                     } for candidate in candidates
                 }
                 adjudicator_prompt = build_swebench_prompt(
@@ -1426,10 +1427,12 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     environment or EnvironmentSpec(
                         python_version="declared-by-image",
                         image=docker_image or "host"),
-                    feedback=("Generate an independent candidate from the "
-                              "original task and workspace. Candidate patches "
-                              "are intentionally withheld. Use only this "
-                              "diagnostic evidence:\n" +
+                    feedback=("Choose between the provided candidate patches. "
+                              "Do not generate a new implementation. Return "
+                              "exactly one of the candidate unified diffs, "
+                              "unchanged, selecting the one that best solves "
+                              "the task and passes the reported tests. Candidate "
+                              "patches and diagnostic evidence:\n" +
                               json.dumps(diagnostics, sort_keys=True)))
                 adjudicator = _generate_validated_candidate(
                     "ADJUDICATOR", adjudicator_model, adjudicator_prompt, root,
