@@ -19,6 +19,7 @@ from .domain import (
     validate_semver,
 )
 from .git import (
+    check_submodule_drift,
     commits_since,
     create_annotated_tag,
     current_branch,
@@ -30,6 +31,7 @@ from .git import (
     modified_files,
     run_git,
     tag_exists,
+    update_submodule,
 )
 from .storage import atomic_write_text
 
@@ -45,6 +47,19 @@ class ScanReport:
     last_commit: str
     modified_files: tuple[str, ...]
     dirty: bool
+
+
+@dataclass(frozen=True)
+class SubmoduleReport:
+    exists: bool
+    dirty: bool
+    current_sha: str
+    remote_sha: str
+    lag_count: int
+    synced: bool
+    updated: bool
+    tests_passed: bool
+    issues: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -129,22 +144,6 @@ def test_files(root: Path) -> list[Path]:
     return sorted({path for path in files}, key=str)
 
 
-def repo_health_issues(root: Path, *, allow_dirty: bool = False) -> list[str]:
-    issues: list[str] = []
-    if not is_git_repo(root):
-        issues.append("not a git repository")
-    if not has_readme(root):
-        issues.append("missing README.md")
-    if not test_files(root):
-        issues.append("no tests found")
-    secrets = secret_files(root)
-    if secrets:
-        issues.append("secret files present: " + ", ".join(sorted(str(path.relative_to(root)) for path in secrets)))
-    if not allow_dirty and is_git_repo(root) and has_dirty_tree(root):
-        issues.append("working tree is dirty")
-    return issues
-
-
 def run_test_suite(root: Path) -> CompletedProcess[str]:
     import subprocess
     import os
@@ -162,6 +161,27 @@ def run_test_suite(root: Path) -> CompletedProcess[str]:
     )
 
 
+def repo_health_issues(root: Path, *, allow_dirty: bool = False) -> list[str]:
+    issues: list[str] = []
+    if not is_git_repo(root):
+        issues.append("not a git repository")
+    if not has_readme(root):
+        issues.append("missing README.md")
+    if not test_files(root):
+        issues.append("no tests found")
+    secrets = secret_files(root)
+    if secrets:
+        issues.append("secret files present: " + ", ".join(sorted(str(path.relative_to(root)) for path in secrets)))
+    if not allow_dirty and is_git_repo(root) and has_dirty_tree(root):
+        issues.append("working tree is dirty")
+    sub_dir = root / "vendor" / "vial-core"
+    if not sub_dir.is_dir():
+        issues.append("submodule vendor/vial-core not initialized")
+    elif has_dirty_tree(sub_dir):
+        issues.append("submodule vendor/vial-core is dirty")
+    return issues
+
+
 def scan_repository(root: Path) -> ScanReport:
     repo = is_git_repo(root)
     return ScanReport(
@@ -170,6 +190,55 @@ def scan_repository(root: Path) -> ScanReport:
         last_commit=last_commit(root) if repo else "",
         modified_files=tuple(modified_files(root)) if repo else tuple(),
         dirty=has_dirty_tree(root) if repo else False,
+    )
+
+
+def sync_core_submodule(root: Path, *, update: bool = False) -> SubmoduleReport:
+    drift = check_submodule_drift(root, "vendor/vial-core")
+    issues: list[str] = []
+
+    if not drift["exists"]:
+        issues.append("submodule vendor/vial-core not initialized")
+        return SubmoduleReport(
+            exists=False, dirty=False, current_sha="", remote_sha="",
+            lag_count=-1, synced=False, updated=False, tests_passed=False,
+            issues=tuple(issues),
+        )
+
+    if drift["dirty"]:
+        issues.append("submodule vendor/vial-core has uncommitted changes")
+
+    updated = False
+    tests_passed = True
+
+    if update and drift["exists"] and not drift["dirty"]:
+        success = update_submodule(root, "vendor/vial-core")
+        if success:
+            updated = True
+            suite = run_test_suite(root)
+            tests_passed = suite.returncode == 0 and "Ran 0 tests" not in suite.stdout
+            if not tests_passed:
+                issues.append("test suite failed after submodule update")
+        else:
+            issues.append("failed to update submodule vendor/vial-core")
+
+    if updated:
+        drift = check_submodule_drift(root, "vendor/vial-core")
+
+    if not drift["synced"] and drift["remote_sha"]:
+        lag = f" ({drift['lag_count']} commits behind)" if drift["lag_count"] > 0 else ""
+        issues.append(f"submodule vendor/vial-core is out of sync with remote{lag}")
+
+    return SubmoduleReport(
+        exists=bool(drift["exists"]),
+        dirty=bool(drift["dirty"]),
+        current_sha=str(drift["current_sha"]),
+        remote_sha=str(drift["remote_sha"]),
+        lag_count=int(drift["lag_count"]),
+        synced=bool(drift["synced"]),
+        updated=updated,
+        tests_passed=tests_passed,
+        issues=tuple(issues),
     )
 
 

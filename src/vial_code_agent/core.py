@@ -68,3 +68,38 @@ class VialCoreReference:
             context_id=context_id, decision=decision,
         )
         return result
+
+    def get_current_commit(self) -> str:
+        """Retorna o commit SHA atualmente pinado no checkout do VIAL Core."""
+        if not self.exists():
+            return ""
+        import subprocess
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, text=True, capture_output=True, check=False
+        )
+        return res.stdout.strip() if res.returncode == 0 else ""
+
+    def get_upstream_commit(self) -> str:
+        """Obtém o commit SHA mais recente do repositório remoto do VIAL Core."""
+        if not self.exists():
+            return ""
+        import subprocess
+        res = subprocess.run(
+            ["git", "ls-remote", "origin", "HEAD"], cwd=self.root, text=True, capture_output=True, check=False
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip().split()[0]
+        return ""
+
+    def check_drift(self) -> dict[str, Any]:
+        """Inspeciona o alinhamento e desfasamento entre o pino local e o repositório remoto."""
+        current = self.get_current_commit()
+        upstream = self.get_upstream_commit()
+        synced = (current == upstream) if (current and upstream) else True
+        return {
+            "exists": self.exists(),
+            "current_commit": current,
+            "upstream_commit": upstream,
+            "synced": synced,
+        }
+

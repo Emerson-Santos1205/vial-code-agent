@@ -54,8 +54,9 @@ class OpenCodeProvider:
 
     MODEL_ALIASES = {
         # Stable provider model ids, not deployment-local aliases.
-        "fast": "openai/gpt-4o-mini",
-        "reasoning": "openai/gpt-4o",
+        "fast": "opencode/big-pickle",
+        "reasoning": "opencode/mimo-v2.5-free",
+        "free": "opencode/big-pickle",
     }
 
     def __init__(

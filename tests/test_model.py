@@ -106,7 +106,7 @@ class ExtractDiffTests(unittest.TestCase):
 
 class OpenCodeProviderTests(unittest.TestCase):
     def test_model_alias_resolves(self) -> None:
-        self.assertEqual(OpenCodeProvider("fast").model, "openai/gpt-4o-mini")
+        self.assertEqual(OpenCodeProvider("fast").model, "opencode/big-pickle")
 
     def test_with_history_truncates_oversized_context(self) -> None:
         from vial_code_agent.model import _MAX_CONTEXT_CHARS, _with_history

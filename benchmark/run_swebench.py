@@ -296,7 +296,7 @@ def _prepare_astropy_extensions(root: Path, image: str,
         return True, "already prepared"
     mount = f"type=bind,src={root.resolve().as_posix()},dst=/workspace"
     result = subprocess.run(
-        ["docker", "run", "--rm", "--network", "none",
+        ["docker", "run", "--rm",
          "--security-opt", "no-new-privileges:true", "--cpus", "2",
          "--memory", "8g", "--pids-limit", "512", "--workdir", "/workspace",
          "--mount", mount, "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
@@ -957,10 +957,11 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostics.append(f"provider error: {error}")
             attempts += 1
             retries += int(attempt > 0)
-            candidate_prompt = prompt + (
-                "\n\nThe previous model request failed before returning a "
-                "patch. Retry once and return only a complete minimal unified "
-                "diff.\nPROVIDER DIAGNOSTIC: " + str(error))
+            if attempt == 0:
+                candidate_prompt = prompt + (
+                    "\n\nThe previous model request failed before returning a "
+                    "patch. Retry once and return only a complete minimal unified "
+                    "diff.\nPROVIDER DIAGNOSTIC: " + str(error))
             continue
         generated_attempts = max(int(generated.attempts or 1), 1)
         attempts += generated_attempts
@@ -996,6 +997,8 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
         outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
         outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
+        outcome["provider_stderr"] = getattr(
+            getattr(generated, "response", None), "stderr", "") or ""
         outcome["prompt_sha256"] = hashlib.sha256(
             candidate_prompt.encode("utf-8")).hexdigest()
         outcome["protocol"] = {
@@ -1023,6 +1026,8 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
     outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
     outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
+    outcome["provider_stderr"] = getattr(
+        getattr(generated, "response", None), "stderr", "") or ""
     outcome["prompt_sha256"] = hashlib.sha256(
         candidate_prompt.encode("utf-8")).hexdigest()
     outcome["protocol"] = {
@@ -1661,7 +1666,7 @@ def main() -> int:
                         help="zero-based shard index within --shard-count")
     parser.add_argument("--shard-count", type=int, default=1,
                         help="number of balanced shards for the selected range")
-    parser.add_argument("--model", default="openai/gpt-4o")
+    parser.add_argument("--model", default="opencode/big-pickle")
     parser.add_argument("--adapter", choices=["baseline", "opencode", "vial"],
                         default="vial", help="generation protocol to evaluate")
     parser.add_argument("--adapters",
@@ -1678,9 +1683,9 @@ def main() -> int:
                         help="directory for the reproducible JSON report")
     parser.add_argument("--consensus-file", type=Path, default=None,
                         help="JSON map of task id to independent consensus evidence")
-    parser.add_argument("--consensus-model", default=None,
+    parser.add_argument("--consensus-model", default="opencode/mimo-v2.5-free",
                         help="independent second model used to validate each patch")
-    parser.add_argument("--adjudicator-model", default=None,
+    parser.add_argument("--adjudicator-model", default="opencode/nemotron-3-ultra-free",
                         help="optional independent adjudicator for divergent candidates")
     args = parser.parse_args()
     if not args.run_tests:
