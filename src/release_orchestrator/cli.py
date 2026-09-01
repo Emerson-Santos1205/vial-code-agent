@@ -6,7 +6,14 @@ import json
 from pathlib import Path
 import sys
 
-from .core import build_changelog, check_repository, release_project, rollback_project, scan_repository
+from .core import (
+    build_changelog,
+    check_repository,
+    release_project,
+    rollback_project,
+    scan_repository,
+    sync_core_submodule,
+)
 from .domain import release_tag, validate_semver
 
 
@@ -31,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--allow-dirty", action="store_true")
     check.add_argument("--json", action="store_true")
     check.set_defaults(func=_check)
+
+    sync_core = subparsers.add_parser("sync-core", parents=[common])
+    sync_core.add_argument("--update", action="store_true", help="Atualiza o submódulo VIAL Core se passar nos testes")
+    sync_core.add_argument("--json", action="store_true")
+    sync_core.set_defaults(func=_sync_core)
 
     release = subparsers.add_parser("release", parents=[common])
     release.add_argument("version")
@@ -120,6 +132,28 @@ def _check(args: argparse.Namespace) -> int:
     if not args.json:
         _print("check passed")
     return 0
+
+
+def _sync_core(args: argparse.Namespace) -> int:
+    root = args.root.resolve()
+    report = sync_core_submodule(root, update=args.update)
+    if args.json:
+        _emit_json(_render_report(report))
+    else:
+        _print(f"submodule initialized: {report.exists}")
+        _print(f"current sha: {report.current_sha or 'none'}")
+        _print(f"remote sha: {report.remote_sha or 'none'}")
+        _print(f"synced: {report.synced}")
+        if report.lag_count > 0:
+            _print(f"lag: {report.lag_count} commits behind")
+        if report.updated:
+            _print("submodule updated: yes")
+            _print(f"tests passed after update: {report.tests_passed}")
+        if report.issues:
+            _print("issues:")
+            for issue in report.issues:
+                _print(f"- {issue}")
+    return 1 if report.issues else 0
 
 
 def _release(args: argparse.Namespace) -> int:

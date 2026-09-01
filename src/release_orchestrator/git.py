@@ -91,3 +91,71 @@ def create_annotated_tag(root: Path, tag: str, message: str) -> None:
 
 def delete_tag(root: Path, tag: str) -> None:
     run_git(root, "tag", "-d", tag)
+
+
+def get_submodule_commit(root: Path, relative_path: str = "vendor/vial-core") -> str:
+    """Retorna o commit SHA atualmente fixado do submódulo."""
+    sub_dir = root / relative_path
+    if not sub_dir.is_dir():
+        return ""
+    result = run_git(sub_dir, "rev-parse", "HEAD", check=False)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def get_submodule_remote_commit(root: Path, relative_path: str = "vendor/vial-core") -> str:
+    """Obtém o commit SHA mais recente do remoto configurado no submódulo."""
+    sub_dir = root / relative_path
+    if not sub_dir.is_dir():
+        return ""
+    # Busca a referência remota (default origin/main ou origin/master)
+    result = run_git(sub_dir, "ls-remote", "origin", "HEAD", check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().split()[0]
+    return ""
+
+
+def check_submodule_drift(root: Path, relative_path: str = "vendor/vial-core") -> dict[str, str | int | bool]:
+    """Valida o estado e desfasamento (drift) do submódulo."""
+    sub_dir = root / relative_path
+    if not sub_dir.is_dir():
+        return {"exists": False, "dirty": False, "current_sha": "", "remote_sha": "", "lag_count": -1}
+
+    current_sha = get_submodule_commit(root, relative_path)
+    dirty = has_dirty_tree(sub_dir)
+
+    # Tenta buscar do remoto com timeout implícito/suave
+    remote_sha = get_submodule_remote_commit(root, relative_path)
+    lag_count = 0
+
+    if current_sha and remote_sha and current_sha != remote_sha:
+        # Tenta calcular quantos commits o submódulo local está atrás da remote_sha se disponível
+        run_git(sub_dir, "fetch", "origin", check=False)
+        rev_list = run_git(sub_dir, "rev-list", "--count", f"{current_sha}..origin/main", check=False)
+        if rev_list.returncode == 0 and rev_list.stdout.strip().isdigit():
+            lag_count = int(rev_list.stdout.strip())
+        else:
+            lag_count = -1
+
+    return {
+        "exists": True,
+        "dirty": dirty,
+        "current_sha": current_sha,
+        "remote_sha": remote_sha,
+        "lag_count": lag_count,
+        "synced": (current_sha == remote_sha) if (current_sha and remote_sha) else True,
+    }
+
+
+def update_submodule(root: Path, relative_path: str = "vendor/vial-core") -> bool:
+    """Atualiza a referência do submódulo para o commit remoto mais recente."""
+    sub_dir = root / relative_path
+    if not sub_dir.is_dir():
+        return False
+    res_fetch = run_git(sub_dir, "fetch", "origin", check=False)
+    if res_fetch.returncode != 0:
+        return False
+    res_pull = run_git(sub_dir, "checkout", "origin/main", check=False)
+    if res_pull.returncode != 0:
+        res_pull = run_git(sub_dir, "checkout", "origin/master", check=False)
+    return res_pull.returncode == 0
+

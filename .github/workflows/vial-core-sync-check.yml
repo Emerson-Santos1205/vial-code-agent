@@ -1,0 +1,37 @@
+name: VIAL Core Sync & Drift Check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Toda segunda-feira às 06:00 UTC
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check-core-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+          python -m pip install -e vendor/vial-core
+
+      - name: Check VIAL Core Submodule Drift
+        run: |
+          python -m release_orchestrator.cli sync-core --json
+
+      - name: Validate Integration Tests
+        run: |
+          python -m pytest tests/test_vial_integration.py tests/test_vial_full_integration.py -v
