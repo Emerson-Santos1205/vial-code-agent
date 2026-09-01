@@ -14,6 +14,8 @@ from .chat import ChatController
 from .config import AgentConfig
 from .model import OpenCodeProvider
 from .servers import ServerRegistry
+from .session import SessionStore
+
 OPENAPI_SPEC: dict[str, object] = {
     "openapi": "3.0.3",
     "info": {
