@@ -65,6 +65,9 @@ def _write_basic_project(root: Path, *, tests: str = PASSING_TESTS) -> None:
     tests_dir = root / "tests"
     tests_dir.mkdir(exist_ok=True)
     (tests_dir / "test_sample.py").write_text(tests, encoding="utf-8")
+    vendor_dir = root / "vendor" / "vial-core"
+    vendor_dir.mkdir(parents=True, exist_ok=True)
+    (vendor_dir / ".gitkeep").write_text("", encoding="utf-8")
 
 
 def _write_release_commits(root: Path) -> None:
