@@ -249,11 +249,26 @@ git submodule update --init --recursive
 ```
 
 Confirme que `vendor/vial-core` existe antes de executar a aplicação ou os
-benchmarks. Em seguida, instale o pacote localmente. A publicação no PyPI fica
-planejada para depois da validação de maturidade do produto:
+benchmarks. Em seguida, instale o pacote localmente:
 
 ```text
-python -m pip install .
+python -m pip install -e .
+```
+
+Para desenvolvimento completo (incluindo ferramentas de linting e checagem de tipos):
+
+```text
+python -m pip install -e .[dev]
+```
+
+### Qualidade de Código & Testes
+
+Para executar a suíte completa de testes e verificações estáticas de qualidade:
+
+```text
+python -m pytest                        # Roda os 417 testes unitários e de integração
+python -m ruff check src/ tests/        # Linting e validação de imports com Ruff
+python -m mypy src/vial_code_agent      # Verificação estática de tipos
 ```
 
 ### Providers e VS Code
@@ -266,13 +281,16 @@ vial --root . --add-model local/qwen2.5-coder
 vial --root . --pool-set local/qwen2.5-coder openai/gpt-4o
 ```
 
-Para a extensão VS Code, inicie o processo no diretório do projeto e use o
-comando `VIAL: Open Chat`. A extensão conserva o identificador da sessão e abre
-a resposta em um editor Markdown.
+Para a extensão VS Code ou integrações HTTP, inicie o servidor loopback:
 
 ```text
 vial --root . --serve
 ```
+
+O servidor expõe:
+- `GET /health`: Estado do servidor e raiz do workspace.
+- `GET /api/v1/schema` ou `GET /openapi.json`: Especificação OpenAPI 3.0 completa da API.
+- `POST /chat`: Envio de prompts para o agente.
 
 Antes do primeiro uso, diagnostique a instalação sem chamar nenhum modelo:
 
@@ -284,15 +302,11 @@ vial --root . --doctor --json
 O servidor aceita apenas endereços loopback e fixa o workspace no processo que
 o iniciou; ele não aceita caminhos de workspace vindos da extensão.
 
-## Licença
+## Release Orchestrator
 
-O VIAL Code Agent é distribuído sob a [Apache License 2.0](LICENSE). O VIAL
-Core incluído em `vendor/vial-core` é um submódulo separado, com sua própria
-declaração de licença.
+O CLI de release orchestration é invocado via `python -m release_orchestrator`.
 
-O comando principal é `python -m release_orchestrator`.
-
-## Uso
+### Uso
 
 ```text
 python -m release_orchestrator scan
@@ -305,7 +319,7 @@ python -m release_orchestrator rollback 1.2.3 --confirm
 python -m release_orchestrator rollback 1.2.3 --dry-run
 ```
 
-## Subcomandos
+### Subcomandos
 
 - `scan`: mostra branch atual, último commit e arquivos modificados.
 - `changelog`: gera `CHANGELOG.md` a partir de uma tag.
@@ -320,14 +334,14 @@ os entry points instalando o wheel e publica wheel/sdist como artefatos do
 GitHub Actions. O PyPI não faz parte do caminho crítico atual e será habilitado
 quando o produto estiver maduro o suficiente para distribuição pública.
 
-## Códigos de saída
+### Códigos de saída
 
 - `0`: sucesso.
 - `1`: falha de validação, repositório sujo, arquivo secreto, teste quebrado, confirmação ausente ou operação recusada.
 
 Todos os erros são enviados para `stderr`.
 
-## Limitações
+### Limitações
 
 - Usa a biblioteca padrão do Python e `textual` para a interface TUI.
 - Requer `git` e `python -m unittest` disponíveis no ambiente.
@@ -336,6 +350,12 @@ Todos os erros são enviados para `stderr`.
 - `--dry-run` não persiste alterações.
 - `release` exige `--confirm` antes de criar tag e atualizar arquivos.
 
-## JSON
+### JSON
 
 `scan`, `check` e `changelog` suportam `--json` para saída estruturada.
+
+## Licença
+
+O VIAL Code Agent é distribuído sob a [Apache License 2.0](LICENSE). O VIAL
+Core incluído em `vendor/vial-core` é um submódulo separado, com sua própria
+declaração de licença.
