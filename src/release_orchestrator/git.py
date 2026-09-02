@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
-from .domain import Commit, TAG_PREFIX, release_tag
+from .domain import TAG_PREFIX, Commit, release_tag
 
 
 def run_git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

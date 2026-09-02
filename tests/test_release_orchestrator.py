@@ -14,16 +14,15 @@ from unittest import mock
 from release_orchestrator.cli import main
 from release_orchestrator.core import (
     Commit,
-    categorize_commits,
     calculate_release_changes,
-    repo_health_issues,
+    categorize_commits,
     release_tag,
-    validate_rollback_transition,
+    repo_health_issues,
     validate_release_transition,
+    validate_rollback_transition,
     validate_semver,
 )
 from release_orchestrator.storage import atomic_write_text
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_SRC = PROJECT_ROOT / "src"

@@ -109,7 +109,7 @@ class OpenCodeProviderTests(unittest.TestCase):
         self.assertEqual(OpenCodeProvider("fast").model, "opencode/big-pickle")
 
     def test_with_history_truncates_oversized_context(self) -> None:
-        from vial_code_agent.model import _MAX_CONTEXT_CHARS, _with_history
+        from vial_code_agent.model import _MAX_CONTEXT_CHARS
         big = "x" * (_MAX_CONTEXT_CHARS + 500)
         prompt = _with_history("ask", [("user", big)])
         self.assertLessEqual(len(prompt), _MAX_CONTEXT_CHARS + 64)
@@ -191,7 +191,7 @@ class OpenCodeProviderTests(unittest.TestCase):
                 self.returncode = 0
                 self._lines = iter(events.splitlines())
 
-            def __iter__(self) -> "_FakePopen":
+            def __iter__(self) -> _FakePopen:
                 return self
 
             def __next__(self) -> str:
@@ -401,14 +401,14 @@ class OpenCodeProviderTests(unittest.TestCase):
         self.assertTrue(os.path.basename(resolved).startswith("python"))
 
     def test_with_history_truncation_drops_partial_line(self) -> None:
-        from vial_code_agent.model import _MAX_CONTEXT_CHARS, _with_history
+        from vial_code_agent.model import _MAX_CONTEXT_CHARS
         big = "line\n" + "x" * (_MAX_CONTEXT_CHARS + 500)
         prompt = _with_history("ask", [("user", big)])
         self.assertTrue(prompt.startswith("user: ask") or "user: ask" in prompt)
         self.assertFalse(prompt.split("\n")[0] == "")
 
     def test_with_history_truncation_splits_at_newline(self) -> None:
-        from vial_code_agent.model import _MAX_CONTEXT_CHARS, _with_history
+        from vial_code_agent.model import _MAX_CONTEXT_CHARS
         prefix = "a" * (_MAX_CONTEXT_CHARS - 10)
         context = f"{prefix}\nline-one\nline-two"
         prompt = _with_history("ask", [("user", context)])
@@ -545,7 +545,7 @@ class _JsonBody:
     def __init__(self, body: object) -> None:
         self._body = json.dumps(body).encode("utf-8")
 
-    def __enter__(self) -> "_JsonBody":
+    def __enter__(self) -> _JsonBody:
         return self
 
     def __exit__(self, *args: object) -> None:

@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import argparse
-import json
 import hashlib
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 
 from benchmark.types import (
@@ -26,13 +26,14 @@ from benchmark.types import (
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
 
-from vial_code_agent.agent import CodeAgent
-from vial_code_agent.core import VialCoreReference
-from vial_code_agent.docker_provider import DockerOpenCodeProvider
-from vial_code_agent.model import extract_diff
-from vial_code_agent.patches import PatchApplier, PatchError
-from vial_code_agent.patch_review import PatchReviewGate
-from vial_code_agent.vial_runtime import VialRuntime
+from vial_code_agent.agent import CodeAgent  # noqa: E402
+from vial_code_agent.core import VialCoreReference  # noqa: E402
+from vial_code_agent.docker_provider import DockerOpenCodeProvider  # noqa: E402
+from vial_code_agent.model import extract_diff  # noqa: E402
+from vial_code_agent.patch_review import PatchReviewGate  # noqa: E402
+from vial_code_agent.patches import PatchApplier, PatchError  # noqa: E402
+from vial_code_agent.vial_runtime import VialRuntime  # noqa: E402
+
 try:
     from .report import candidate_metrics, economics_metrics
 except ImportError:
@@ -733,7 +734,7 @@ def select_shard(tasks: list[dict], offset: int, limit: int,
 
 def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
                     context_id: str, allowed_paths: set[str],
-                    consensus: dict | None = None,
+                    consensus: dict | CandidateConsensus | None = None,
                     reverse: bool = False) -> tuple[bool, str, dict]:
     """Apply or reverse an agent patch only through VialRuntime.
 
@@ -742,6 +743,8 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
     """
     decision = runtime.propose_patch_decision(context_id)
     if consensus is not None:
+        if isinstance(consensus, CandidateConsensus):
+            consensus = consensus.to_dict()
         evidence = dict(consensus.get("evidence") or {})
         candidate_outcomes = dict(consensus.get("candidate_outcomes") or {})
         if candidate_outcomes:
@@ -942,6 +945,17 @@ def _token_count(value: object) -> int:
         return 0
 
 
+def _serialize_candidate_outcomes(outcomes: dict[str, CandidateOutcome] | dict[str, object]) -> dict[str, object]:
+    """Serialize candidate outcomes to plain dicts for JSON compatibility."""
+    result = {}
+    for key, value in outcomes.items():
+        if isinstance(value, CandidateOutcome):
+            result[key] = value.to_dict()
+        else:
+            result[key] = value
+    return result
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
@@ -1085,7 +1099,7 @@ def _generate_baseline_candidate(label: str, model: str, prompt: str,
         outcome=outcome, behavior=None)
 
 
-def _generate_candidate_set(requests: list[tuple], generate=None) -> list[dict]:
+def _generate_candidate_set(requests: list[tuple], generate=None) -> list[CandidateResult]:
     """Run every independent generation request without short-circuiting."""
     generate = generate or _generate_validated_candidate
     return [generate(*request) for request in requests]
@@ -1214,8 +1228,10 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
     result["environment_valid"] = result.get("stage") not in environment_invalid_stages
     result["environment_status"] = (
         "VALID" if result["environment_valid"] else "INVALID")
-    result["agent_attempted"] = result["stage"] not in environment_invalid_stages
+    result["agent_attempted"] = result.get("stage") not in environment_invalid_stages
     consensus_result = result.get("consensus") or {}
+    if isinstance(consensus_result, CandidateConsensus):
+        consensus_result = consensus_result.to_dict()
     result["consensus_approved"] = bool(consensus_result.get("agreed"))
     if consensus_result.get("candidate_outcomes"):
         result["candidate_outcomes"] = consensus_result["candidate_outcomes"]
@@ -1503,14 +1519,15 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                             else "patch_contract")),
                         "detail": outcome.failure_detail,
                         "result_code": outcome.result_code,
-                        "candidate_outcomes": candidate_outcomes, "adapter": adapter}
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter}
             generated_patch = str(primary.patch)
             generated = primary.generated
             provider = DockerOpenCodeProvider(model)
         if not run_tests:
             return {"id": instance["id"], "passed": True,
                     "stage": "patch_validated", "attempts": generated.attempts,
-                    "tokens": generated.tokens, "candidate_outcomes": candidate_outcomes,
+                    "tokens": generated.tokens,
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
                     "adapter": adapter}
         if adapter == "vial":
             applied, apply_error, apply_metadata = _governed_apply(
@@ -1528,7 +1545,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "patch application rejected by VialRuntime",
                     "governance": apply_metadata,
                     "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
-                    "candidate_outcomes": candidate_outcomes, "adapter": adapter}
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter}
         if (root / "astropy").is_dir() and not prepared_image:
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
@@ -1599,7 +1616,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts, "tokens": tokens,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
-                        "consensus": consensus,
+                        "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
                         "detail": evidence[-7000:]}
             if adapter != "vial" or consensus_model is not None:
                 # A replacement patch would no longer have two-candidate
@@ -1607,8 +1624,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts,
                         "tokens": tokens, "fail_to_pass": fail_ok,
-                        "pass_to_pass": pass_ok, "consensus": consensus,
-                        "candidate_outcomes": candidate_outcomes, "adapter": adapter,
+                        "pass_to_pass": pass_ok,
+                        "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter,
                         "detail": evidence[-7000:]}
             feedback = ("The generated patch was applied, but benchmark tests failed.\n"
                         f"FAIL_TO_PASS ({'passed' if fail_ok else 'failed'}):\n{fail_detail}\n\n"
@@ -1620,7 +1638,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 feedback=feedback)
             reverted, revert_error, revert_metadata = _governed_apply(
                 runtime, root, generated_patch, generated.context_id,
-                allowed_paths, consensus=consensus, reverse=True)
+                allowed_paths,
+                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                reverse=True)
             if not reverted:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_revert", "detail": revert_error or
@@ -1642,7 +1662,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "stage": "test_retry_patch", "detail": str(error)}
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, retry_patch, retry.context_id,
-                allowed_paths, consensus=consensus)
+                allowed_paths,
+                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus)
             if not applied:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_patch", "detail": apply_error or
@@ -1656,8 +1677,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 "stage": "tests", "attempts": attempts, "tokens": tokens,
                 "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                 "baseline": baseline,
-                "consensus": consensus,
-                "candidate_outcomes": candidate_outcomes, "adapter": adapter,
+                "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter,
                 "detail": (f"FAIL_TO_PASS:\n{fail_detail}\n\n"
                             f"PASS_TO_PASS:\n{pass_detail}")[-7000:]}
 

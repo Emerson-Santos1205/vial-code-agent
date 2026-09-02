@@ -1,37 +1,49 @@
 import json
-import unittest
 import subprocess
 import tempfile
+import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from pathlib import Path
 
+from benchmark.aggregate_swebench import aggregate_reports
+from benchmark.fetch_swebench import _tests
+from benchmark.instance import InstanceSpec
+from benchmark.report import (
+    candidate_metrics,
+    economics_metrics,
+)
+from benchmark.report import (
+    success_metrics as report_success_metrics,
+)
 from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     ASTROPY_BUILD_COMMAND,
-    _failure_class, _failure_subclass, build_swebench_prompt, select_test_image,
-    is_prepared_test_image,
-    resolution_summary,
-    _normalize_astropy_test_id,
-    _adjudicated_candidate_consensus, _candidate_consensus,
-    _candidate_outcome, _candidate_set_consensus, _generate_candidate_set,
+    _adjudicated_candidate_consensus,
+    _candidate_consensus,
+    _candidate_outcome,
+    _candidate_set_consensus,
+    _failure_class,
+    _failure_subclass,
+    _generate_candidate_set,
     _generate_validated_candidate,
     _governed_apply,
-    _run_test_groups, baseline_is_valid,
+    _normalize_astropy_test_id,
     _reverse_fixture,
-    validate_environment_images,
+    _run_test_groups,
+    baseline_is_valid,
+    build_swebench_prompt,
+    is_prepared_test_image,
+    resolution_summary,
     run_instance,
     select_shard,
+    select_test_image,
     should_retry_test_failure,
     success_metrics,
+    validate_environment_images,
 )
-from benchmark.instance import InstanceSpec
-from benchmark.fetch_swebench import _tests
-from benchmark.report import (
-    candidate_metrics, economics_metrics, success_metrics as report_success_metrics,
-)
-from benchmark.aggregate_swebench import aggregate_reports
 from benchmark.swebench_environment import EnvironmentResolver
+from benchmark.types import CandidateResult
 from vial_code_agent.patches import PatchError
 
 
@@ -520,19 +532,19 @@ class BenchmarkMetricTests(unittest.TestCase):
             second = first
             evidence = _candidate_consensus(
                 root, first, second, {"value.txt"}, ("a/model", "b/model"))
-            self.assertTrue(evidence["agreed"])
+            self.assertTrue(evidence.agreed)
             self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
 
             disagreement = _candidate_consensus(
                 root, first, second.replace("+new", "+other"),
                 {"value.txt"}, ("a/model", "b/model"))
-            self.assertFalse(disagreement["agreed"])
-            self.assertEqual(disagreement["result_code"], "CONSENSUS_FAILED")
+            self.assertFalse(disagreement.agreed)
+            self.assertEqual(disagreement.result_code, "CONSENSUS_FAILED")
             self.assertEqual(
-                disagreement["candidate_outcomes"]["a/model"]["pipeline"]["result"],
+                disagreement.candidate_outcomes["a/model"].to_dict()["pipeline"]["result"],
                 "CANDIDATE_A_SUCCEEDED")
             self.assertEqual(
-                disagreement["candidate_outcomes"]["b/model"]["pipeline"]["result"],
+                disagreement.candidate_outcomes["b/model"].to_dict()["pipeline"]["result"],
                 "CANDIDATE_B_SUCCEEDED")
             behaviorally_equivalent = _candidate_consensus(
                 root, first, second.replace("+new", "+other"),
@@ -541,15 +553,15 @@ class BenchmarkMetricTests(unittest.TestCase):
                     "a/model": {"static_valid": True, "behavioral_passed": True},
                     "b/model": {"static_valid": True, "behavioral_passed": True},
                 }, run_tests=True)
-            self.assertFalse(behaviorally_equivalent["agreed"])
-            self.assertEqual(behaviorally_equivalent["status"], "DISAGREEMENT")
+            self.assertFalse(behaviorally_equivalent.agreed)
+            self.assertEqual(behaviorally_equivalent.status, "DISAGREEMENT")
             failed_behavior = _candidate_consensus(
                 root, first, second, {"value.txt"}, ("a/model", "b/model"),
                 behavioral={
                     "a/model": {"static_valid": True, "behavioral_passed": True},
                     "b/model": {"static_valid": True, "behavioral_passed": False},
                 }, run_tests=True)
-            self.assertFalse(failed_behavior["agreed"])
+            self.assertFalse(failed_behavior.agreed)
 
     def test_candidate_set_generation_does_not_short_circuit_after_a_failure(self) -> None:
         calls = []
@@ -577,137 +589,124 @@ class BenchmarkMetricTests(unittest.TestCase):
             candidate = _generate_validated_candidate(
                 "A", "a/model", "prompt", Path("."), [], set(), Mock())
 
-        self.assertEqual(candidate["outcome"]["attempts"], 6)
-        self.assertEqual(candidate["outcome"]["retries"], 5)
+        self.assertEqual(candidate.outcome.attempts, 6)
+        self.assertEqual(candidate.outcome.retries, 5)
 
     def test_one_valid_candidate_is_insufficient_not_consensus_failed(self) -> None:
-        invalid = {
-            "model": "a/model", "patch": None, "behavior": None,
-            "outcome": _candidate_outcome(
+        invalid = CandidateResult(
+            model="a/model", patch=None, behavior=None,
+            outcome=_candidate_outcome(
                 "A", "a/model", returned_patch=True, patch_valid=False,
                 tests_passed=None, detail="invalid patch"),
-        }
-        valid = {
-            "model": "b/model", "patch": "patch", "behavior": {
-                "behavioral_passed": True},
-            "outcome": _candidate_outcome(
+        )
+        valid = CandidateResult(
+            model="b/model", patch="patch", behavior={"behavioral_passed": True},
+            outcome=_candidate_outcome(
                 "B", "b/model", returned_patch=True, patch_valid=True,
                 tests_passed=True),
-        }
+        )
 
         consensus = _candidate_set_consensus(
             Path("."), [invalid, valid], set(), run_tests=True)
 
-        self.assertFalse(consensus["agreed"])
-        self.assertEqual(consensus["status"], "INSUFFICIENT_CANDIDATES")
-        self.assertEqual(consensus["result_code"], "CANDIDATE_SET_INSUFFICIENT")
-        self.assertEqual(set(consensus["candidate_outcomes"]),
+        self.assertFalse(consensus.agreed)
+        self.assertEqual(consensus.status, "INSUFFICIENT_CANDIDATES")
+        self.assertEqual(consensus.result_code, "CANDIDATE_SET_INSUFFICIENT")
+        self.assertEqual(set(consensus.candidate_outcomes),
                          {"a/model", "b/model"})
 
     def test_adjudicated_status_requires_second_passing_candidate(self) -> None:
-        passing = {
-            "model": "b/model", "patch": "patch-b", "behavior": {
-                "behavioral_passed": True},
-            "outcome": _candidate_outcome(
+        passing = CandidateResult(
+            model="b/model", patch="patch-b", behavior={"behavioral_passed": True},
+            outcome=_candidate_outcome(
                 "B", "b/model", returned_patch=True, patch_valid=True,
                 tests_passed=True),
-        }
-        failing_adjudicator = {
-            "model": "c/model", "patch": "patch-c", "behavior": {
-                "behavioral_passed": False},
-            "outcome": _candidate_outcome(
+        )
+        failing_adjudicator = CandidateResult(
+            model="c/model", patch="patch-c", behavior={"behavioral_passed": False},
+            outcome=_candidate_outcome(
                 "ADJUDICATOR", "c/model", returned_patch=True,
                 patch_valid=True, tests_passed=False),
-        }
+        )
 
         consensus = _adjudicated_candidate_consensus(
             Path("."), passing, failing_adjudicator, [passing], set())
 
-        self.assertFalse(consensus["agreed"])
-        self.assertNotEqual(consensus["status"], "ADJUDICATED")
-        self.assertEqual(consensus["result_code"], "CANDIDATE_SET_INSUFFICIENT")
+        self.assertFalse(consensus.agreed)
+        self.assertNotEqual(consensus.status, "ADJUDICATED")
+        self.assertEqual(consensus.result_code, "CANDIDATE_SET_INSUFFICIENT")
 
     def test_adjudicated_status_accepts_two_passing_equivalent_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "value.txt").write_text("old\n", encoding="utf-8")
-            patch = """--- a/value.txt
-+++ b/value.txt
-@@ -1 +1 @@
--old
-+new
-"""
-            passing = {
-                "model": "b/model", "patch": patch,
-                "behavior": {"behavioral_passed": True},
-                "outcome": _candidate_outcome(
+            patch = "--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-old\n+new\n"
+            passing = CandidateResult(
+                model="b/model", patch=patch,
+                behavior={"behavioral_passed": True},
+                outcome=_candidate_outcome(
                     "B", "b/model", returned_patch=True, patch_valid=True,
                     tests_passed=True),
-            }
-            adjudicator = {
-                "model": "c/model", "patch": patch,
-                "behavior": {"behavioral_passed": True},
-                "outcome": _candidate_outcome(
+            )
+            adjudicator = CandidateResult(
+                model="c/model", patch=patch,
+                behavior={"behavioral_passed": True},
+                outcome=_candidate_outcome(
                     "ADJUDICATOR", "c/model", returned_patch=True,
                     patch_valid=True, tests_passed=True),
-            }
+            )
 
             consensus = _adjudicated_candidate_consensus(
                 root, passing, adjudicator, [passing], {"value.txt"})
 
-        self.assertTrue(consensus["agreed"])
-        self.assertEqual(consensus["status"], "ADJUDICATED")
+        self.assertTrue(consensus.agreed)
+        self.assertEqual(consensus.status, "ADJUDICATED")
 
     def test_adjudicator_can_resolve_two_valid_candidates_in_disagreement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "value.txt").write_text("old\n", encoding="utf-8")
-            first_patch = """--- a/value.txt
-+++ b/value.txt
-@@ -1 +1 @@
--old
-+first
-"""
+            first_patch = "--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-old\n+first\n"
             second_patch = first_patch.replace("+first", "+second")
             candidates = [
-                {
-                    "model": "a/model", "patch": first_patch,
-                    "behavior": {"behavioral_passed": True},
-                    "outcome": _candidate_outcome(
+                CandidateResult(
+                    model="a/model", patch=first_patch,
+                    behavior={"behavioral_passed": True},
+                    outcome=_candidate_outcome(
                         "A", "a/model", returned_patch=True, patch_valid=True,
                         tests_passed=True),
-                },
-                {
-                    "model": "b/model", "patch": second_patch,
-                    "behavior": {"behavioral_passed": True},
-                    "outcome": _candidate_outcome(
+                ),
+                CandidateResult(
+                    model="b/model", patch=second_patch,
+                    behavior={"behavioral_passed": True},
+                    outcome=_candidate_outcome(
                         "B", "b/model", returned_patch=True, patch_valid=True,
                         tests_passed=True),
-                },
+                ),
             ]
-            adjudicator = {
-                "model": "c/model", "patch": second_patch,
-                "behavior": {"behavioral_passed": True},
-                "outcome": _candidate_outcome(
+            adjudicator = CandidateResult(
+                model="c/model", patch=second_patch,
+                behavior={"behavioral_passed": True},
+                outcome=_candidate_outcome(
                     "ADJUDICATOR", "c/model", returned_patch=True,
                     patch_valid=True, tests_passed=True),
-            }
+            )
 
             results = [_adjudicated_candidate_consensus(
                 root, candidate, adjudicator, candidates, {"value.txt"})
                 for candidate in candidates]
 
-        self.assertFalse(results[0]["agreed"])
-        self.assertTrue(results[1]["agreed"])
-        self.assertEqual(results[1]["status"], "ADJUDICATED")
+        self.assertFalse(results[0].agreed)
+        self.assertTrue(results[1].agreed)
+        self.assertEqual(results[1].status, "ADJUDICATED")
 
     def test_adjudicator_diagnostics_do_not_need_full_candidate_evidence(self) -> None:
         outcome = _candidate_outcome(
             "A", "a/model", returned_patch=True, patch_valid=True,
             tests_passed=False, detail="x" * 50000)
         diagnostics = {
-            "result_code": outcome.get("result_code"),
-            "pipeline": outcome.get("pipeline"),
+            "result_code": outcome.result_code,
+            "pipeline": outcome.to_dict()["pipeline"],
             "behavioral_detail": ("x" * 50000)[-1500:],
         }
 
@@ -729,17 +728,17 @@ class BenchmarkMetricTests(unittest.TestCase):
                 behavioral={"a/model": {"behavioral_passed": True}},
                 run_tests=True)
 
-        self.assertFalse(consensus["agreed"])
-        self.assertEqual(consensus["result_code"], "CONSENSUS_FAILED")
+        self.assertFalse(consensus.agreed)
+        self.assertEqual(consensus.result_code, "CONSENSUS_FAILED")
 
     def test_candidate_b_failure_is_not_consensus_failure(self) -> None:
         outcome = _candidate_outcome(
             "B", "b/model", returned_patch=False, patch_valid=False,
             tests_passed=None, detail="empty response")
 
-        self.assertEqual(outcome["result_code"], "CANDIDATE_B_FAILED")
-        self.assertEqual(outcome["pipeline"]["patch"], "FAIL")
-        self.assertEqual(outcome["pipeline"]["result"], "CANDIDATE_B_FAILED")
+        self.assertEqual(outcome.result_code, "CANDIDATE_B_FAILED")
+        self.assertEqual(outcome.pipeline.patch, "FAIL")
+        self.assertEqual(outcome.pipeline.result, "CANDIDATE_B_FAILED")
 
     def test_invalid_patch_retry_is_counted_as_a_candidate_retry(self) -> None:
         outcome = _candidate_outcome(
@@ -747,7 +746,7 @@ class BenchmarkMetricTests(unittest.TestCase):
             tests_passed=None, detail="patch does not apply", attempts=2,
             retries=1, patch_returns=2)
 
-        metrics = candidate_metrics([{"candidate_outcomes": {"b/model": outcome}}])
+        metrics = candidate_metrics([{"candidate_outcomes": {"b/model": outcome.to_dict()}}])
 
         self.assertEqual(metrics["candidate_attempts"], 2)
         self.assertEqual(metrics["candidate_retries"], 1)

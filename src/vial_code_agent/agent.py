@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import difflib
 import hashlib
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
+from .core import VialCoreReference
 from .model import ModelResponse, OpenCodeProvider, extract_diff
 from .patches import PatchApplier, PatchError
-from .core import VialCoreReference
 from .router import deterministic_solvable, resolve_deterministic
 
 
@@ -96,7 +96,6 @@ class CodeAgent:
         before = {path: path.read_bytes() for path in files if path.is_file()}
         context_id = ""
         route = ""
-        reused = False
         reuse_outcome = "n/a"
         quality = 1.0
         token_usage = 0
@@ -120,7 +119,6 @@ class CodeAgent:
             runtime.record_retrieval(1)
             if entry is not None:
                 runtime.record_construction(1)
-                reused = True
                 return GenerationResult(
                     response=ModelResponse("reused validated cognition", 0),
                     patch=entry.outcome,

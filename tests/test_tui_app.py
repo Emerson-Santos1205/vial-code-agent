@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from unittest.mock import patch
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from vial_code_agent.app import (
-    AuditViewer, DiffViewer, FailureDiagnostics, ModelPicker, SelectableLog,
-    SessionPicker, VialTUI,
+    AuditViewer,
+    DiffViewer,
+    FailureDiagnostics,
+    ModelPicker,
+    SelectableLog,
+    SessionPicker,
+    VialTUI,
 )
 from vial_code_agent.chat import ChatController
 from vial_code_agent.model import ModelResponse, OpenCodeProvider
@@ -33,8 +38,7 @@ class _FakeProvider:
         return ModelResponse(f"fake response: {prompt}", 0)
 
     def chat_stream(self, prompt, directory=None, timeout_seconds=180, history=None):
-        for chunk in ("fake ", "response"):
-            yield chunk
+        yield from ("fake ", "response")
         self.last_response = ModelResponse("fake response", 0)
 
     def list_models(self, provider=None) -> str:
@@ -112,7 +116,7 @@ class TuiAppTests(unittest.TestCase):
         async def run() -> None:
             with tempfile.TemporaryDirectory() as directory:
                 app = VialTUI(_controller(directory))
-                async with app.run_test() as pilot:
+                async with app.run_test():
                     app._log_user(["[red]not markup[/red]"])
                     app._log_assistant({"link": "[docs](https://example.test)"})
                     rendered = "\n".join(str(line) for line in app.query_one("#log").lines)
@@ -152,7 +156,7 @@ class TuiAppTests(unittest.TestCase):
                 controller = _controller(directory)
                 controller.runtime = object()
                 app = VialTUI(controller)
-                async with app.run_test() as pilot:
+                async with app.run_test():
                     side = str(app.query_one("#side").render())
                     self.assertIn("Runtime", side)
                     self.assertIn("available", side)
@@ -164,7 +168,7 @@ class TuiAppTests(unittest.TestCase):
         async def run() -> None:
             with tempfile.TemporaryDirectory() as directory:
                 app = VialTUI(_controller(directory))
-                async with app.run_test() as pilot:
+                async with app.run_test():
                     with patch("vial_code_agent.app.os.name", "nt"), \
                          patch("vial_code_agent.app.subprocess.run") as run_mock:
                         self.assertIn("copied", app._copy_to_clipboard("win"))
@@ -497,8 +501,9 @@ class TuiAppTests(unittest.TestCase):
 
     def test_streaming_updates_stream_widget_and_hides_when_done(self) -> None:
         async def run() -> None:
-            from textual.widgets import LoadingIndicator, RichLog, Static
             import threading
+
+            from textual.widgets import LoadingIndicator, RichLog, Static
 
             with tempfile.TemporaryDirectory() as directory:
                 controller = _controller(directory)
@@ -542,9 +547,9 @@ class TuiAppTests(unittest.TestCase):
 
     def test_ctrl_k_cancels_active_stream(self) -> None:
         async def run() -> None:
-            from textual.widgets import RichLog, Static
-
             import threading
+
+            from textual.widgets import RichLog, Static
 
             with tempfile.TemporaryDirectory() as directory:
                 controller = _controller(directory)

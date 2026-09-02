@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import difflib
 import subprocess
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 
 class PatchError(ValueError):

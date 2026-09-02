@@ -7,8 +7,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .model import (ModelResponse, OpenCodeProvider, _extract_error,
-                    _find_diff_text, _parse_events)
+from .model import ModelResponse, OpenCodeProvider, _extract_error, _find_diff_text, _parse_events
 
 
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:

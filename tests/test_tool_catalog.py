@@ -10,7 +10,9 @@ from vial_code_agent.cognition import CognitionEngine, CognitionRequest
 from vial_code_agent.core import VialCoreReference
 from vial_code_agent.patches import PatchApplier
 from vial_code_agent.vial_runtime import (
-    PATCH_TOOL_ID, RISK_HIGH, VialRuntime,
+    PATCH_TOOL_ID,
+    RISK_HIGH,
+    VialRuntime,
 )
 
 DEV_SECRET = "local-vial-dev-secret"

@@ -19,7 +19,7 @@ class InstanceSpec:
     pass_to_pass: tuple[str, ...] = ()
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "InstanceSpec":
+    def from_dict(cls, value: dict[str, Any]) -> InstanceSpec:
         def tests(key: str) -> tuple[str, ...]:
             raw = value.get(key, ())
             if isinstance(raw, str):

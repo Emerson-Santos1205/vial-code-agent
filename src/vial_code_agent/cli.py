@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import sys
@@ -10,23 +9,24 @@ from pathlib import Path
 
 from .agent import CodeAgent
 from .app import VialTUI
-from .cache import JsonCache, content_digest
 from .chat import ChatController
+from .command_runner import CommandRunner
 from .config import AgentConfig, load_config
 from .core import VialCoreReference
-from .errors import (ERR_INVALID_CONFIG, ERR_INVALID_USAGE,
-                     VialRuntimeError, wrap)
+from .errors import ERR_INVALID_CONFIG, wrap
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .risk import RiskPolicy, classify_task
 from .router import (
-    ConsensusResult, ModelRouter, RouteDecision, RoutingGraph, VialRouter,
+    ConsensusResult,
+    ModelRouter,
+    RoutingGraph,
+    VialRouter,
 )
 from .servers import ServerRegistry
-from .command_runner import CommandRunner
 from .session import SessionStore
-from .test_runner import TestResult, run_tests
 from .telemetry import Telemetry
+from .test_runner import TestResult, run_tests
 from .vial_runtime import VialRuntime
 from .workspace import select_files
 

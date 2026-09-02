@@ -4,9 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
-import sys
 
 BASE = Path(__file__).resolve().parents[1]
 # The direct script entry point otherwise places only ``benchmark/`` on the
@@ -14,9 +14,8 @@ BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "src"))
 
-from benchmark.run_benchmark import expand_workload
-from vial_code_agent.patches import PatchApplier
-
+from benchmark.run_benchmark import expand_workload  # noqa: E402
+from vial_code_agent.patches import PatchApplier  # noqa: E402
 
 IMAGE = "vial-code-agent-test-sandbox:local"
 

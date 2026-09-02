@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 
+from rich.markup import escape
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -24,10 +25,17 @@ from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.selection import SELECT_ALL, Selection
 from textual.widgets import (
-    Footer, Header, Input, ListItem, ListView, LoadingIndicator, RichLog,
-    Static, TextArea, Button,
+    Button,
+    Footer,
+    Header,
+    Input,
+    ListItem,
+    ListView,
+    LoadingIndicator,
+    RichLog,
+    Static,
+    TextArea,
 )
-from rich.markup import escape
 
 from . import __version__
 from .chat import ChatController
@@ -805,8 +813,12 @@ class VialTUI(App[str]):
             if not self.is_running:
                 return
             self.call_from_thread(self._update_stream, text)
-        except Exception:  # noqa: BLE001 - worker may outlive the app
+        except RuntimeError:
+            # Expected when the worker outlives the app event loop;
+            # call_from_thread raises RuntimeError after shutdown.
             pass
+        except Exception as error:
+            self._log_assistant(f"stream update failed: {error}")
 
     # ------------------------------------------------------------------ #
     # Actions / keybindings

@@ -25,21 +25,20 @@ from __future__ import annotations
 
 import hashlib
 import importlib
-import json
 import re
 import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .core import VialCoreReference
-from .errors import VialRuntimeError
 from .events import EventStore, VialEvent
-from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 from .persistence import TransactionalJsonRepository
+from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 
 
 class PersistenceError(RuntimeError):
@@ -376,7 +375,7 @@ class VialRuntime:
             return {"path": str(path), "content": path.read_text(encoding="utf-8")}
         except OSError as exc:
             raise self._errors.VIALStateError(
-                "FILE_READ_ERROR", str(exc), details={"path": str(path)})
+                "FILE_READ_ERROR", str(exc), details={"path": str(path)}) from exc
 
     def _invoke_search(self, value: dict[str, Any]) -> Any:
         pattern = str(value["pattern"])
@@ -458,7 +457,7 @@ class VialRuntime:
         try:
             output = GitWorkspace(root).run(*[str(a) for a in value.get("args", [])])
         except GitError as exc:
-            raise self._errors.VIALExecutionError("GIT_ERROR", str(exc))
+            raise self._errors.VIALExecutionError("GIT_ERROR", str(exc)) from exc
         return {"stdout": output}
 
     def _invoke_run_audit(self, value: dict[str, Any]) -> Any:
@@ -1059,7 +1058,7 @@ class VialRuntime:
         resolved = self.coordinator.resolve(compensation_id)
         if resolved is not None:
             return resolved
-        intent = self.coordinator.begin(
+        self.coordinator.begin(
             compensation_id, WORKSPACE_FIELD, f"rollback:{op_id}", self.authority)
         committed = self.coordinator.commit(compensation_id)
         self.persist()
@@ -1067,14 +1066,14 @@ class VialRuntime:
 
     def _reconcile_files(self, root: Path) -> None:
         """Refresh file fields from disk after an applied patch."""
-        for key, field in list(self.organization.fields.items()):
+        for key, file_field in list(self.organization.fields.items()):
             if not key.startswith("file:"):
                 continue
             path = root / key[len("file:"):]
             if not path.is_file():
                 continue
             try:
-                field.value = path.read_text(encoding="utf-8")
+                file_field.value = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
 

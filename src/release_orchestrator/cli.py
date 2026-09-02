@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import argparse
 import json
-from pathlib import Path
 import sys
+from dataclasses import asdict
+from pathlib import Path
 
 from .core import (
     build_changelog,
