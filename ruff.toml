@@ -1,0 +1,20 @@
+# Ruff configuration for VIAL Code Agent
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort (import order)
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # Line too long (handled by formatter if needed)
+    "B008",  # Do not perform function call in argument defaults
+]
+
+[lint.isort]
+known-first-party = ["vial_code_agent", "release_orchestrator"]

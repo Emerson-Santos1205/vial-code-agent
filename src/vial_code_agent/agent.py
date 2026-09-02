@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import difflib
 import hashlib
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from .cognition import CognitionEngine, CognitionRequest, CognitionResult
+from .core import VialCoreReference
 from .model import ModelResponse, OpenCodeProvider, extract_diff
 from .patches import PatchApplier, PatchError
-from .core import VialCoreReference
 from .router import deterministic_solvable, resolve_deterministic
 
 
@@ -96,7 +96,6 @@ class CodeAgent:
         before = {path: path.read_bytes() for path in files if path.is_file()}
         context_id = ""
         route = ""
-        reused = False
         reuse_outcome = "n/a"
         quality = 1.0
         token_usage = 0
@@ -120,7 +119,6 @@ class CodeAgent:
             runtime.record_retrieval(1)
             if entry is not None:
                 runtime.record_construction(1)
-                reused = True
                 return GenerationResult(
                     response=ModelResponse("reused validated cognition", 0),
                     patch=entry.outcome,
@@ -186,6 +184,7 @@ class CodeAgent:
             "Return one applicable unified diff with exact removed and added lines."
         )
         # Keep the operator workspace read-only from the provider's perspective.
+        assert self.provider is not None, "provider is required for code generation"
         with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
             staging = Path(directory)
             staged_files: list[Path] = []
@@ -309,9 +308,9 @@ class CodeAgent:
                 new_text = current.decode("utf-8").splitlines(keepends=True)
             except UnicodeDecodeError:
                 continue
-            relative = path.relative_to(root).as_posix()
+            rel_str = path.relative_to(root).as_posix()
             generated = difflib.unified_diff(
-                old_text, new_text, fromfile=f"a/{relative}", tofile=f"b/{relative}"
+                old_text, new_text, fromfile=f"a/{rel_str}", tofile=f"b/{rel_str}"
             )
             return GenerationResult(
                 response=response, patch="".join(generated), workspace_changed=True,

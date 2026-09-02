@@ -16,6 +16,60 @@ from .model import OpenCodeProvider
 from .servers import ServerRegistry
 from .session import SessionStore
 
+OPENAPI_SPEC: dict[str, object] = {
+    "openapi": "3.0.3",
+    "info": {
+        "title": "VIAL Code Agent API",
+        "version": "0.3.0",
+        "description": "Loopback HTTP boundary for VIAL Code Agent governance and interactive chat.",
+    },
+    "paths": {
+        "/health": {
+            "get": {
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Server is healthy",
+                        "content": {"application/json": {"schema": {"type": "object"}}},
+                    }
+                },
+            }
+        },
+        "/api/v1/schema": {
+            "get": {
+                "summary": "OpenAPI 3.0 specification",
+                "responses": {
+                    "200": {"description": "OpenAPI specification payload"}
+                },
+            }
+        },
+        "/chat": {
+            "post": {
+                "summary": "Send prompt to VIAL Code Agent",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "message": {"type": "string"},
+                                    "session_id": {"type": "string"},
+                                    "model": {"type": "string"},
+                                },
+                                "required": ["message"],
+                            }
+                        }
+                    },
+                },
+                "responses": {
+                    "200": {"description": "Chat response and execution route"}
+                },
+            }
+        },
+    },
+}
+
 
 def make_server(root: Path, config: AgentConfig, host: str, port: int) -> ThreadingHTTPServer:
     root = root.resolve()
@@ -33,6 +87,9 @@ def make_server(root: Path, config: AgentConfig, host: str, port: int) -> Thread
         def do_GET(self) -> None:  # noqa: N802
             if self.path == "/health":
                 self._send(HTTPStatus.OK, {"status": "ok", "root": str(root)})
+                return
+            if self.path in ("/api/v1/schema", "/openapi.json"):
+                self._send(HTTPStatus.OK, OPENAPI_SPEC)
                 return
             self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
 

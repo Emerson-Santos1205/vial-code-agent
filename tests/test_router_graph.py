@@ -196,8 +196,7 @@ class RoutingGraphTests(unittest.TestCase):
 
                 def chat_stream(self, prompt: str, root: Path | None = None,
                                 history: object = None):
-                    for chunk in ("one ", "two"):
-                        yield chunk
+                    yield from ("one ", "two")
 
             with patch("vial_code_agent.router.OpenCodeProvider", Streamer):
                 chunks = list(graph.dispatch_stream(

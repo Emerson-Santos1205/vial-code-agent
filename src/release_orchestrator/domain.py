@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
-from typing import Sequence
-
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 TAG_PREFIX = "release-orchestrator-v"
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")

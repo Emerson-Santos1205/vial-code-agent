@@ -1,22 +1,18 @@
 from __future__ import annotations
 
+import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CompletedProcess
-import sys
-from typing import Sequence
 
 from .domain import (
-    CATEGORIES,
     Commit,
     ReleaseChanges,
     calculate_release_changes,
-    categorize_commits,
-    categorize_commit_subject,
     release_tag,
     validate_release_transition,
     validate_rollback_transition,
-    validate_semver,
 )
 from .git import (
     check_submodule_drift,
@@ -29,12 +25,10 @@ from .git import (
     last_commit,
     latest_tag,
     modified_files,
-    run_git,
     tag_exists,
     update_submodule,
 )
 from .storage import atomic_write_text
-
 
 SECRET_FILENAMES = (".env", "credentials.json")
 CHANGELOG_OVERWRITE_ISSUE = "CHANGELOG.md already exists; use --force to overwrite"
@@ -145,8 +139,8 @@ def test_files(root: Path) -> list[Path]:
 
 
 def run_test_suite(root: Path) -> CompletedProcess[str]:
-    import subprocess
     import os
+    import subprocess
 
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"

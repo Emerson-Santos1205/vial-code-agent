@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .model import ModelResponse, extract_diff
+from .model import extract_diff
 from .router import deterministic_solvable, resolve_deterministic
 
 

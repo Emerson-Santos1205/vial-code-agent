@@ -1,13 +1,12 @@
 """Resolve reproducible test environments from SWE-bench instance metadata."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
-import shlex
 import re
+import shlex
+from dataclasses import dataclass
 from typing import Any
-
 
 ENVIRONMENT_CATALOG_VERSION = "2026-08-30"
 

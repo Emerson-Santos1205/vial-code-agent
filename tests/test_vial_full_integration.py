@@ -13,10 +13,13 @@ from vial_code_agent.core import VialCoreReference
 from vial_code_agent.model import ModelResponse
 from vial_code_agent.patches import PatchApplier
 from vial_code_agent.router import (
-    VialRouter, deterministic_solvable, resolve_deterministic,
+    VialRouter,
+    deterministic_solvable,
+    resolve_deterministic,
 )
 from vial_code_agent.vial_runtime import (
-    PATCH_TOOL_ID, RESOURCE_ORDER, VialRuntime,
+    PATCH_TOOL_ID,
+    VialRuntime,
 )
 
 DEV_SECRET = "local-vial-dev-secret"

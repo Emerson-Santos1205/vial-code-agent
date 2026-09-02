@@ -16,12 +16,12 @@ BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "src"))
 
-from vial_code_agent.agent import CodeAgent
-from vial_code_agent.core import VialCoreReference
-from vial_code_agent.model import OpenCodeProvider, extract_diff
-from vial_code_agent.patches import PatchApplier, PatchError
-from vial_code_agent.vial_runtime import VialRuntime
-from benchmark.report import candidate_metrics
+from benchmark.report import candidate_metrics  # noqa: E402
+from vial_code_agent.agent import CodeAgent  # noqa: E402
+from vial_code_agent.core import VialCoreReference  # noqa: E402
+from vial_code_agent.model import OpenCodeProvider, extract_diff  # noqa: E402
+from vial_code_agent.patches import PatchApplier, PatchError  # noqa: E402
+from vial_code_agent.vial_runtime import VialRuntime  # noqa: E402
 
 
 def classify_failure(stage: str, detail: str, applied: bool = False,
@@ -253,7 +253,6 @@ def main() -> int:
     by_adapter = {}
     for adapter in selected:
         adapter_rows = [row for row in rows if row["adapter"] == adapter]
-        adapter_passed = sum(row["passed"] for row in adapter_rows)
         by_adapter[adapter] = summarize(adapter_rows)
         by_adapter[adapter].update({
             "tasks": len(adapter_rows),

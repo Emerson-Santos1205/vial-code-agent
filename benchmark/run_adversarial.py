@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
-import sys
 
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
 
-from vial_code_agent.evidence import validate_candidate
-from vial_code_agent.patches import PatchApplier, PatchError
-from vial_code_agent.risk import RiskPolicy, classify_task
+from vial_code_agent.evidence import validate_candidate  # noqa: E402
+from vial_code_agent.patches import PatchApplier, PatchError  # noqa: E402
+from vial_code_agent.risk import RiskPolicy, classify_task  # noqa: E402
 
 
 def _expected_rejection(name: str, callback) -> dict:

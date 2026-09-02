@@ -6,7 +6,7 @@ from pathlib import Path
 
 from vial_code_agent.core import VialCoreReference
 from vial_code_agent.patches import PatchApplier
-from vial_code_agent.vial_runtime import PATCH_TOOL_ID, RISK_HIGH, VialRuntime
+from vial_code_agent.vial_runtime import PATCH_TOOL_ID, VialRuntime
 
 
 def _reference() -> VialCoreReference:

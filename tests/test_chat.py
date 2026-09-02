@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,8 +35,7 @@ class _FakeRouting:
 
     def dispatch_stream(self, task, root=None, requested_model="auto", history=None):
         self.calls.append((task, history))
-        for chunk in ("streamed", " ", "answer"):
-            yield chunk
+        yield from ("streamed", " ", "answer")
 
     def cancel_active(self) -> None:
         self.cancelled = True

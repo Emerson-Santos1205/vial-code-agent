@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from pathlib import Path
 
-from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
 from .evidence import validate_candidate
+from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
 from .vial_runtime import VialRuntime
 
 
@@ -327,7 +327,7 @@ class RoutingGraph:
         require_evidence: bool = False,
         test_command: list[str] | None = None,
         test_timeout: int = 120,
-    ) -> tuple["ConsensusResult", RouteDecision]:
+    ) -> tuple[ConsensusResult, RouteDecision]:
         """Dispatch to >=``quorum`` independent models and require agreement.
 
         Returns a :class:`ConsensusResult` carrying every raw response (for

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from vial_code_agent.evidence import validate_candidate
 
-
 PATCH = "--- a/solution.py\n+++ b/solution.py\n@@ -1 +1 @@\n-return 0\n+return 1\n"
 
 

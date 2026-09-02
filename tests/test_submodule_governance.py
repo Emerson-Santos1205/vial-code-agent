@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vial_code_agent.core import VialCoreReference
 from release_orchestrator.core import repo_health_issues, sync_core_submodule
-from release_orchestrator.git import get_submodule_commit, check_submodule_drift
+from release_orchestrator.git import check_submodule_drift
+from vial_code_agent.core import VialCoreReference
 
 
 class SubmoduleGovernanceTests(unittest.TestCase):

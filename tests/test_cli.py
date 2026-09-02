@@ -18,7 +18,6 @@ from vial_code_agent.router import ConsensusResult
 from vial_code_agent.session import SessionStore
 from vial_code_agent.vial_runtime import VialRuntime
 
-
 PATCH = """--- a/source.txt
 +++ b/source.txt
 @@ -1 +1 @@
@@ -75,7 +74,7 @@ class _FakeRuntime:
 
     def record_consensus(self, decision_id: str, agreed: bool,
                          agreement_ratio: float = 0.0, models=None,
-                         responses=None, note: str = "") -> None:
+                         responses=None, evidence=None, note: str = "") -> None:
         self._consensus_notes[decision_id] = note
         return None
 
@@ -248,7 +247,7 @@ class CliIntegrationTests(unittest.TestCase):
             root = Path(directory)
             with patch("vial_code_agent.cli._build_runtime") as build:
                 build.return_value = _FakeRuntime()
-                with patch("sys.stdout") as stdout:
+                with patch("sys.stdout"):
                     result = main(["--status", "--root", str(root)])
             self.assertEqual(result, 0)
 

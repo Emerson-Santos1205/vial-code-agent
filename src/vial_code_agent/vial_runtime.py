@@ -25,21 +25,20 @@ from __future__ import annotations
 
 import hashlib
 import importlib
-import json
 import re
 import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .core import VialCoreReference
-from .errors import VialRuntimeError
 from .events import EventStore, VialEvent
-from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 from .persistence import TransactionalJsonRepository
+from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 
 
 class PersistenceError(RuntimeError):
@@ -376,7 +375,7 @@ class VialRuntime:
             return {"path": str(path), "content": path.read_text(encoding="utf-8")}
         except OSError as exc:
             raise self._errors.VIALStateError(
-                "FILE_READ_ERROR", str(exc), details={"path": str(path)})
+                "FILE_READ_ERROR", str(exc), details={"path": str(path)}) from exc
 
     def _invoke_search(self, value: dict[str, Any]) -> Any:
         pattern = str(value["pattern"])
@@ -403,7 +402,7 @@ class VialRuntime:
         includes = value.get("patterns") or ["*"]
         if isinstance(includes, str):
             includes = [includes]
-        files = []
+        files: list[Path] = []
         for pattern in includes:
             files.extend(root.rglob(str(pattern)))
         return {"files": sorted(
@@ -435,6 +434,8 @@ class VialRuntime:
         command = value.get("command")
         if isinstance(command, str):
             command = CommandRunner.parse(command)
+        if not isinstance(command, list):
+            command = []
         runner = CommandRunner(root, unsafe=bool(value.get("unsafe", False)))
         result = runner.run(list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
@@ -447,6 +448,8 @@ class VialRuntime:
         if isinstance(command, str):
             from .command_runner import CommandRunner
             command = CommandRunner.parse(command)
+        if not isinstance(command, list):
+            command = []
         result = run_tests(root, list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr,
@@ -458,7 +461,7 @@ class VialRuntime:
         try:
             output = GitWorkspace(root).run(*[str(a) for a in value.get("args", [])])
         except GitError as exc:
-            raise self._errors.VIALExecutionError("GIT_ERROR", str(exc))
+            raise self._errors.VIALExecutionError("GIT_ERROR", str(exc)) from exc
         return {"stdout": output}
 
     def _invoke_run_audit(self, value: dict[str, Any]) -> Any:
@@ -906,8 +909,8 @@ class VialRuntime:
             record.__dict__ for tool in self.tools.list()
             for record in tool.audit_records
             if record.decision_id == decision_id]
-        trace["context"] = self.contexts.get(decision.context_id).to_row() \
-            if decision.context_id in self.contexts else None
+        context_obj = self.contexts.get(decision.context_id) if decision.context_id else None
+        trace["context"] = context_obj.to_row() if context_obj is not None else None
         return trace
 
     def pending_decisions(self) -> list[dict[str, Any]]:
@@ -1059,7 +1062,7 @@ class VialRuntime:
         resolved = self.coordinator.resolve(compensation_id)
         if resolved is not None:
             return resolved
-        intent = self.coordinator.begin(
+        self.coordinator.begin(
             compensation_id, WORKSPACE_FIELD, f"rollback:{op_id}", self.authority)
         committed = self.coordinator.commit(compensation_id)
         self.persist()
@@ -1067,14 +1070,14 @@ class VialRuntime:
 
     def _reconcile_files(self, root: Path) -> None:
         """Refresh file fields from disk after an applied patch."""
-        for key, field in list(self.organization.fields.items()):
+        for key, file_field in list(self.organization.fields.items()):
             if not key.startswith("file:"):
                 continue
             path = root / key[len("file:"):]
             if not path.is_file():
                 continue
             try:
-                field.value = path.read_text(encoding="utf-8")
+                file_field.value = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
 
@@ -1301,7 +1304,7 @@ class VialRuntime:
     # ------------------------------------------------------------------ #
     def audit_records(self) -> list[dict[str, Any]]:
         """Audit records aggregated across every registered Tool (TOOLS-001)."""
-        records = []
+        records: list[dict[str, Any]] = []
         for tool in self.tools.list():
             records.extend(record.__dict__ for record in tool.audit_records)
         return sorted(records, key=lambda record: record["timestamp"])

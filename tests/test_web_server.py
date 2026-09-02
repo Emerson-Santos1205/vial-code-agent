@@ -42,6 +42,21 @@ class WebServerTests(unittest.TestCase):
                 thread.join(timeout=2)
                 server.server_close()
 
+    def test_openapi_schema_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            server = make_server(Path(directory), AgentConfig(), "127.0.0.1", 0)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_port}"
+            try:
+                schema = self._request(base + "/api/v1/schema")
+                self.assertEqual(schema["openapi"], "3.0.3")
+                self.assertEqual(schema["info"]["title"], "VIAL Code Agent API")
+            finally:
+                server.shutdown()
+                thread.join(timeout=2)
+                server.server_close()
+
     def test_chat_rejects_missing_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             server = make_server(Path(directory), AgentConfig(), "127.0.0.1", 0)

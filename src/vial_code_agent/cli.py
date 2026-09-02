@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import sys
@@ -10,23 +9,24 @@ from pathlib import Path
 
 from .agent import CodeAgent
 from .app import VialTUI
-from .cache import JsonCache, content_digest
 from .chat import ChatController
+from .command_runner import CommandRunner
 from .config import AgentConfig, load_config
 from .core import VialCoreReference
-from .errors import (ERR_INVALID_CONFIG, ERR_INVALID_USAGE,
-                     VialRuntimeError, wrap)
+from .errors import ERR_INVALID_CONFIG, wrap
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .risk import RiskPolicy, classify_task
 from .router import (
-    ConsensusResult, ModelRouter, RouteDecision, RoutingGraph, VialRouter,
+    ConsensusResult,
+    ModelRouter,
+    RoutingGraph,
+    VialRouter,
 )
 from .servers import ServerRegistry
-from .command_runner import CommandRunner
 from .session import SessionStore
-from .test_runner import TestResult, run_tests
 from .telemetry import Telemetry
+from .test_runner import TestResult, run_tests
 from .vial_runtime import VialRuntime
 from .workspace import select_files
 
@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_doctor(root, vial_root.resolve(), config, registry, args.json)
     try:
         if args.add_server:
-            server = registry.add_server(*args.add_server, args.api_key_env)
+            server = registry.add_server(args.add_server[0], args.add_server[1], args.api_key_env or "")
             print(f"server added: {server.name} ({server.base_url})")
             return 0
         if args.add_model:
@@ -481,16 +481,12 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                         "hint: configure a pool or re-run with --no-consensus "
                         "to authorize as operator", file=sys.stderr)
                     return 1
-                consensus_kwargs = {
-                    "models": list(consensus.responses),
-                    "responses": {ref: response.text
-                                  for ref, response in consensus.responses.items()},
-                }
-                if consensus.evidence:
-                    consensus_kwargs["evidence"] = consensus.evidence
                 runtime.record_consensus(
                     decision.id, consensus.agreed, consensus.agreement_ratio,
-                    **consensus_kwargs)
+                    models=list(consensus.responses),
+                    responses={ref: response.text
+                               for ref, response in consensus.responses.items()},
+                    evidence=consensus.evidence if consensus.evidence else None)
                 status = "agreed" if consensus.agreed else "disagreed"
                 print(f"consensus: {status} "
                       f"(ratio={consensus.agreement_ratio:.2f}, "
@@ -611,9 +607,8 @@ def _run_tui(root: Path, config: AgentConfig, runtime: VialRuntime | None, args)
     controller = ChatController(
         root, store, session_id, provider, model, executable,
         auto_approve, agent, registry=registry, runtime=runtime,
-        model_timeout=config.model_timeout,
+        model_timeout=config.model_timeout, test_timeout=config.test_timeout,
     )
-    controller.test_timeout = config.test_timeout
     app = VialTUI(controller, prompt=args.prompt or "")
     app.run()
     return 0

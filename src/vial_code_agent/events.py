@@ -37,7 +37,7 @@ class VialEvent:
         }
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "VialEvent":
+    def from_dict(cls, value: dict[str, Any]) -> VialEvent:
         return cls(
             event_id=str(value["event_id"]),
             type=str(value["type"]),
@@ -118,7 +118,7 @@ class EventStore:
         return [self.events[key].to_dict() for key in self._order]
 
     @classmethod
-    def from_list(cls, values: list[dict[str, Any]]) -> "EventStore":
+    def from_list(cls, values: list[dict[str, Any]]) -> EventStore:
         store = cls()
         for value in values:
             event = VialEvent.from_dict(value)

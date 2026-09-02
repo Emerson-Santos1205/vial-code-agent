@@ -37,7 +37,7 @@ class ProjectSnapshot:
     files: dict[str, FileEntry] = field(default_factory=dict)
     status: dict[str, str] = field(default_factory=dict)
 
-    def delta(self, other: "ProjectSnapshot") -> "ProjectDelta":
+    def delta(self, other: ProjectSnapshot) -> ProjectDelta:
         changed: list[tuple[str, str, str]] = []
         added: list[str] = []
         removed: list[str] = []
@@ -62,7 +62,7 @@ class ProjectSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "ProjectSnapshot":
+    def from_dict(cls, value: dict[str, Any]) -> ProjectSnapshot:
         return cls(
             project=str(value["project"]),
             version=int(value["version"]),
