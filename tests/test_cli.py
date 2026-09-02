@@ -74,7 +74,7 @@ class _FakeRuntime:
 
     def record_consensus(self, decision_id: str, agreed: bool,
                          agreement_ratio: float = 0.0, models=None,
-                         responses=None, note: str = "") -> None:
+                         responses=None, evidence=None, note: str = "") -> None:
         self._consensus_notes[decision_id] = note
         return None
 

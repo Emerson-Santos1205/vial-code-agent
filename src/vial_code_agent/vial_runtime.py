@@ -402,7 +402,7 @@ class VialRuntime:
         includes = value.get("patterns") or ["*"]
         if isinstance(includes, str):
             includes = [includes]
-        files = []
+        files: list[Path] = []
         for pattern in includes:
             files.extend(root.rglob(str(pattern)))
         return {"files": sorted(
@@ -434,6 +434,8 @@ class VialRuntime:
         command = value.get("command")
         if isinstance(command, str):
             command = CommandRunner.parse(command)
+        if not isinstance(command, list):
+            command = []
         runner = CommandRunner(root, unsafe=bool(value.get("unsafe", False)))
         result = runner.run(list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
@@ -446,6 +448,8 @@ class VialRuntime:
         if isinstance(command, str):
             from .command_runner import CommandRunner
             command = CommandRunner.parse(command)
+        if not isinstance(command, list):
+            command = []
         result = run_tests(root, list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr,
@@ -905,8 +909,8 @@ class VialRuntime:
             record.__dict__ for tool in self.tools.list()
             for record in tool.audit_records
             if record.decision_id == decision_id]
-        trace["context"] = self.contexts.get(decision.context_id).to_row() \
-            if decision.context_id in self.contexts else None
+        context_obj = self.contexts.get(decision.context_id) if decision.context_id else None
+        trace["context"] = context_obj.to_row() if context_obj is not None else None
         return trace
 
     def pending_decisions(self) -> list[dict[str, Any]]:
@@ -1300,7 +1304,7 @@ class VialRuntime:
     # ------------------------------------------------------------------ #
     def audit_records(self) -> list[dict[str, Any]]:
         """Audit records aggregated across every registered Tool (TOOLS-001)."""
-        records = []
+        records: list[dict[str, Any]] = []
         for tool in self.tools.list():
             records.extend(record.__dict__ for record in tool.audit_records)
         return sorted(records, key=lambda record: record["timestamp"])

@@ -27,9 +27,11 @@ class AgentConfig:
     price_table_json: str = ""
 
 
-def _as_bool(value: object, default: bool) -> bool:
+def _as_bool(value: object, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, bool):
+        return value
     return bool(value) if value is not None else default
 
 
@@ -45,15 +47,15 @@ def load_config(root: Path) -> AgentConfig:
     return AgentConfig(
         model=os.environ.get("VIAL_MODEL", str(values.get("model", "auto"))),
         cache_dir=os.environ.get("VIAL_CACHE_DIR", str(values.get("cache_dir", ".vial-cache"))),
-        test_timeout=int(os.environ.get("VIAL_TEST_TIMEOUT", values.get("test_timeout", 120))),
-        model_timeout=int(os.environ.get("VIAL_MODEL_TIMEOUT", values.get("model_timeout", 300))),
-        max_context_chars=int(os.environ.get("VIAL_MAX_CONTEXT_CHARS", values.get("max_context_chars", 6_000))),
+        test_timeout=int(str(os.environ.get("VIAL_TEST_TIMEOUT", values.get("test_timeout", 120)))),
+        model_timeout=int(str(os.environ.get("VIAL_MODEL_TIMEOUT", values.get("model_timeout", 300)))),
+        max_context_chars=int(str(os.environ.get("VIAL_MAX_CONTEXT_CHARS", values.get("max_context_chars", 6_000)))),
         opencode_executable=os.environ.get(
             "VIAL_OPENCODE_EXECUTABLE", str(values.get("opencode_executable", "opencode"))
         ),
         opencode_agent=os.environ.get("VIAL_OPENCODE_AGENT", str(values.get("opencode_agent", "build"))),
         auto_approve=_as_bool(
-            os.environ.get("VIAL_AUTO_APPROVE"), values.get("auto_approve", False)),
+            os.environ.get("VIAL_AUTO_APPROVE"), bool(values.get("auto_approve", False))),
         auto_approve_max_risk=os.environ.get(
             "VIAL_AUTO_APPROVE_MAX_RISK",
             str(values.get("auto_approve_max_risk", "medium"))),
@@ -64,7 +66,7 @@ def load_config(root: Path) -> AgentConfig:
         authority=os.environ.get("VIAL_AUTHORITY", str(values.get("authority", AUTHORITY))),
         actor=os.environ.get("VIAL_ACTOR", str(values.get("actor", ACTOR))),
         persist_state=_as_bool(
-            os.environ.get("VIAL_PERSIST_STATE"), values.get("persist_state", True)),
+            os.environ.get("VIAL_PERSIST_STATE"), bool(values.get("persist_state", True))),
         price_table_json=os.environ.get(
             "VIAL_PRICE_TABLE", str(values.get("price_table_json", ""))),
     )

@@ -36,6 +36,7 @@ from textual.widgets import (
     Static,
     TextArea,
 )
+from textual.worker import Worker
 
 from . import __version__
 from .chat import ChatController
@@ -84,7 +85,7 @@ class PoolPicker(ModalScreen[list[str] | None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "cancel"),
-        Binding("space", "toggle", "toggle"),
+        Binding("space", "toggle_selected", "toggle"),
     ]
 
     def __init__(self, models: list[str], current: list[str]) -> None:
@@ -115,7 +116,7 @@ class PoolPicker(ModalScreen[list[str] | None]):
     def action_cancel(self) -> None:
         self.dismiss(None)
 
-    def action_toggle(self) -> None:
+    def action_toggle_selected(self) -> None:
         list_view = self.query_one("#pool-list", ListView)
         index = list_view.index
         if index is None or not (0 <= index < len(self._models)):
@@ -391,22 +392,22 @@ class PromptArea(_NonSelectableMixin, TextArea):
             self.value = value
 
     def action_submit_prompt(self) -> None:
-        self.app.prompt_enter()
+        self.app.prompt_enter()  # type: ignore[attr-defined]
 
     def action_insert_line_break(self) -> None:
         self.insert("\n")
 
     def action_menu_up(self) -> None:
-        if self.app.command_menu_visible():
-            self.app.menu_move(-1)
+        if self.app.command_menu_visible():  # type: ignore[attr-defined]
+            self.app.menu_move(-1)  # type: ignore[attr-defined]
         else:
-            self.app.history_move(-1)
+            self.app.history_move(-1)  # type: ignore[attr-defined]
 
     def action_menu_down(self) -> None:
-        if self.app.command_menu_visible():
-            self.app.menu_move(1)
+        if self.app.command_menu_visible():  # type: ignore[attr-defined]
+            self.app.menu_move(1)  # type: ignore[attr-defined]
         else:
-            self.app.history_move(1)
+            self.app.history_move(1)  # type: ignore[attr-defined]
 
 
 class SelectableLog(RichLog):
@@ -506,7 +507,7 @@ class VialTUI(App[str]):
         self._busy = False
         self._cancelled = False
         self._menu_matches: list[str] = []
-        self._worker = None
+        self._worker: Worker[None] | None = None
         self._stream_buffer: list[str] = []
         self._prompt_history: list[str] = []
         self._history_index: int | None = None
@@ -924,7 +925,7 @@ class VialTUI(App[str]):
             return None
         return f"copied to clipboard ({len(text)} chars)"
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         self.exit("")
 
     # ------------------------------------------------------------------ #
@@ -948,7 +949,7 @@ class VialTUI(App[str]):
         prompt = self.query_one("#prompt", PromptArea)
         prompt.text = (self._prompt_history[self._history_index]
                        if self._history_index < len(self._prompt_history) else "")
-        prompt.cursor = (0, len(prompt.text))
+        prompt.cursor_location = (len(prompt.text.splitlines()) - 1, len(prompt.text.splitlines()[-1]) if prompt.text else 0)
 
     def refresh_side(self) -> None:
         controller = self.controller

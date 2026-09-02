@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # Prior-turn context is injected into the prompt; capped to stay under the
 # Windows ~32k command-line limit for ``opencode run <prompt>``.
@@ -330,7 +331,7 @@ class HttpModelProvider:
             first = choices[0]
             message = first.get("message", {}) if isinstance(first, dict) else {}
             content = message.get("content", "") if isinstance(message, dict) else ""
-        usage = data.get("usage") or {}
+        usage: dict[str, Any] = data.get("usage") or {}  # type: ignore[assignment]
         return ModelResponse(
             text=content if isinstance(content, str) else str(content),
             returncode=0,
@@ -360,8 +361,10 @@ class HttpModelProvider:
 
 
 def _as_int(value: object) -> int | None:
+    if value is None:
+        return None
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(value)  # type: ignore[call-overload]
     except (TypeError, ValueError):
         return None
 

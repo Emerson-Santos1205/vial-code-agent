@@ -184,6 +184,7 @@ class CodeAgent:
             "Return one applicable unified diff with exact removed and added lines."
         )
         # Keep the operator workspace read-only from the provider's perspective.
+        assert self.provider is not None, "provider is required for code generation"
         with tempfile.TemporaryDirectory(prefix="vial-provider-") as directory:
             staging = Path(directory)
             staged_files: list[Path] = []
@@ -307,9 +308,9 @@ class CodeAgent:
                 new_text = current.decode("utf-8").splitlines(keepends=True)
             except UnicodeDecodeError:
                 continue
-            relative = path.relative_to(root).as_posix()
+            rel_str = path.relative_to(root).as_posix()
             generated = difflib.unified_diff(
-                old_text, new_text, fromfile=f"a/{relative}", tofile=f"b/{relative}"
+                old_text, new_text, fromfile=f"a/{rel_str}", tofile=f"b/{rel_str}"
             )
             return GenerationResult(
                 response=response, patch="".join(generated), workspace_changed=True,

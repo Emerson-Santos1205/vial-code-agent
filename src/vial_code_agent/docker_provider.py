@@ -21,7 +21,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
         )
     else:
         try:
-            os.killpg(process.pid, 15)
+            os.killpg(process.pid, 15)  # type: ignore[attr-defined]
         except (ProcessLookupError, OSError):
             process.terminate()
     try:
@@ -78,10 +78,10 @@ class DockerOpenCodeProvider:
                 "errors": "replace",
             }
             if os.name == "nt":
-                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             else:
                 popen_kwargs["start_new_session"] = True
-            process = subprocess.Popen(command, **popen_kwargs)
+            process = subprocess.Popen(command, **popen_kwargs)  # type: ignore[call-overload]
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
         except FileNotFoundError as error:
             if getattr(error, "winerror", None) == 206:

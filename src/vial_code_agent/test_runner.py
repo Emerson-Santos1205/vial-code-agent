@@ -41,7 +41,7 @@ def run_tests(root: Path, command: list[str], timeout_seconds: int = 120) -> Tes
         return TestResult(
             tuple(command),
             124,
-            error.stdout or "",
-            error.stderr or "test command timed out",
+            error.stdout if isinstance(error.stdout, str) else (error.stdout or b"").decode("utf-8", errors="replace"),
+            error.stderr if isinstance(error.stderr, str) else (error.stderr or b"").decode("utf-8", errors="replace"),
             time.monotonic() - started,
         )

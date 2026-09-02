@@ -85,6 +85,7 @@ class ChatController:
         registry: ServerRegistry | None = None,
         runtime=None,
         model_timeout: int = 180,
+        test_timeout: int = 120,
     ) -> None:
         self.root = root
         self.store = store
@@ -97,6 +98,7 @@ class ChatController:
         self.registry = registry or ServerRegistry(root)
         self.runtime = runtime
         self.model_timeout = model_timeout
+        self.test_timeout = test_timeout
         self.routing = RoutingGraph(
             self.registry, default_model=model,
             executable=executable, auto_approve=auto_approve, agent=agent,

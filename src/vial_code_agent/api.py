@@ -6,11 +6,12 @@ implementation details from the CLI or TUI.
 from __future__ import annotations
 
 from .agent import CodeAgent as VialAgent
+from .core import VialCoreReference
 from .patches import PatchApplier
 from .vial_runtime import PersistenceError, VialRuntime
 
 
-def create_runtime(core: object, state_root, **kwargs) -> VialRuntime:
+def create_runtime(core: VialCoreReference, state_root, **kwargs) -> VialRuntime:
     """Create the governed runtime without exposing CLI/TUI construction."""
     return VialRuntime(core, state_root, **kwargs)
 
