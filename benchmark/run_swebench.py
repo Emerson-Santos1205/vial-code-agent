@@ -16,6 +16,13 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+from benchmark.types import (
+    CandidateConsensus,
+    CandidateOutcome,
+    CandidateResult,
+    PipelineStages,
+)
+
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "src"))
 
@@ -896,40 +903,36 @@ def _candidate_outcome(label: str, model: str, *, returned_patch: bool,
                        patch_valid: bool, tests_passed: bool | None,
                        detail: str = "", attempts: int = 1,
                        retries: int = 0, patch_returns: int | None = None
-                       ) -> dict[str, object]:
+                       ) -> CandidateOutcome:
     """Record the observable pipeline for one independent candidate."""
     if not returned_patch:
-        phase = "patch"
         result = f"CANDIDATE_{label}_FAILED"
     elif not patch_valid:
-        phase = "static"
         result = f"CANDIDATE_{label}_FAILED"
     elif tests_passed is False:
-        phase = "behavioral"
         result = f"CANDIDATE_{label}_FAILED"
     else:
-        phase = "result"
         result = f"CANDIDATE_{label}_SUCCEEDED"
-    return {
-        "candidate_id": label,
-        "model": model,
-        "pipeline": {
-            "patch": "PASS" if returned_patch else "FAIL",
-            "static": "PASS" if patch_valid else "FAIL",
-            "behavioral": ("PASS" if tests_passed is True else
-                            "FAIL" if tests_passed is False else "NOT_RUN"),
-            "result": result,
-        },
-        "returned_patch": returned_patch,
-        "patch_returns": (int(returned_patch) if patch_returns is None
-                           else patch_returns),
-        "attempts": attempts,
-        "retries": retries,
-        "patch_valid": patch_valid,
-        "tests_passed": tests_passed,
-        "result_code": result,
-        "failure_detail": detail,
-    }
+    return CandidateOutcome(
+        candidate_id=label,
+        model=model,
+        pipeline=PipelineStages(
+            patch="PASS" if returned_patch else "FAIL",
+            static="PASS" if patch_valid else "FAIL",
+            behavioral=("PASS" if tests_passed is True else
+                        "FAIL" if tests_passed is False else "NOT_RUN"),
+            result=result,
+        ),
+        returned_patch=returned_patch,
+        patch_returns=(int(returned_patch) if patch_returns is None
+                       else patch_returns),
+        attempts=attempts,
+        retries=retries,
+        patch_valid=patch_valid,
+        tests_passed=tests_passed,
+        result_code=result,
+        failure_detail=detail,
+    )
 
 
 def _token_count(value: object) -> int:
@@ -940,9 +943,9 @@ def _token_count(value: object) -> int:
 
 
 def _generate_validated_candidate(label: str, model: str, prompt: str,
-                                  root: Path, files: list[Path],
-                                  allowed_paths: set[str],
-                                  runtime: VialRuntime) -> dict[str, object]:
+                                   root: Path, files: list[Path],
+                                   allowed_paths: set[str],
+                                   runtime: VialRuntime) -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
     provider = DockerOpenCodeProvider(model, timeout_seconds=900)
     attempts = retries = patch_returns = 0
@@ -992,25 +995,26 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             label, model, returned_patch=True, patch_valid=True,
             tests_passed=None, attempts=attempts, retries=retries,
             patch_returns=patch_returns)
-        outcome["response_received"] = bool(
+        outcome.response_received = bool(
             getattr(getattr(generated, "response", None), "text", ""))
-        outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
-        outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
-        outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
-        outcome["provider_stderr"] = getattr(
+        outcome.input_tokens = _token_count(getattr(generated, "input_tokens", 0))
+        outcome.output_tokens = _token_count(getattr(generated, "output_tokens", 0))
+        outcome.context_tokens = _token_count(getattr(generated, "tokens", 0))
+        outcome.provider_stderr = getattr(
             getattr(generated, "response", None), "stderr", "") or ""
-        outcome["prompt_sha256"] = hashlib.sha256(
+        outcome.prompt_sha256 = hashlib.sha256(
             candidate_prompt.encode("utf-8")).hexdigest()
-        outcome["protocol"] = {
+        outcome.protocol = {
             "output": "unified_diff",
             "validation": "static_then_behavioral",
             "tests": "same_instance_fail_to_pass_pass_to_pass",
         }
-        outcome["protocol_sha256"] = hashlib.sha256(json.dumps(
-            outcome["protocol"], sort_keys=True).encode("utf-8")).hexdigest()
-        outcome["workspace_sha256"] = _workspace_sha256(root)
-        return {"model": model, "patch": patch, "generated": generated,
-                "outcome": outcome, "behavior": None}
+        outcome.protocol_sha256 = hashlib.sha256(json.dumps(
+            outcome.protocol, sort_keys=True).encode("utf-8")).hexdigest()
+        outcome.workspace_sha256 = _workspace_sha256(root)
+        return CandidateResult(
+            model=model, patch=patch, generated=generated,
+            outcome=outcome, behavior=None)
     detail = "; corrective attempt: ".join(diagnostics)
     outcome = _candidate_outcome(
         label, model, returned_patch=patch_returns > 0, patch_valid=False,
@@ -1020,31 +1024,32 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     if (detail.startswith("provider error:") or
             (response is not None and (getattr(response, "returncode", 0) != 0 or
                                        not getattr(response, "text", "").strip()))):
-        outcome["failure_stage"] = "provider"
-    outcome["response_received"] = bool(
+        outcome.failure_stage = "provider"
+    outcome.response_received = bool(
         generated and getattr(getattr(generated, "response", None), "text", ""))
-    outcome["input_tokens"] = _token_count(getattr(generated, "input_tokens", 0))
-    outcome["output_tokens"] = _token_count(getattr(generated, "output_tokens", 0))
-    outcome["context_tokens"] = _token_count(getattr(generated, "tokens", 0))
-    outcome["provider_stderr"] = getattr(
+    outcome.input_tokens = _token_count(getattr(generated, "input_tokens", 0))
+    outcome.output_tokens = _token_count(getattr(generated, "output_tokens", 0))
+    outcome.context_tokens = _token_count(getattr(generated, "tokens", 0))
+    outcome.provider_stderr = getattr(
         getattr(generated, "response", None), "stderr", "") or ""
-    outcome["prompt_sha256"] = hashlib.sha256(
+    outcome.prompt_sha256 = hashlib.sha256(
         candidate_prompt.encode("utf-8")).hexdigest()
-    outcome["protocol"] = {
+    outcome.protocol = {
         "output": "unified_diff",
         "validation": "static_then_behavioral",
         "tests": "same_instance_fail_to_pass_pass_to_pass",
     }
-    outcome["protocol_sha256"] = hashlib.sha256(json.dumps(
-        outcome["protocol"], sort_keys=True).encode("utf-8")).hexdigest()
-    outcome["workspace_sha256"] = _workspace_sha256(root)
-    return {"model": model, "patch": None, "generated": generated,
-            "outcome": outcome, "behavior": None}
+    outcome.protocol_sha256 = hashlib.sha256(json.dumps(
+        outcome.protocol, sort_keys=True).encode("utf-8")).hexdigest()
+    outcome.workspace_sha256 = _workspace_sha256(root)
+    return CandidateResult(
+        model=model, patch=None, generated=generated,
+        outcome=outcome, behavior=None)
 
 
 def _generate_baseline_candidate(label: str, model: str, prompt: str,
-                                 root: Path, files: list[Path],
-                                 allowed_paths: set[str]) -> dict[str, object]:
+                                  root: Path, files: list[Path],
+                                  allowed_paths: set[str]) -> CandidateResult:
     """Run one raw provider request without CodeAgent or VIAL processing."""
     try:
         response = DockerOpenCodeProvider(model, timeout_seconds=900).generate(
@@ -1071,12 +1076,13 @@ def _generate_baseline_candidate(label: str, model: str, prompt: str,
         label, model, returned_patch=returned_patch,
         patch_valid=patch is not None, tests_passed=None, detail=detail, attempts=1,
         patch_returns=int(patch is not None))
-    outcome["response_received"] = bool(response and response.text)
-    outcome["input_tokens"] = generated.input_tokens
-    outcome["output_tokens"] = generated.output_tokens
-    outcome["context_tokens"] = 0
-    return {"model": model, "patch": patch, "generated": generated,
-            "outcome": outcome, "behavior": None}
+    outcome.response_received = bool(response and response.text)
+    outcome.input_tokens = generated.input_tokens
+    outcome.output_tokens = generated.output_tokens
+    outcome.context_tokens = 0
+    return CandidateResult(
+        model=model, patch=patch, generated=generated,
+        outcome=outcome, behavior=None)
 
 
 def _generate_candidate_set(requests: list[tuple], generate=None) -> list[dict]:
@@ -1088,7 +1094,7 @@ def _generate_candidate_set(requests: list[tuple], generate=None) -> list[dict]:
 def _candidate_consensus(root: Path, first: str, second: str,
                          allowed_paths: set[str], models: tuple[str, str],
                          behavioral: dict[str, dict[str, object]] | None = None,
-                         run_tests: bool = False) -> dict:
+                         run_tests: bool = False) -> CandidateConsensus:
     """Build auditable consensus evidence from two validated patches."""
     equivalent, detail = _compare_candidate_results(root, first, second, allowed_paths)
     behavioral = behavioral or {}
@@ -1096,12 +1102,13 @@ def _candidate_consensus(root: Path, first: str, second: str,
         behavioral.get(model, {}).get("behavioral_passed") is True
         for model in models)
     behavioral_equivalent = run_tests and behavioral_passed
-    return {
-        "agreed": equivalent and behavioral_passed,
-        "agreement_ratio": 1.0 if equivalent else 0.0,
-        "models": list(models),
-        "responses": {models[0]: first, models[1]: second},
-        "evidence": {
+    agreed = equivalent and behavioral_passed
+    return CandidateConsensus(
+        agreed=agreed,
+        agreement_ratio=1.0 if equivalent else 0.0,
+        models=list(models),
+        responses={models[0]: first, models[1]: second},
+        evidence={
             models[0]: behavioral.get(models[0], {
                 "static_valid": True, "behavioral_passed": None}),
             models[1]: behavioral.get(models[1], {
@@ -1109,7 +1116,7 @@ def _candidate_consensus(root: Path, first: str, second: str,
             "comparison": detail,
             "behavioral_equivalent": behavioral_equivalent,
         },
-        "candidate_outcomes": {
+        candidate_outcomes={
             models[0]: _candidate_outcome(
                 "A", models[0], returned_patch=True, patch_valid=True,
                 tests_passed=(behavioral.get(models[0], {}).get(
@@ -1119,72 +1126,68 @@ def _candidate_consensus(root: Path, first: str, second: str,
                 tests_passed=(behavioral.get(models[1], {}).get(
                     "behavioral_passed") if behavioral else None)),
         },
-        "status": "APPROVED" if (
-            equivalent and behavioral_passed
-        ) else "DISAGREEMENT",
-        "result_code": "CONSENSUS_SUCCEEDED" if (
-            equivalent and behavioral_passed
-        ) else "CONSENSUS_FAILED",
-        "note": "independent SWE-bench candidate comparison",
-    }
+        status="APPROVED" if agreed else "DISAGREEMENT",
+        result_code="CONSENSUS_SUCCEEDED" if agreed else "CONSENSUS_FAILED",
+        note="independent SWE-bench candidate comparison",
+    )
 
 
-def _candidate_set_consensus(root: Path, candidates: list[dict[str, object]],
-                             allowed_paths: set[str], run_tests: bool) -> dict:
+def _candidate_set_consensus(root: Path, candidates: list[CandidateResult],
+                             allowed_paths: set[str], run_tests: bool) -> CandidateConsensus:
     """Evaluate consensus only when two candidates have complete evidence."""
     outcomes = {
-        str(candidate["model"]): candidate["outcome"] for candidate in candidates
+        str(candidate.model): candidate.outcome for candidate in candidates
     }
     qualified = [candidate for candidate in candidates
-                 if candidate.get("patch") is not None
-                 and bool(candidate["outcome"].get("patch_valid"))
+                 if candidate.patch is not None
+                 and bool(candidate.outcome.patch_valid)
                  and (not run_tests or
-                      candidate["outcome"].get("tests_passed") is True)]
+                      candidate.outcome.tests_passed is True)]
     if len(qualified) < 2:
-        return {
-            "agreed": False,
-            "agreement_ratio": 0.0,
-            "status": "INSUFFICIENT_CANDIDATES",
-            "result_code": "CANDIDATE_SET_INSUFFICIENT",
-            "models": [str(candidate["model"]) for candidate in candidates],
-            "responses": {},
-            "evidence": {
-                "qualified_candidates": [str(candidate["model"])
-                                           for candidate in qualified],
+        return CandidateConsensus(
+            agreed=False,
+            agreement_ratio=0.0,
+            status="INSUFFICIENT_CANDIDATES",
+            result_code="CANDIDATE_SET_INSUFFICIENT",
+            models=[str(candidate.model) for candidate in candidates],
+            responses={},
+            evidence={
+                "qualified_candidates": [str(candidate.model)
+                                          for candidate in qualified],
                 "diagnostics": {
-                    str(candidate["model"]): candidate["outcome"].get(
-                        "failure_detail", "") for candidate in candidates},
+                    str(candidate.model): candidate.outcome.failure_detail
+                    for candidate in candidates},
             },
-            "candidate_outcomes": outcomes,
-            "note": "fewer than two candidates have complete passing evidence",
-        }
+            candidate_outcomes=outcomes,
+            note="fewer than two candidates have complete passing evidence",
+        )
     first, second = qualified[:2]
     consensus = _candidate_consensus(
-        root, str(first["patch"]), str(second["patch"]), allowed_paths,
-        (str(first["model"]), str(second["model"])),
+        root, str(first.patch), str(second.patch), allowed_paths,
+        (str(first.model), str(second.model)),
         behavioral={
-            str(candidate["model"]): candidate.get("behavior") or {}
+            str(candidate.model): candidate.behavior or {}
             for candidate in (first, second)
         }, run_tests=run_tests)
-    consensus["candidate_outcomes"] = outcomes
+    consensus.candidate_outcomes = outcomes
     return consensus
 
 
 def _adjudicated_candidate_consensus(
-        root: Path, passing: dict[str, object], adjudicator: dict[str, object],
-        original_candidates: list[dict[str, object]],
-        allowed_paths: set[str]) -> dict:
+        root: Path, passing: CandidateResult, adjudicator: CandidateResult,
+        original_candidates: list[CandidateResult],
+        allowed_paths: set[str]) -> CandidateConsensus:
     """Mark adjudication only when it supplies a second passing candidate."""
     consensus = _candidate_set_consensus(
         root, [passing, adjudicator], allowed_paths, True)
-    consensus["candidate_outcomes"] = {
-        **{str(candidate["model"]): candidate["outcome"]
+    consensus.candidate_outcomes = {
+        **{str(candidate.model): candidate.outcome
            for candidate in original_candidates},
-        str(adjudicator["model"]): adjudicator["outcome"],
+        str(adjudicator.model): adjudicator.outcome,
     }
-    if consensus["agreed"]:
-        consensus["status"] = "ADJUDICATED"
-        consensus["note"] = (
+    if consensus.agreed:
+        consensus.status = "ADJUDICATED"
+        consensus.note = (
             "consensus from one original passing candidate and an independent "
             "passing adjudicator")
     return consensus
@@ -1374,57 +1377,57 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             primary, secondary = candidates
             candidate_runtimes = {model: runtime, consensus_model: review_runtime}
             for candidate in candidates:
-                if candidate["patch"] is None:
+                if candidate.patch is None:
                     continue
                 if run_tests:
                     behavior = _evaluate_candidate_behavior(
-                        root, str(candidate["patch"]), instance, environment,
+                        root, str(candidate.patch), instance, environment,
                         docker_image)
-                    candidate["behavior"] = behavior
+                    candidate.behavior = behavior
                     if behavior.get("behavioral_passed") is False:
                         corrected, behavior, retry_attempts, patch_returns = (
                             _retry_behavioral_candidate(
-                                root, str(candidate["patch"]), instance,
+                                root, str(candidate.patch), instance,
                                 environment, docker_image,
-                                str(candidate["model"]),
-                                candidate_runtimes[str(candidate["model"])], files,
+                                str(candidate.model),
+                                candidate_runtimes[str(candidate.model)], files,
                                 allowed_paths, behavior))
-                        candidate["patch"] = corrected
-                        candidate["behavior"] = behavior
-                        candidate["outcome"]["attempts"] += retry_attempts
-                        candidate["outcome"]["retries"] += retry_attempts
-                        candidate["outcome"]["patch_returns"] += patch_returns
-                    candidate["outcome"]["tests_passed"] = (
-                        candidate["behavior"].get("behavioral_passed"))
-                    candidate["outcome"]["pipeline"]["behavioral"] = (
-                        "PASS" if candidate["outcome"]["tests_passed"] is True
+                        candidate.patch = corrected
+                        candidate.behavior = behavior
+                        candidate.outcome.attempts += retry_attempts
+                        candidate.outcome.retries += retry_attempts
+                        candidate.outcome.patch_returns += patch_returns
+                    candidate.outcome.tests_passed = (
+                        candidate.behavior.get("behavioral_passed"))
+                    candidate.outcome.pipeline.behavioral = (
+                        "PASS" if candidate.outcome.tests_passed is True
                         else "FAIL")
-                    if candidate["outcome"]["tests_passed"] is not True:
-                        candidate["outcome"]["result_code"] = (
-                            f"CANDIDATE_{candidate['outcome']['candidate_id']}_FAILED")
-                        candidate["outcome"]["pipeline"]["result"] = (
-                            candidate["outcome"]["result_code"])
-                        candidate["outcome"]["failure_detail"] = str(
-                            candidate["behavior"].get("detail", ""))
+                    if candidate.outcome.tests_passed is not True:
+                        candidate.outcome.result_code = (
+                            f"CANDIDATE_{candidate.outcome.candidate_id}_FAILED")
+                        candidate.outcome.pipeline.result = (
+                            candidate.outcome.result_code)
+                        candidate.outcome.failure_detail = str(
+                            candidate.behavior.get("detail", ""))
             consensus = _candidate_set_consensus(
                 root, candidates, allowed_paths, run_tests)
             passing = [candidate for candidate in candidates
-                       if candidate["outcome"].get("patch_valid")
+                       if candidate.outcome.patch_valid
                        and (not run_tests or
-                            candidate["outcome"].get("tests_passed") is True)]
-            if (adjudicator_model and run_tests and not consensus["agreed"]
+                            candidate.outcome.tests_passed is True)]
+            if (adjudicator_model and run_tests and not consensus.agreed
                     and passing):
                 adjudicator_runtime = VialRuntime(
                     VialCoreReference(BASE / "vendor" / "vial-core"),
                     root / ".vial-adjudicator-state", persist_state=False)
                 adjudicator_runtime.set_workspace_root(root)
                 diagnostics = {
-                    str(candidate["model"]): {
-                        "result_code": candidate["outcome"].get("result_code"),
-                        "pipeline": candidate["outcome"].get("pipeline"),
-                        "behavioral_detail": (candidate.get("behavior") or {}).get(
+                    str(candidate.model): {
+                        "result_code": candidate.outcome.result_code,
+                        "pipeline": candidate.outcome.to_dict()["pipeline"],
+                        "behavioral_detail": (candidate.behavior or {}).get(
                             "detail", "")[-1500:],
-                        "patch": candidate.get("patch"),
+                        "patch": candidate.patch,
                     } for candidate in candidates
                 }
                 adjudicator_prompt = build_swebench_prompt(
@@ -1442,65 +1445,67 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 adjudicator = _generate_validated_candidate(
                     "ADJUDICATOR", adjudicator_model, adjudicator_prompt, root,
                     files, allowed_paths, adjudicator_runtime)
-                if adjudicator["patch"] is not None:
-                    adjudicator["behavior"] = _evaluate_candidate_behavior(
-                        root, str(adjudicator["patch"]), instance, environment,
+                if adjudicator.patch is not None:
+                    adjudicator.behavior = _evaluate_candidate_behavior(
+                        root, str(adjudicator.patch), instance, environment,
                         docker_image)
-                    adjudicator["outcome"]["tests_passed"] = (
-                        adjudicator["behavior"].get("behavioral_passed"))
-                    adjudicator["outcome"]["pipeline"]["behavioral"] = (
-                        "PASS" if adjudicator["outcome"]["tests_passed"] is True
+                    adjudicator.outcome.tests_passed = (
+                        adjudicator.behavior.get("behavioral_passed"))
+                    adjudicator.outcome.pipeline.behavioral = (
+                        "PASS" if adjudicator.outcome.tests_passed is True
                         else "FAIL")
-                    if adjudicator["outcome"]["tests_passed"] is not True:
-                        adjudicator["outcome"]["result_code"] = (
+                    if adjudicator.outcome.tests_passed is not True:
+                        adjudicator.outcome.result_code = (
                             "CANDIDATE_ADJUDICATOR_FAILED")
-                        adjudicator["outcome"]["pipeline"]["result"] = (
+                        adjudicator.outcome.pipeline.result = (
                             "CANDIDATE_ADJUDICATOR_FAILED")
-                        adjudicator["outcome"]["failure_detail"] = str(
-                            adjudicator["behavior"].get("detail", ""))
+                        adjudicator.outcome.failure_detail = str(
+                            adjudicator.behavior.get("detail", ""))
                 adjudications = [
                     _adjudicated_candidate_consensus(
                         root, candidate, adjudicator, candidates, allowed_paths)
                     for candidate in passing
                 ]
                 adjudicated = next(
-                    (result for result in adjudications if result["agreed"]),
+                    (result for result in adjudications if result.agreed),
                     adjudications[-1])
                 consensus = adjudicated
-                if adjudicated["agreed"]:
-                    matched_model = adjudicated["models"][0]
+                if adjudicated.agreed:
+                    matched_model = adjudicated.models[0]
                     matched = next(candidate for candidate in passing
-                                   if candidate["model"] == matched_model)
+                                   if candidate.model == matched_model)
                     passing = [matched, adjudicator]
-            if not consensus["agreed"]:
+            if not consensus.agreed:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "governance", "consensus": consensus,
-                        "result_code": consensus["result_code"],
-                        "candidate_outcomes": consensus["candidate_outcomes"],
-                        "detail": consensus["evidence"].get(
-                            "comparison", consensus["note"])}
+                        "stage": "governance", "consensus": consensus.to_dict(),
+                        "result_code": consensus.result_code,
+                        "candidate_outcomes": {
+                            k: v.to_dict() if isinstance(v, CandidateOutcome) else v
+                            for k, v in consensus.candidate_outcomes.items()},
+                        "detail": consensus.evidence.get(
+                            "comparison", consensus.note)}
             selected = passing[0]
-            generated_patch = str(selected["patch"])
-            generated = selected["generated"]
-            runtime = candidate_runtimes.get(str(selected["model"]), runtime)
-            provider = DockerOpenCodeProvider(str(selected["model"]))
+            generated_patch = str(selected.patch)
+            generated = selected.generated
+            runtime = candidate_runtimes.get(str(selected.model), runtime)
+            provider = DockerOpenCodeProvider(str(selected.model))
         else:
             primary = (_generate_baseline_candidate(
                 "A", model, prompt, root, files, allowed_paths)
                 if adapter == "baseline" else _generate_validated_candidate(
                     "A", model, prompt, root, files, allowed_paths, runtime))
-            candidate_outcomes = {model: primary["outcome"]}
-            if primary["patch"] is None:
-                outcome = primary["outcome"]
+            candidate_outcomes = {model: primary.outcome}
+            if primary.patch is None:
+                outcome = primary.outcome
                 return {"id": instance["id"], "passed": False,
-                        "stage": str(outcome.get("failure_stage") or (
-                            "patch_validation" if outcome["returned_patch"]
+                        "stage": str(outcome.failure_stage or (
+                            "patch_validation" if outcome.returned_patch
                             else "patch_contract")),
-                        "detail": outcome["failure_detail"],
-                        "result_code": outcome["result_code"],
+                        "detail": outcome.failure_detail,
+                        "result_code": outcome.result_code,
                         "candidate_outcomes": candidate_outcomes, "adapter": adapter}
-            generated_patch = str(primary["patch"])
-            generated = primary["generated"]
+            generated_patch = str(primary.patch)
+            generated = primary.generated
             provider = DockerOpenCodeProvider(model)
         if not run_tests:
             return {"id": instance["id"], "passed": True,
@@ -1521,7 +1526,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             return {"id": instance["id"], "passed": False,
                         "stage": "governance", "detail": apply_error or
                         "patch application rejected by VialRuntime",
-                    "governance": apply_metadata, "consensus": consensus,
+                    "governance": apply_metadata,
+                    "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
                     "candidate_outcomes": candidate_outcomes, "adapter": adapter}
         if (root / "astropy").is_dir() and not prepared_image:
             legacy_build = _run_command(
