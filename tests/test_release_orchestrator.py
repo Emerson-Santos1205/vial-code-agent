@@ -15,13 +15,12 @@ from release_orchestrator.cli import main
 from release_orchestrator.core import (
     Commit,
     calculate_release_changes,
-    categorize_commits,
     release_tag,
     repo_health_issues,
     validate_release_transition,
     validate_rollback_transition,
-    validate_semver,
 )
+from release_orchestrator.domain import categorize_commits, validate_semver
 from release_orchestrator.storage import atomic_write_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
