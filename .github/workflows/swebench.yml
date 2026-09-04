@@ -1,6 +1,13 @@
 name: SWE-bench Real Evaluation
 
 on:
+  push:
+    branches: [development, main]
+    paths:
+      - 'benchmark/**'
+      - 'src/**'
+      - 'vendor/**'
+      - '.github/workflows/swebench.yml'
   workflow_dispatch:
     inputs:
       offset:
@@ -16,25 +23,29 @@ on:
         required: false
         default: princeton-nlp/SWE-bench_Verified
       shard_index:
-        description: Zero-based shard to run
+        description: Zero-based shard to run (ignored on push; matrix runs all)
         required: false
         default: "0"
       shard_count:
         description: Total number of balanced shards
         required: false
-        default: "10"
+        default: "50"
       adapters:
         description: Comma-separated protocols to evaluate
         required: false
-        default: baseline,opencode,vial
+        default: vial
       consensus_model:
         description: Independent model used only by the VIAL consensus gate
         required: false
-        default: openai/gpt-5.6-luna
+        default: openai/gpt-5.6-sol
       model:
         description: Primary model used for candidate generation
         required: false
-        default: openai/gpt-5.6-luna
+        default: openai/gpt-5.6-terra
+      adjudicator_model:
+        description: Adjudicator model for consensus reconciliation
+        required: false
+        default: openai/gpt-5.6-luna-fast
       test_image:
         description: Optional prebuilt test image override
         required: false
@@ -43,9 +54,14 @@ on:
 jobs:
   swebench:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard_index: ${{ (github.event_name == 'push') && fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]') || fromJSON(format('["{0}"]', inputs.shard_index)) }}
     concurrency:
-      group: swebench-verified-${{ inputs.shard_index }}-${{ inputs.model }}-${{ inputs.consensus_model }}
+      group: swebench-${{ github.event_name }}-${{ matrix.shard_index }}-${{ inputs.model || 'default' }}
       cancel-in-progress: false
     env:
       HAS_OPENCODE_AUTH: ${{ secrets.OPENCODE_AUTH_JSON != '' }}
@@ -79,28 +95,37 @@ jobs:
       - name: Check primary provider
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          python benchmark/check_provider.py --model "${{ inputs.model }}" \
+          python benchmark/check_provider.py \
+            --model "${{ inputs.model || 'openai/gpt-5.6-terra' }}" \
             --image vial-code-agent-opencode:1.18.18 \
-            --out "benchmark/results/verified-${{ inputs.shard_index }}/provider-primary.json"
+            --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-primary.json"
       - name: Check consensus provider
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          python benchmark/check_provider.py --model "${{ inputs.consensus_model }}" \
+          python benchmark/check_provider.py \
+            --model "${{ inputs.consensus_model || 'openai/gpt-5.6-sol' }}" \
             --image vial-code-agent-opencode:1.18.18 \
-            --out "benchmark/results/verified-${{ inputs.shard_index }}/provider-consensus.json"
-      - name: Fetch workload
+            --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-consensus.json"
+      - name: Resolve workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          python benchmark/fetch_swebench.py --dataset ${{ inputs.dataset }} --split test \
-            --offset ${{ inputs.offset }} --length ${{ inputs.length }} \
-            --out benchmark/swebench-verified-real-ci.json
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Using pre-created shard benchmark/swebench-500-shard-${{ matrix.shard_index }}.json"
+            cp "benchmark/swebench-500-shard-${{ matrix.shard_index }}.json" benchmark/swebench-ci-workload.json
+          else
+            echo "Fetching workload from Hugging Face"
+            python benchmark/fetch_swebench.py \
+              --dataset "${{ inputs.dataset }}" --split test \
+              --offset "${{ inputs.offset }}" --length "${{ inputs.length }}" \
+              --out benchmark/swebench-ci-workload.json
+          fi
       - name: Pull official SWE-bench environments
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image == '' }}
         run: |
           python - <<'PY'
           import json
           from benchmark.swebench_environment import EnvironmentResolver
-          workload = json.load(open("benchmark/swebench-verified-real-ci.json", encoding="utf-8"))
+          workload = json.load(open("benchmark/swebench-ci-workload.json", encoding="utf-8"))
           resolver = EnvironmentResolver()
           images = sorted({resolver.resolve(task, official_images=True).image for task in workload["tasks"]})
           with open("/tmp/swebench-images.txt", "w", encoding="utf-8") as stream:
@@ -120,8 +145,6 @@ jobs:
               docker build -f docker/swebench-test.Dockerfile -t "$TEST_IMAGE" .
               ;;
             vial-code-agent-swebench-python39:local@sha256:*)
-              # Digest references must already exist; never replace an
-              # immutable request with a newly built, different image.
               docker image inspect "$TEST_IMAGE" >/dev/null
               ;;
             *)
@@ -132,18 +155,53 @@ jobs:
       - name: Run real evaluation
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          args="--workload benchmark/swebench-verified-real-ci.json --model ${{ inputs.model }} --adapters ${{ inputs.adapters }} --consensus-model ${{ inputs.consensus_model }} --offset 0 --limit ${{ inputs.length }} --shard-index ${{ inputs.shard_index }} --shard-count ${{ inputs.shard_count }}"
+          model="${{ inputs.model || 'openai/gpt-5.6-terra' }}"
+          consensus="${{ inputs.consensus_model || 'openai/gpt-5.6-sol' }}"
+          adjudicator="${{ inputs.adjudicator_model || 'openai/gpt-5.6-luna-fast' }}"
+          adapters="${{ inputs.adapters || 'vial' }}"
+          shard_count="${{ inputs.shard_count || '50' }}"
+          args="--workload benchmark/swebench-ci-workload.json"
+          args="$args --model $model --adapters $adapters"
+          args="$args --consensus-model $consensus"
+          args="$args --adjudicator-model $adjudicator"
+          args="$args --offset 0 --limit 10"
+          args="$args --shard-index ${{ matrix.shard_index }} --shard-count $shard_count"
           if [ -n "${{ inputs.test_image }}" ]; then
             args="$args --test-image ${{ inputs.test_image }}"
           else
             args="$args --official-images"
           fi
-          args="$args --run-tests --out benchmark/results/verified-${{ inputs.shard_index }}"
+          args="$args --run-tests --out benchmark/results/shard-${{ matrix.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
         if: ${{ always() && env.HAS_OPENCODE_AUTH == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: swebench-verified-shard-${{ inputs.shard_index }}
-          path: benchmark/results/verified-${{ inputs.shard_index }}/
-          if-no-files-found: error
+          name: swebench-shard-${{ matrix.shard_index }}
+          path: benchmark/results/shard-${{ matrix.shard_index }}/
+          if-no-files-found: warn
+
+  summary:
+    needs: swebench
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: swebench-shard-*
+          path: benchmark/results/
+          merge-multiple: true
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Generate summary
+        run: python benchmark/summarize_results.py --results-dir benchmark/results/ --output summary.md
+      - name: Write GitHub Actions summary
+        run: cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: swebench-summary
+          path: summary.md
+          if-no-files-found: warn
