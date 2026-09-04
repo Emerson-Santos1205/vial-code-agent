@@ -12,7 +12,7 @@ RUN python -m pip install --no-cache-dir --prefer-binary \
 # Pre-install common dependencies by repository to avoid per-task reinstall
 RUN if [ "$REPO" = "django/django" ]; then \
       python -m pip install --no-cache-dir --prefer-binary \
-        --disable-pip-version-check pytz asgiref sqlparse; \
+        --disable-pip-version-check pytz asgiref sqlparse "backports.zoneinfo"; \
     elif [ "$REPO" = "astropy/astropy" ]; then \
       python -m pip install --no-cache-dir --prefer-binary \
         --disable-pip-version-check "pytest==7.4.4" "Cython<3" \
