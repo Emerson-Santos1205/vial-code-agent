@@ -1,0 +1,493 @@
+{
+  "benchmark": "swebench-500-shard-10",
+  "total": 1,
+  "tasks": 1,
+  "passed": 1,
+  "environment_valid": 1,
+  "environment_invalid": 0,
+  "environment_valid_rate": 1.0,
+  "agent_attempted": 1,
+  "consensus_approved": 1,
+  "patch_valid": 1,
+  "tests_passed": 1,
+  "agent_solved": 1,
+  "agent_success_rate": 1.0,
+  "candidate_attempts": 13,
+  "candidate_retries": 10,
+  "candidate_returned_patch": 3,
+  "valid_patch": 3,
+  "tests_passed_by_candidate": 3,
+  "static_evidence": 3,
+  "behavioral_evidence": 3,
+  "complete_evidence": 3,
+  "reliable_candidates": 3,
+  "both_valid": 1,
+  "agreement": 1,
+  "candidate_a_patch_valid": 1,
+  "candidate_b_patch_valid": 1,
+  "candidate_a_valid": 1,
+  "candidate_b_valid": 1,
+  "consensus_success": 1,
+  "candidate_failure_breakdown": {
+    "A": {},
+    "B": {}
+  },
+  "diagnostic_table": {
+    "no_response": {
+      "A": 0,
+      "B": 0
+    },
+    "no_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "invalid_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "patch_not_applicable": {
+      "A": 0,
+      "B": 0
+    },
+    "behavior_fail": {
+      "A": 0,
+      "B": 0
+    },
+    "valid": {
+      "A": 1,
+      "B": 1
+    }
+  },
+  "hash_parity": {
+    "tasks": 1,
+    "prompt_equal": 0,
+    "protocol_equal": 1,
+    "workspace_equal": 1,
+    "all_equal": 0,
+    "known": 1
+  },
+  "protocol_parity_tasks": 1,
+  "protocol_parity": 0,
+  "candidate_completion_rate": 0.23076923076923078,
+  "candidate_patch_validity": 1.0,
+  "candidate_behavioral_success": 1.0,
+  "swebench_evidence_rate": 1.0,
+  "candidate_behavioral_evidence_rate": 1.0,
+  "candidate_reliability_rate": 0.23076923076923078,
+  "candidate_agreement": 1.0,
+  "candidate_a_success_rate": 1.0,
+  "candidate_b_success_rate": 1.0,
+  "candidate_a_patch_validity_rate": 1.0,
+  "candidate_b_patch_validity_rate": 1.0,
+  "both_valid_rate": 1.0,
+  "consensus_success_rate": 1.0,
+  "protocol_parity_rate": 0.0,
+  "candidate_failure_results": 0,
+  "consensus_failure_results": 0,
+  "end_to_end_success": 1,
+  "end_to_end_success_rate": 1.0,
+  "resolution": {
+    "percent": 100.0,
+    "is_100_percent": true,
+    "definition": "100% is declared only when every selected instance and adapter result has passed=True."
+  },
+  "patch_applicable": 1,
+  "fail_to_pass": 1,
+  "pass_to_pass": 1,
+  "patch_failures": 0,
+  "environment_failures": 0,
+  "test_failures": 0,
+  "governance_failures": 0,
+  "baseline_checked": 1,
+  "baseline_failures": 0,
+  "failure_breakdown": {
+    "none.none": 1
+  },
+  "tokens": 25410,
+  "retries": 0,
+  "economics": {
+    "input_tokens": 65216,
+    "output_tokens": 2202,
+    "total_tokens": 67418,
+    "tokens_per_task": 67418.0,
+    "tokens_per_resolved_task": 67418.0,
+    "duration_seconds": 594.672,
+    "seconds_per_task": 594.672,
+    "seconds_per_resolved_task": 594.672,
+    "sample_size": 1,
+    "sample_size_status": "diagnostic_only"
+  },
+  "by_adapter": {
+    "vial": {
+      "metrics": {
+        "tasks": 1,
+        "environment_valid": 1,
+        "environment_valid_rate": 1.0,
+        "agent_solved": 1,
+        "agent_success_rate": 1.0,
+        "end_to_end_success_rate": 1.0,
+        "candidate_attempts": 13,
+        "candidate_retries": 10,
+        "candidate_returned_patch": 3,
+        "valid_patch": 3,
+        "tests_passed": 3,
+        "static_evidence": 3,
+        "behavioral_evidence": 3,
+        "complete_evidence": 3,
+        "reliable_candidates": 3,
+        "both_valid": 1,
+        "agreement": 1,
+        "candidate_a_patch_valid": 1,
+        "candidate_b_patch_valid": 1,
+        "candidate_a_valid": 1,
+        "candidate_b_valid": 1,
+        "consensus_success": 1,
+        "candidate_failure_breakdown": {
+          "A": {},
+          "B": {}
+        },
+        "protocol_parity_tasks": 1,
+        "protocol_parity": 0,
+        "protocol_parity_rate": 0.0,
+        "diagnostic_table": {
+          "no_response": {
+            "A": 0,
+            "B": 0
+          },
+          "no_patch": {
+            "A": 0,
+            "B": 0
+          },
+          "invalid_patch": {
+            "A": 0,
+            "B": 0
+          },
+          "patch_not_applicable": {
+            "A": 0,
+            "B": 0
+          },
+          "behavior_fail": {
+            "A": 0,
+            "B": 0
+          },
+          "valid": {
+            "A": 1,
+            "B": 1
+          }
+        },
+        "hash_parity": {
+          "tasks": 1,
+          "prompt_equal": 0,
+          "protocol_equal": 1,
+          "workspace_equal": 1,
+          "all_equal": 0,
+          "known": 1
+        },
+        "candidate_completion_rate": 0.23076923076923078,
+        "candidate_patch_validity": 1.0,
+        "candidate_behavioral_success": 1.0,
+        "swebench_evidence_rate": 1.0,
+        "candidate_behavioral_evidence_rate": 1.0,
+        "candidate_reliability_rate": 0.23076923076923078,
+        "candidate_agreement": 1.0,
+        "candidate_a_success_rate": 1.0,
+        "candidate_b_success_rate": 1.0,
+        "candidate_a_patch_validity_rate": 1.0,
+        "candidate_b_patch_validity_rate": 1.0,
+        "both_valid_rate": 1.0,
+        "consensus_success_rate": 1.0
+      },
+      "economics": {
+        "input_tokens": 65216,
+        "output_tokens": 2202,
+        "total_tokens": 67418,
+        "tokens_per_task": 67418.0,
+        "tokens_per_resolved_task": 67418.0,
+        "duration_seconds": 594.672,
+        "seconds_per_task": 594.672,
+        "seconds_per_resolved_task": 594.672,
+        "sample_size": 1,
+        "sample_size_status": "diagnostic_only"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "django__django-13195",
+      "passed": true,
+      "stage": "tests",
+      "attempts": 1,
+      "tokens": 25410,
+      "fail_to_pass": true,
+      "pass_to_pass": true,
+      "baseline": {
+        "fail_to_pass": false,
+        "pass_to_pass": true,
+        "expected": true,
+        "detail": "Strict'\\n+ Strict\")\n\nUnfortunately, tracebacks cannot be pickled, making it impossible for the\nparallel test runner to handle this exception cleanly.\n\nIn order to see the traceback, you should install tblib:\n\n    python -m pip install tblib\n\n\n\ntest_delete_cookie_samesite (responses.test_cookie.DeleteCookieTests) failed:\n\n    TypeError(\"delete_cookie() got an unexpected keyword argument\n    'samesite'\")\n\nUnfortunately, tracebacks cannot be pickled, making it impossible for the\nparallel test runner to handle this exception cleanly.\n\nIn order to see the traceback, you should install tblib:\n\n    python -m pip install tblib\n\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\ncannot pickle 'traceback' object\nException ignored in: <function Pool.__del__ at 0x7bce958cb310>\nTraceback (most recent call last):\n  File \"/usr/local/lib/python3.8/multiprocessing/pool.py\", line 265, in __del__\nResourceWarning: unclosed running multiprocessing pool <multiprocessing.pool.Pool state=RUN pool_size=12>\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 2.063s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\n\nPASS_TO_PASS:\n\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nges (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n\ntest_session_delete_on_end (sessions_tests.tests.SessionMiddlewareTests) failed:\n\n    AssertionError('\\'Set-[30 chars]Thu, 01 Jan 1970 00:00:00 GMT; Max-\n    Age=0; Path=/; SameSite=Lax\\' != \\'Set-[30 chars]Thu, 01 Jan 1970\n    00:00:00 GMT; Max-Age=0; Path=/\\'\\n- Set-Cookie: sessionid=\"\";\n    expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/;\n    SameSite=Lax\\n?\n    --------------\\n+ Set-Cookie: sessionid=\"\"; expires=Thu, 01 Jan 1970\n    00:00:00 GMT; Max-Age=0; Path=/\\n')\n\nUnfortunately, tracebacks cannot be pickled, making it impossible for the\nparallel test runner to handle this exception cleanly.\n\nIn order to see the traceback, you should install tblib:\n\n    python -m pip install tblib\n\n\n\ntest_cookie_setings (messages_tests.test_cookie.CookieTests) failed:\n\n    AssertionError(\"'' != 'Strict'\\n+ Strict\")\n\nUnfortunately, tracebacks cannot be pickled, making it impossible for the\nparallel test runner to handle this exception cleanly.\n\nIn order to see the traceback, you should install tblib:\n\n    python -m pip install tblib\n\n\n\ntest_delete_cookie_samesite (responses.test_cookie.DeleteCookieTests) failed:\n\n    TypeError(\"delete_cookie() got an unexpected keyword argument\n    'samesite'\")\n\nUnfortunately, tracebacks cannot be pickled, making it impossible for the\nparallel test runner to handle this exception cleanly.\n\nIn order to see the traceback, you should install tblib:\n\n    python -m pip install tblib\n\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\ncannot pickle 'traceback' object\nException ignored in: <function Pool.__del__ at 0x7bce958cb310>\nTraceback (most recent call last):\n  File \"/usr/local/lib/python3.8/multiprocessing/pool.py\", line 265, in __del__\nResourceWarning: unclosed running multiprocessing pool <multiprocessing.pool.Pool state=RUN pool_size=12>\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 2.063s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n"
+      },
+      "consensus": {
+        "agreed": true,
+        "agreement_ratio": 1.0,
+        "models": [
+          "openai/gpt-5.6-sol",
+          "openai/gpt-5.6-luna-fast"
+        ],
+        "responses": {
+          "openai/gpt-5.6-sol": "diff --git a/django/contrib/messages/storage/cookie.py b/django/contrib/messages/storage/cookie.py\n--- a/django/contrib/messages/storage/cookie.py\n+++ b/django/contrib/messages/storage/cookie.py\n@@ -92,7 +92,11 @@ class CookieStorage(BaseStorage):\n                 samesite=settings.SESSION_COOKIE_SAMESITE,\n             )\n         else:\n-            response.delete_cookie(self.cookie_name, domain=settings.SESSION_COOKIE_DOMAIN)\n+            response.delete_cookie(\n+                self.cookie_name,\n+                domain=settings.SESSION_COOKIE_DOMAIN,\n+                samesite=settings.SESSION_COOKIE_SAMESITE,\n+            )\n \n     def _store(self, messages, response, remove_oldest=True, *args, **kwargs):\n         \"\"\"\ndiff --git a/django/contrib/sessions/middleware.py b/django/contrib/sessions/middleware.py\n--- a/django/contrib/sessions/middleware.py\n+++ b/django/contrib/sessions/middleware.py\n@@ -42,6 +42,7 @@ class SessionMiddleware(MiddlewareMixin):\n                 settings.SESSION_COOKIE_NAME,\n                 path=settings.SESSION_COOKIE_PATH,\n                 domain=settings.SESSION_COOKIE_DOMAIN,\n+                samesite=settings.SESSION_COOKIE_SAMESITE,\n             )\n             patch_vary_headers(response, ('Cookie',))\n         else:\ndiff --git a/django/http/response.py b/django/http/response.py\n--- a/django/http/response.py\n+++ b/django/http/response.py\n@@ -210,13 +210,17 @@ class HttpResponseBase:\n         value = signing.get_cookie_signer(salt=key + salt).sign(value)\n         return self.set_cookie(key, value, **kwargs)\n \n-    def delete_cookie(self, key, path='/', domain=None):\n+    def delete_cookie(self, key, path='/', domain=None, samesite=None):\n         # Most browsers ignore the Set-Cookie header if the cookie name starts\n         # with __Host- or __Secure- and the cookie doesn't use the secure flag.\n-        secure = key.startswith(('__Secure-', '__Host-'))\n+        # Secure is also required when deleting a cookie with SameSite=None.\n+        secure = (\n+            key.startswith(('__Secure-', '__Host-')) or\n+            (samesite and samesite.lower() == 'none')\n+        )\n         self.set_cookie(\n             key, max_age=0, path=path, domain=domain, secure=secure,\n-            expires='Thu, 01 Jan 1970 00:00:00 GMT',\n+            expires='Thu, 01 Jan 1970 00:00:00 GMT', samesite=samesite,\n         )\n \n     # Common methods used by subclasses\n",
+          "openai/gpt-5.6-luna-fast": "diff --git a/django/contrib/messages/storage/cookie.py b/django/contrib/messages/storage/cookie.py\n--- a/django/contrib/messages/storage/cookie.py\n+++ b/django/contrib/messages/storage/cookie.py\n@@ -92,7 +92,11 @@ class CookieStorage(BaseStorage):\n                 samesite=settings.SESSION_COOKIE_SAMESITE,\n             )\n         else:\n-            response.delete_cookie(self.cookie_name, domain=settings.SESSION_COOKIE_DOMAIN)\n+            response.delete_cookie(\n+                self.cookie_name,\n+                domain=settings.SESSION_COOKIE_DOMAIN,\n+                samesite=settings.SESSION_COOKIE_SAMESITE,\n+            )\n \n     def _store(self, messages, response, remove_oldest=True, *args, **kwargs):\n         \"\"\"\ndiff --git a/django/contrib/sessions/middleware.py b/django/contrib/sessions/middleware.py\n--- a/django/contrib/sessions/middleware.py\n+++ b/django/contrib/sessions/middleware.py\n@@ -42,6 +42,7 @@ class SessionMiddleware(MiddlewareMixin):\n                 settings.SESSION_COOKIE_NAME,\n                 path=settings.SESSION_COOKIE_PATH,\n                 domain=settings.SESSION_COOKIE_DOMAIN,\n+                samesite=settings.SESSION_COOKIE_SAMESITE,\n             )\n             patch_vary_headers(response, ('Cookie',))\n         else:\ndiff --git a/django/http/response.py b/django/http/response.py\n--- a/django/http/response.py\n+++ b/django/http/response.py\n@@ -210,13 +210,17 @@ class HttpResponseBase:\n         value = signing.get_cookie_signer(salt=key + salt).sign(value)\n         return self.set_cookie(key, value, **kwargs)\n \n-    def delete_cookie(self, key, path='/', domain=None):\n+    def delete_cookie(self, key, path='/', domain=None, samesite=None):\n         # Most browsers ignore the Set-Cookie header if the cookie name starts\n         # with __Host- or __Secure- and the cookie doesn't use the secure flag.\n-        secure = key.startswith(('__Secure-', '__Host-'))\n+        # Secure is also required when deleting a cookie with SameSite=None.\n+        secure = (\n+            key.startswith(('__Secure-', '__Host-')) or\n+            (samesite and samesite.lower() == 'none')\n+        )\n         self.set_cookie(\n             key, max_age=0, path=path, domain=domain, secure=secure,\n-            expires='Thu, 01 Jan 1970 00:00:00 GMT',\n+            expires='Thu, 01 Jan 1970 00:00:00 GMT', samesite=samesite,\n         )\n \n     # Common methods used by subclasses\n"
+        },
+        "evidence": {
+          "openai/gpt-5.6-sol": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "..........................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 1.611s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nPASS_TO_PASS: \nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nfor alias 'default'...\n.....\n----------------------------------------------------------------------\nRan 5 tests in 0.047s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 1.611s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n"
+          },
+          "openai/gpt-5.6-luna-fast": {
+            "static_valid": true,
+            "behavioral_passed": true,
+            "detail": "..........................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 2.047s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nPASS_TO_PASS: \nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nfor alias 'default'...\n.....\n----------------------------------------------------------------------\nRan 5 tests in 0.055s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 2.047s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n"
+          },
+          "comparison": "candidates produce the same workspace result",
+          "behavioral_equivalent": true
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-terra": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-terra",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_A_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 8,
+            "retries": 7,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_A_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "input_tokens": 474,
+            "output_tokens": 1035,
+            "context_tokens": 25401,
+            "prompt_sha256": "4933a42f6afc5d87114bde718ed2b150567e113ad322c86775187639b8dd0f17",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+          },
+          "openai/gpt-5.6-sol": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.6-sol",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_B_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 4,
+            "retries": 3,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_B_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "input_tokens": 33493,
+            "output_tokens": 583,
+            "context_tokens": 25410,
+            "prompt_sha256": "a982186e6b0eacb2eaf5ca707e82f659a921deb95295136d0ea3a1b2e428f855",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+          },
+          "openai/gpt-5.6-luna-fast": {
+            "candidate_id": "ADJUDICATOR",
+            "model": "openai/gpt-5.6-luna-fast",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_ADJUDICATOR_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_ADJUDICATOR_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "input_tokens": 31249,
+            "output_tokens": 584,
+            "context_tokens": 24597,
+            "prompt_sha256": "803e3797cbae762c8cb5045ebdc008aea45b652225da0dca30f11933869b8176",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+          }
+        },
+        "status": "ADJUDICATED",
+        "result_code": "CONSENSUS_SUCCEEDED",
+        "note": "consensus from one original passing candidate and an independent passing adjudicator"
+      },
+      "candidate_outcomes": {
+        "openai/gpt-5.6-terra": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-terra",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_A_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 8,
+          "retries": 7,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_A_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "input_tokens": 474,
+          "output_tokens": 1035,
+          "context_tokens": 25401,
+          "prompt_sha256": "4933a42f6afc5d87114bde718ed2b150567e113ad322c86775187639b8dd0f17",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+        },
+        "openai/gpt-5.6-sol": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.6-sol",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_B_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 4,
+          "retries": 3,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_B_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "input_tokens": 33493,
+          "output_tokens": 583,
+          "context_tokens": 25410,
+          "prompt_sha256": "a982186e6b0eacb2eaf5ca707e82f659a921deb95295136d0ea3a1b2e428f855",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+        },
+        "openai/gpt-5.6-luna-fast": {
+          "candidate_id": "ADJUDICATOR",
+          "model": "openai/gpt-5.6-luna-fast",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_ADJUDICATOR_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_ADJUDICATOR_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "input_tokens": 31249,
+          "output_tokens": 584,
+          "context_tokens": 24597,
+          "prompt_sha256": "803e3797cbae762c8cb5045ebdc008aea45b652225da0dca30f11933869b8176",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "43a4a62d6a2b9f362b8de3fdcce1eb93c209cfa9d5bab1af3b60cd583b2e0edf"
+        }
+      },
+      "adapter": "vial",
+      "detail": "FAIL_TO_PASS:\n\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nfor alias 'default'...\n.....\n----------------------------------------------------------------------\nRan 5 tests in 0.056s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 1.412s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\n\nPASS_TO_PASS:\n\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nfor alias 'default'...\n.....\n----------------------------------------------------------------------\nRan 5 tests in 0.056s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n....................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 372 tests in 1.412s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n",
+      "environment": {
+        "repo": "django/django",
+        "base_commit": "156a2138db20abc89933121e4ff2ee2ce56a173a",
+        "python_version": "3.8",
+        "image": "vial-code-agent-swebench-python38@sha256:7332c2d51e6779e32ee4c2ebaaed0ae15ea5d1b9a42177ee20a9550f65b7a264",
+        "dependencies": [
+          "asgiref",
+          "pytz",
+          "sqlparse"
+        ],
+        "test_command": [],
+        "timeout_seconds": 900,
+        "fingerprint": "4e9de9b7b73af76fbb07f3307951d3beee94f566816b44d3afe5b4218c627b52",
+        "metadata": {
+          "base_commit": "156a2138db20abc89933121e4ff2ee2ce56a173a",
+          "catalog_key": "django/django@156a2138db20abc89933121e4ff2ee2ce56a173a",
+          "catalog_version": "2026-08-30"
+        }
+      },
+      "duration_seconds": 594.672,
+      "failure_class": "none",
+      "failure_subclass": "none",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": true,
+      "result_code": "CONSENSUS_SUCCEEDED",
+      "patch_valid": true,
+      "tests_passed": true
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-terra",
+    "adapters": [
+      "vial"
+    ],
+    "run_tests": true,
+    "offset": 2,
+    "limit": 1,
+    "shard_index": 0,
+    "shard_count": 1,
+    "selected_indices": [
+      2
+    ],
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.6-sol",
+    "adjudicator_model": "openai/gpt-5.6-luna-fast"
+  }
+}
