@@ -437,7 +437,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertIn("pytest-astropy==0.9.0", spec.dependencies)
         self.assertIn("pytest-astropy-header==0.1.2", spec.dependencies)
 
-    def test_prepared_image_does_not_reinstall_dependencies(self) -> None:
+    def test_prepared_image_installs_declared_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "astropy").mkdir()
@@ -457,7 +457,8 @@ class BenchmarkMetricTests(unittest.TestCase):
                 _run_test_groups(root, [], [], {},
                                  "vial-code-agent-swebench-python39:local@sha256:abc",
                                  ("pytest==7.4.4",), (), 30)
-            self.assertNotIn("pip install", captured["script"])
+            self.assertIn("python -m pip install pytest==7.4.4", captured["script"])
+            self.assertNotIn("pip install -e", captured["script"])
 
     def test_configured_pytest_command_is_scoped_to_each_test_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -589,8 +590,8 @@ class BenchmarkMetricTests(unittest.TestCase):
             candidate = _generate_validated_candidate(
                 "A", "a/model", "prompt", Path("."), [], set(), Mock())
 
-        self.assertEqual(candidate.outcome.attempts, 6)
-        self.assertEqual(candidate.outcome.retries, 5)
+        self.assertEqual(candidate.outcome.attempts, 9)
+        self.assertEqual(candidate.outcome.retries, 8)
 
     def test_one_valid_candidate_is_insufficient_not_consensus_failed(self) -> None:
         invalid = CandidateResult(

@@ -220,7 +220,7 @@ def sync_core_submodule(root: Path, *, update: bool = False) -> SubmoduleReport:
         drift = check_submodule_drift(root, "vendor/vial-core")
 
     if not drift["synced"] and drift["remote_sha"]:
-        lag = f" ({drift['lag_count']} commits behind)" if drift["lag_count"] > 0 else ""
+        lag = f" ({drift['lag_count']} commits behind)" if int(drift["lag_count"]) > 0 else ""
         issues.append(f"submodule vendor/vial-core is out of sync with remote{lag}")
 
     return SubmoduleReport(

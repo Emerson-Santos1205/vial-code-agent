@@ -144,3 +144,57 @@ class PatchTests(unittest.TestCase):
             self.assertIsNotNone(repaired)
             PatchApplier(root).apply(repaired or "")
             self.assertEqual(source.read_text(encoding="utf-8"), "ONE\ntwo\nthree\nFOUR\n")
+
+    def test_validate_rejects_patch_outside_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "allowed.py").write_text("x = 1\n", encoding="utf-8")
+            patch = """--- a/allowed.py
++++ b/allowed.py
+@@ -1 +1 @@
+-x = 1
++x = 2
+"""
+            PatchApplier(root).validate(patch, allowed_paths={"allowed.py"})
+
+    def test_validate_rejects_unlisted_file_with_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ok.py").write_text("x = 1\n", encoding="utf-8")
+            (root / "unlisted.py").write_text("old\n", encoding="utf-8")
+            patch = """--- a/ok.py
++++ b/ok.py
+@@ -1 +1 @@
+-x = 1
++x = 2
+--- a/unlisted.py
++++ b/unlisted.py
+@@ -1 +1 @@
+-old
++new
+"""
+            with self.assertRaisesRegex(PatchError, "outside selected context"):
+                PatchApplier(root).validate(patch, allowed_paths={"ok.py"})
+
+    def test_validate_accepts_new_file_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            patch = """--- /dev/null
++++ b/new_file.py
+@@ -0 +1 @@
++content
+"""
+            PatchApplier(root).validate(patch, allowed_paths={"new_file.py"})
+
+    def test_validate_accepts_existing_file_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "existing.py").write_text("old\n", encoding="utf-8")
+            patch = """--- a/existing.py
++++ b/existing.py
+@@ -1 +1 @@
+-old
++new
+"""
+            PatchApplier(root).validate(
+                patch, allowed_paths={"existing.py", "other.py"})

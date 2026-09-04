@@ -58,6 +58,11 @@ class EnvironmentResolver:
             "pytest==7.4.4", "Cython<3", "pytest-astropy==0.9.0",
             "pytest-astropy-header==0.1.2",
         ),
+        "django/django": (
+            "pytz",
+            "asgiref",
+            "sqlparse",
+        ),
     }
 
     @staticmethod
