@@ -1,0 +1,477 @@
+{
+  "benchmark": "swebench-500-shard-9",
+  "total": 1,
+  "tasks": 1,
+  "passed": 0,
+  "environment_valid": 1,
+  "environment_invalid": 0,
+  "environment_valid_rate": 1.0,
+  "agent_attempted": 1,
+  "consensus_approved": 0,
+  "patch_valid": 0,
+  "tests_passed": 0,
+  "agent_solved": 0,
+  "agent_success_rate": 0.0,
+  "candidate_attempts": 18,
+  "candidate_retries": 15,
+  "candidate_returned_patch": 4,
+  "valid_patch": 2,
+  "tests_passed_by_candidate": 1,
+  "static_evidence": 3,
+  "behavioral_evidence": 2,
+  "complete_evidence": 2,
+  "reliable_candidates": 1,
+  "both_valid": 0,
+  "agreement": 0,
+  "candidate_a_patch_valid": 1,
+  "candidate_b_patch_valid": 1,
+  "candidate_a_valid": 0,
+  "candidate_b_valid": 1,
+  "consensus_success": 0,
+  "candidate_failure_breakdown": {
+    "A": {
+      "behavioral_failure": 1
+    },
+    "B": {}
+  },
+  "diagnostic_table": {
+    "no_response": {
+      "A": 0,
+      "B": 0
+    },
+    "no_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "invalid_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "patch_not_applicable": {
+      "A": 0,
+      "B": 0
+    },
+    "behavior_fail": {
+      "A": 1,
+      "B": 0
+    },
+    "valid": {
+      "A": 0,
+      "B": 1
+    }
+  },
+  "hash_parity": {
+    "tasks": 1,
+    "prompt_equal": 1,
+    "protocol_equal": 1,
+    "workspace_equal": 1,
+    "all_equal": 1,
+    "known": 1
+  },
+  "protocol_parity_tasks": 1,
+  "protocol_parity": 1,
+  "candidate_completion_rate": 0.2222222222222222,
+  "candidate_patch_validity": 0.5,
+  "candidate_behavioral_success": 0.5,
+  "swebench_evidence_rate": 0.6666666666666666,
+  "candidate_behavioral_evidence_rate": 1.0,
+  "candidate_reliability_rate": 0.05555555555555555,
+  "candidate_agreement": 0.0,
+  "candidate_a_success_rate": 0.0,
+  "candidate_b_success_rate": 1.0,
+  "candidate_a_patch_validity_rate": 1.0,
+  "candidate_b_patch_validity_rate": 1.0,
+  "both_valid_rate": 0.0,
+  "consensus_success_rate": 0.0,
+  "protocol_parity_rate": 1.0,
+  "candidate_failure_results": 2,
+  "consensus_failure_results": 0,
+  "end_to_end_success": 0,
+  "end_to_end_success_rate": 0.0,
+  "resolution": {
+    "percent": 0.0,
+    "is_100_percent": false,
+    "definition": "100% is declared only when every selected instance and adapter result has passed=True."
+  },
+  "patch_applicable": 0,
+  "fail_to_pass": 0,
+  "pass_to_pass": 0,
+  "patch_failures": 0,
+  "environment_failures": 0,
+  "test_failures": 0,
+  "governance_failures": 0,
+  "baseline_checked": 0,
+  "baseline_failures": 0,
+  "failure_breakdown": {
+    "candidate.candidate_set_insufficient": 1
+  },
+  "tokens": 0,
+  "retries": 0,
+  "economics": {
+    "input_tokens": 109026,
+    "output_tokens": 1921,
+    "total_tokens": 110947,
+    "tokens_per_task": 110947.0,
+    "tokens_per_resolved_task": 0.0,
+    "duration_seconds": 1484.516,
+    "seconds_per_task": 1484.516,
+    "seconds_per_resolved_task": 0.0,
+    "sample_size": 1,
+    "sample_size_status": "diagnostic_only"
+  },
+  "by_adapter": {
+    "vial": {
+      "metrics": {
+        "tasks": 1,
+        "environment_valid": 1,
+        "environment_valid_rate": 1.0,
+        "agent_solved": 0,
+        "agent_success_rate": 0.0,
+        "end_to_end_success_rate": 0.0,
+        "candidate_attempts": 18,
+        "candidate_retries": 15,
+        "candidate_returned_patch": 4,
+        "valid_patch": 2,
+        "tests_passed": 1,
+        "static_evidence": 3,
+        "behavioral_evidence": 2,
+        "complete_evidence": 2,
+        "reliable_candidates": 1,
+        "both_valid": 0,
+        "agreement": 0,
+        "candidate_a_patch_valid": 1,
+        "candidate_b_patch_valid": 1,
+        "candidate_a_valid": 0,
+        "candidate_b_valid": 1,
+        "consensus_success": 0,
+        "candidate_failure_breakdown": {
+          "A": {
+            "behavioral_failure": 1
+          },
+          "B": {}
+        },
+        "protocol_parity_tasks": 1,
+        "protocol_parity": 1,
+        "protocol_parity_rate": 1.0,
+        "diagnostic_table": {
+          "no_response": {
+            "A": 0,
+            "B": 0
+          },
+          "no_patch": {
+            "A": 0,
+            "B": 0
+          },
+          "invalid_patch": {
+            "A": 0,
+            "B": 0
+          },
+          "patch_not_applicable": {
+            "A": 0,
+            "B": 0
+          },
+          "behavior_fail": {
+            "A": 1,
+            "B": 0
+          },
+          "valid": {
+            "A": 0,
+            "B": 1
+          }
+        },
+        "hash_parity": {
+          "tasks": 1,
+          "prompt_equal": 1,
+          "protocol_equal": 1,
+          "workspace_equal": 1,
+          "all_equal": 1,
+          "known": 1
+        },
+        "candidate_completion_rate": 0.2222222222222222,
+        "candidate_patch_validity": 0.5,
+        "candidate_behavioral_success": 0.5,
+        "swebench_evidence_rate": 0.6666666666666666,
+        "candidate_behavioral_evidence_rate": 1.0,
+        "candidate_reliability_rate": 0.05555555555555555,
+        "candidate_agreement": 0.0,
+        "candidate_a_success_rate": 0.0,
+        "candidate_b_success_rate": 1.0,
+        "candidate_a_patch_validity_rate": 1.0,
+        "candidate_b_patch_validity_rate": 1.0,
+        "both_valid_rate": 0.0,
+        "consensus_success_rate": 0.0
+      },
+      "economics": {
+        "input_tokens": 109026,
+        "output_tokens": 1921,
+        "total_tokens": 110947,
+        "tokens_per_task": 110947.0,
+        "tokens_per_resolved_task": 0.0,
+        "duration_seconds": 1484.516,
+        "seconds_per_task": 1484.516,
+        "seconds_per_resolved_task": 0.0,
+        "sample_size": 1,
+        "sample_size_status": "diagnostic_only"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "django__django-13121",
+      "passed": false,
+      "stage": "governance",
+      "consensus": {
+        "agreed": false,
+        "agreement_ratio": 0.0,
+        "models": [
+          "openai/gpt-5.6-sol",
+          "openai/gpt-5.6-luna"
+        ],
+        "responses": {},
+        "evidence": {
+          "qualified_candidates": [
+            "openai/gpt-5.6-sol"
+          ],
+          "diagnostics": {
+            "openai/gpt-5.6-sol": "",
+            "openai/gpt-5.6-luna": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: "
+          }
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-terra": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-terra",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "FAIL",
+              "result": "CANDIDATE_A_FAILED"
+            },
+            "returned_patch": true,
+            "patch_returns": 3,
+            "attempts": 8,
+            "retries": 7,
+            "patch_valid": true,
+            "tests_passed": false,
+            "result_code": "CANDIDATE_A_FAILED",
+            "failure_detail": "ning test database for alias 'default'...\n........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 168 tests in 0.321s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nPASS_TO_PASS: \nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\n(results):\n  File \"/workspace/django/db/models/sql/compiler.py\", line 1105, in apply_converters\n    value = converter(value, expression, connection)\n  File \"/workspace/django/db/backends/base/operations.py\", line 583, in convert_durationfield_value\n    return datetime.timedelta(0, 0, value)\nTypeError: unsupported type for timedelta microseconds component: str\n\n----------------------------------------------------------------------\nRan 1 test in 0.046s\n\nFAILED (errors=1)\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 168 tests in 0.321s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nBEHAVIORAL RETRY CONTRACT: PATCH_CONTRACT: \nBEHAVIORAL RETRY CONTRACT: PATCH_CONTRACT: ",
+            "response_received": true,
+            "input_tokens": 106938,
+            "output_tokens": 500,
+            "context_tokens": 55639,
+            "prompt_sha256": "1e72fd99640c9c95077d630ad9ebc8d6c38d4cdf554a2e0b5b884be11d312077",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d"
+          },
+          "openai/gpt-5.6-sol": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.6-sol",
+            "pipeline": {
+              "patch": "PASS",
+              "static": "PASS",
+              "behavioral": "PASS",
+              "result": "CANDIDATE_B_SUCCEEDED"
+            },
+            "returned_patch": true,
+            "patch_returns": 1,
+            "attempts": 1,
+            "retries": 0,
+            "patch_valid": true,
+            "tests_passed": true,
+            "result_code": "CANDIDATE_B_SUCCEEDED",
+            "failure_detail": "",
+            "response_received": true,
+            "input_tokens": 2088,
+            "output_tokens": 1421,
+            "context_tokens": 55639,
+            "prompt_sha256": "1e72fd99640c9c95077d630ad9ebc8d6c38d4cdf554a2e0b5b884be11d312077",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d"
+          },
+          "openai/gpt-5.6-luna": {
+            "candidate_id": "ADJUDICATOR",
+            "model": "openai/gpt-5.6-luna",
+            "pipeline": {
+              "patch": "FAIL",
+              "static": "FAIL",
+              "behavioral": "NOT_RUN",
+              "result": "CANDIDATE_ADJUDICATOR_FAILED"
+            },
+            "returned_patch": false,
+            "patch_returns": 0,
+            "attempts": 9,
+            "retries": 8,
+            "patch_valid": false,
+            "tests_passed": null,
+            "result_code": "CANDIDATE_ADJUDICATOR_FAILED",
+            "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ",
+            "context_tokens": 54324,
+            "provider_stderr": "The usage limit has been reached",
+            "prompt_sha256": "4a7577e2e6434872496b5f0d0fa3b71cda044f4e5e5f1a8c9cf4f56c1828318d",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d",
+            "failure_stage": "provider"
+          }
+        },
+        "status": "INSUFFICIENT_CANDIDATES",
+        "result_code": "CANDIDATE_SET_INSUFFICIENT",
+        "note": "fewer than two candidates have complete passing evidence"
+      },
+      "result_code": "CANDIDATE_SET_INSUFFICIENT",
+      "candidate_outcomes": {
+        "openai/gpt-5.6-terra": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-terra",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "FAIL",
+            "result": "CANDIDATE_A_FAILED"
+          },
+          "returned_patch": true,
+          "patch_returns": 3,
+          "attempts": 8,
+          "retries": 7,
+          "patch_valid": true,
+          "tests_passed": false,
+          "result_code": "CANDIDATE_A_FAILED",
+          "failure_detail": "ning test database for alias 'default'...\n........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 168 tests in 0.321s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nPASS_TO_PASS: \nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\n(results):\n  File \"/workspace/django/db/models/sql/compiler.py\", line 1105, in apply_converters\n    value = converter(value, expression, connection)\n  File \"/workspace/django/db/backends/base/operations.py\", line 583, in convert_durationfield_value\n    return datetime.timedelta(0, 0, value)\nTypeError: unsupported type for timedelta microseconds component: str\n\n----------------------------------------------------------------------\nRan 1 test in 0.046s\n\nFAILED (errors=1)\nDestroying test database for alias 'default'...\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\n........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 168 tests in 0.321s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\n\nBEHAVIORAL RETRY CONTRACT: PATCH_CONTRACT: \nBEHAVIORAL RETRY CONTRACT: PATCH_CONTRACT: ",
+          "response_received": true,
+          "input_tokens": 106938,
+          "output_tokens": 500,
+          "context_tokens": 55639,
+          "prompt_sha256": "1e72fd99640c9c95077d630ad9ebc8d6c38d4cdf554a2e0b5b884be11d312077",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d"
+        },
+        "openai/gpt-5.6-sol": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.6-sol",
+          "pipeline": {
+            "patch": "PASS",
+            "static": "PASS",
+            "behavioral": "PASS",
+            "result": "CANDIDATE_B_SUCCEEDED"
+          },
+          "returned_patch": true,
+          "patch_returns": 1,
+          "attempts": 1,
+          "retries": 0,
+          "patch_valid": true,
+          "tests_passed": true,
+          "result_code": "CANDIDATE_B_SUCCEEDED",
+          "failure_detail": "",
+          "response_received": true,
+          "input_tokens": 2088,
+          "output_tokens": 1421,
+          "context_tokens": 55639,
+          "prompt_sha256": "1e72fd99640c9c95077d630ad9ebc8d6c38d4cdf554a2e0b5b884be11d312077",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d"
+        },
+        "openai/gpt-5.6-luna": {
+          "candidate_id": "ADJUDICATOR",
+          "model": "openai/gpt-5.6-luna",
+          "pipeline": {
+            "patch": "FAIL",
+            "static": "FAIL",
+            "behavioral": "NOT_RUN",
+            "result": "CANDIDATE_ADJUDICATOR_FAILED"
+          },
+          "returned_patch": false,
+          "patch_returns": 0,
+          "attempts": 9,
+          "retries": 8,
+          "patch_valid": false,
+          "tests_passed": null,
+          "result_code": "CANDIDATE_ADJUDICATOR_FAILED",
+          "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ",
+          "context_tokens": 54324,
+          "provider_stderr": "The usage limit has been reached",
+          "prompt_sha256": "4a7577e2e6434872496b5f0d0fa3b71cda044f4e5e5f1a8c9cf4f56c1828318d",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "ca14d685b51741e7ffc097a2d0082361b36cf884b473c03031f1703144990b8d",
+          "failure_stage": "provider"
+        }
+      },
+      "detail": "fewer than two candidates have complete passing evidence",
+      "adapter": "vial",
+      "environment": {
+        "repo": "django/django",
+        "base_commit": "ec5aa2161d8015a3fe57dcbbfe14200cd18f0a16",
+        "python_version": "3.8",
+        "image": "vial-code-agent-swebench-python38@sha256:7332c2d51e6779e32ee4c2ebaaed0ae15ea5d1b9a42177ee20a9550f65b7a264",
+        "dependencies": [
+          "asgiref",
+          "pytz",
+          "sqlparse"
+        ],
+        "test_command": [],
+        "timeout_seconds": 900,
+        "fingerprint": "a65a339b42f70a25e37bc5890a1c2725de80ebd63796a48e961a7c356db28fbc",
+        "metadata": {
+          "base_commit": "ec5aa2161d8015a3fe57dcbbfe14200cd18f0a16",
+          "catalog_key": "django/django@ec5aa2161d8015a3fe57dcbbfe14200cd18f0a16",
+          "catalog_version": "2026-08-30"
+        }
+      },
+      "duration_seconds": 1484.516,
+      "failure_class": "candidate",
+      "failure_subclass": "candidate_set_insufficient",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": false,
+      "patch_valid": false,
+      "tests_passed": false
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-terra",
+    "adapters": [
+      "vial"
+    ],
+    "run_tests": true,
+    "offset": 9,
+    "limit": 1,
+    "shard_index": 0,
+    "shard_count": 1,
+    "selected_indices": [
+      9
+    ],
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.6-sol",
+    "adjudicator_model": "openai/gpt-5.6-luna"
+  }
+}
