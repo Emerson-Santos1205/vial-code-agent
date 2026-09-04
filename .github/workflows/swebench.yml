@@ -127,14 +127,39 @@ jobs:
           from benchmark.swebench_environment import EnvironmentResolver
           workload = json.load(open("benchmark/swebench-ci-workload.json", encoding="utf-8"))
           resolver = EnvironmentResolver()
+          repos = sorted(set(task.get("repo", "") for task in workload["tasks"]))
           images = sorted({resolver.resolve(task, official_images=True).image for task in workload["tasks"]})
           with open("/tmp/swebench-images.txt", "w", encoding="utf-8") as stream:
               stream.write("\n".join(images) + "\n")
+          with open("/tmp/swebench-repos.txt", "w", encoding="utf-8") as stream:
+              stream.write("\n".join(repos) + "\n")
           PY
           while IFS= read -r image; do
             test -n "$image"
             docker pull "$image"
           done < /tmp/swebench-images.txt
+      - name: Build prebuilt images with cached dependencies
+        if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image == '' }}
+        run: |
+          while IFS= read -r repo; do
+            test -n "$repo" || continue
+            tag="vial-swebench-prebuilt-$(echo "$repo" | tr '/' '-'):latest"
+            docker image inspect "$tag" >/dev/null 2>&1 && continue
+            python_version=$(python -c "
+          import json
+          from benchmark.swebench_environment import EnvironmentResolver
+          r = EnvironmentResolver()
+          tasks = json.load(open('benchmark/swebench-ci-workload.json'))['tasks']
+          for t in tasks:
+              if t.get('repo') == '$repo':
+                  print(r.resolve(t).python_version)
+                  break
+          ")
+            docker build \
+              --build-arg REPO="$repo" \
+              -f docker/swebench-django-test.Dockerfile \
+              -t "$tag" . || true
+          done < /tmp/swebench-repos.txt
       - name: Build test image override
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image != '' }}
         env:
