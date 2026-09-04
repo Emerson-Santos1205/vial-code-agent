@@ -1,0 +1,429 @@
+{
+  "benchmark": "swebench-500-shard-19",
+  "total": 1,
+  "tasks": 1,
+  "passed": 0,
+  "environment_valid": 1,
+  "environment_invalid": 0,
+  "environment_valid_rate": 1.0,
+  "agent_attempted": 1,
+  "consensus_approved": 0,
+  "patch_valid": 0,
+  "tests_passed": 0,
+  "agent_solved": 0,
+  "agent_success_rate": 0.0,
+  "repeat_count": 1,
+  "unstable_tasks": 0,
+  "stable_tasks": 0,
+  "candidate_attempts": 18,
+  "candidate_retries": 16,
+  "candidate_returned_patch": 0,
+  "valid_patch": 0,
+  "tests_passed_by_candidate": 0,
+  "static_evidence": 2,
+  "behavioral_evidence": 0,
+  "complete_evidence": 0,
+  "reliable_candidates": 0,
+  "both_valid": 0,
+  "agreement": 0,
+  "candidate_a_patch_valid": 0,
+  "candidate_b_patch_valid": 0,
+  "candidate_a_valid": 0,
+  "candidate_b_valid": 0,
+  "consensus_success": 0,
+  "candidate_failure_breakdown": {
+    "A": {
+      "no_patch": 1
+    },
+    "B": {
+      "no_patch": 1
+    }
+  },
+  "diagnostic_table": {
+    "no_response": {
+      "A": 0,
+      "B": 0
+    },
+    "no_patch": {
+      "A": 1,
+      "B": 1
+    },
+    "invalid_patch": {
+      "A": 0,
+      "B": 0
+    },
+    "patch_not_applicable": {
+      "A": 0,
+      "B": 0
+    },
+    "behavior_fail": {
+      "A": 0,
+      "B": 0
+    },
+    "valid": {
+      "A": 0,
+      "B": 0
+    }
+  },
+  "hash_parity": {
+    "tasks": 1,
+    "prompt_equal": 1,
+    "protocol_equal": 1,
+    "workspace_equal": 1,
+    "all_equal": 1,
+    "known": 1
+  },
+  "protocol_parity_tasks": 1,
+  "protocol_parity": 1,
+  "candidate_completion_rate": 0.0,
+  "candidate_patch_validity": 0.0,
+  "candidate_behavioral_success": 0.0,
+  "swebench_evidence_rate": 0.0,
+  "candidate_behavioral_evidence_rate": 0.0,
+  "candidate_reliability_rate": 0.0,
+  "candidate_agreement": 0.0,
+  "candidate_a_success_rate": 0.0,
+  "candidate_b_success_rate": 0.0,
+  "candidate_a_patch_validity_rate": 0.0,
+  "candidate_b_patch_validity_rate": 0.0,
+  "both_valid_rate": 0.0,
+  "consensus_success_rate": 0.0,
+  "protocol_parity_rate": 1.0,
+  "candidate_failure_results": 2,
+  "consensus_failure_results": 0,
+  "end_to_end_success": 0,
+  "end_to_end_success_rate": 0.0,
+  "resolution": {
+    "percent": 0.0,
+    "is_100_percent": false,
+    "definition": "100% is declared only when every selected instance and adapter result has passed=True."
+  },
+  "patch_applicable": 0,
+  "fail_to_pass": 0,
+  "pass_to_pass": 0,
+  "patch_failures": 0,
+  "environment_failures": 0,
+  "test_failures": 0,
+  "governance_failures": 0,
+  "baseline_checked": 0,
+  "baseline_failures": 0,
+  "failure_breakdown": {
+    "candidate.candidate_set_insufficient": 1
+  },
+  "tokens": 0,
+  "retries": 0,
+  "economics": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "tokens_per_task": 0.0,
+    "tokens_per_resolved_task": 0.0,
+    "duration_seconds": 67.829,
+    "seconds_per_task": 67.829,
+    "seconds_per_resolved_task": 0.0,
+    "sample_size": 1,
+    "sample_size_status": "diagnostic_only"
+  },
+  "by_adapter": {
+    "vial": {
+      "metrics": {
+        "tasks": 1,
+        "environment_valid": 1,
+        "environment_valid_rate": 1.0,
+        "agent_solved": 0,
+        "agent_success_rate": 0.0,
+        "end_to_end_success_rate": 0.0,
+        "candidate_attempts": 18,
+        "candidate_retries": 16,
+        "candidate_returned_patch": 0,
+        "valid_patch": 0,
+        "tests_passed": 0,
+        "static_evidence": 2,
+        "behavioral_evidence": 0,
+        "complete_evidence": 0,
+        "reliable_candidates": 0,
+        "both_valid": 0,
+        "agreement": 0,
+        "candidate_a_patch_valid": 0,
+        "candidate_b_patch_valid": 0,
+        "candidate_a_valid": 0,
+        "candidate_b_valid": 0,
+        "consensus_success": 0,
+        "candidate_failure_breakdown": {
+          "A": {
+            "no_patch": 1
+          },
+          "B": {
+            "no_patch": 1
+          }
+        },
+        "protocol_parity_tasks": 1,
+        "protocol_parity": 1,
+        "protocol_parity_rate": 1.0,
+        "diagnostic_table": {
+          "no_response": {
+            "A": 0,
+            "B": 0
+          },
+          "no_patch": {
+            "A": 1,
+            "B": 1
+          },
+          "invalid_patch": {
+            "A": 0,
+            "B": 0
+          },
+          "patch_not_applicable": {
+            "A": 0,
+            "B": 0
+          },
+          "behavior_fail": {
+            "A": 0,
+            "B": 0
+          },
+          "valid": {
+            "A": 0,
+            "B": 0
+          }
+        },
+        "hash_parity": {
+          "tasks": 1,
+          "prompt_equal": 1,
+          "protocol_equal": 1,
+          "workspace_equal": 1,
+          "all_equal": 1,
+          "known": 1
+        },
+        "candidate_completion_rate": 0.0,
+        "candidate_patch_validity": 0.0,
+        "candidate_behavioral_success": 0.0,
+        "swebench_evidence_rate": 0.0,
+        "candidate_behavioral_evidence_rate": 0.0,
+        "candidate_reliability_rate": 0.0,
+        "candidate_agreement": 0.0,
+        "candidate_a_success_rate": 0.0,
+        "candidate_b_success_rate": 0.0,
+        "candidate_a_patch_validity_rate": 0.0,
+        "candidate_b_patch_validity_rate": 0.0,
+        "both_valid_rate": 0.0,
+        "consensus_success_rate": 0.0
+      },
+      "economics": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "tokens_per_task": 0.0,
+        "tokens_per_resolved_task": 0.0,
+        "duration_seconds": 67.829,
+        "seconds_per_task": 67.829,
+        "seconds_per_resolved_task": 0.0,
+        "sample_size": 1,
+        "sample_size_status": "diagnostic_only"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "django__django-15554",
+      "passed": false,
+      "stage": "governance",
+      "consensus": {
+        "agreed": false,
+        "agreement_ratio": 0.0,
+        "models": [
+          "openai/gpt-5.6-terra",
+          "openai/gpt-5.6-sol"
+        ],
+        "responses": {},
+        "evidence": {
+          "qualified_candidates": [],
+          "diagnostics": {
+            "openai/gpt-5.6-terra": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'",
+            "openai/gpt-5.6-sol": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'"
+          },
+          "environment_comparison": {
+            "identical_workspace_shas": true,
+            "failure_signatures": {
+              "openai/gpt-5.6-terra": "patch_contract",
+              "openai/gpt-5.6-sol": "patch_contract"
+            },
+            "identical_failures": true,
+            "note": "both candidates hit the same infrastructure failure"
+          }
+        },
+        "candidate_outcomes": {
+          "openai/gpt-5.6-terra": {
+            "candidate_id": "A",
+            "model": "openai/gpt-5.6-terra",
+            "pipeline": {
+              "patch": "FAIL",
+              "static": "FAIL",
+              "behavioral": "NOT_RUN",
+              "result": "CANDIDATE_A_FAILED"
+            },
+            "returned_patch": false,
+            "patch_returns": 0,
+            "attempts": 9,
+            "retries": 8,
+            "patch_valid": false,
+            "tests_passed": null,
+            "result_code": "CANDIDATE_A_FAILED",
+            "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'",
+            "context_tokens": 34570,
+            "provider_stderr": "Unable to find image 'vial-code-agent-opencode:1.18.18' locally\ndocker: Error response from daemon: pull access denied for vial-code-agent-opencode, repository does not exist or may require 'docker login'\n\nRun 'docker run --help' for more information",
+            "prompt_sha256": "e0a6938fd35bdef46ed48438747dae3ce37229b4559045b32d32253f2768cbd9",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "5ffbfe9da98ab406c619eacb50c91350d34fb0acfc50dc1e56739072756b84c4",
+            "failure_stage": "provider"
+          },
+          "openai/gpt-5.6-sol": {
+            "candidate_id": "B",
+            "model": "openai/gpt-5.6-sol",
+            "pipeline": {
+              "patch": "FAIL",
+              "static": "FAIL",
+              "behavioral": "NOT_RUN",
+              "result": "CANDIDATE_B_FAILED"
+            },
+            "returned_patch": false,
+            "patch_returns": 0,
+            "attempts": 9,
+            "retries": 8,
+            "patch_valid": false,
+            "tests_passed": null,
+            "result_code": "CANDIDATE_B_FAILED",
+            "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'",
+            "context_tokens": 34570,
+            "provider_stderr": "Unable to find image 'vial-code-agent-opencode:1.18.18' locally\ndocker: Error response from daemon: pull access denied for vial-code-agent-opencode, repository does not exist or may require 'docker login'\n\nRun 'docker run --help' for more information",
+            "prompt_sha256": "e0a6938fd35bdef46ed48438747dae3ce37229b4559045b32d32253f2768cbd9",
+            "protocol": {
+              "output": "unified_diff",
+              "validation": "static_then_behavioral",
+              "tests": "same_instance_fail_to_pass_pass_to_pass"
+            },
+            "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+            "workspace_sha256": "5ffbfe9da98ab406c619eacb50c91350d34fb0acfc50dc1e56739072756b84c4",
+            "failure_stage": "provider"
+          }
+        },
+        "status": "INSUFFICIENT_CANDIDATES",
+        "result_code": "CANDIDATE_SET_INSUFFICIENT",
+        "note": "fewer than two candidates have complete passing evidence"
+      },
+      "result_code": "CANDIDATE_SET_INSUFFICIENT",
+      "candidate_outcomes": {
+        "openai/gpt-5.6-terra": {
+          "candidate_id": "A",
+          "model": "openai/gpt-5.6-terra",
+          "pipeline": {
+            "patch": "FAIL",
+            "static": "FAIL",
+            "behavioral": "NOT_RUN",
+            "result": "CANDIDATE_A_FAILED"
+          },
+          "returned_patch": false,
+          "patch_returns": 0,
+          "attempts": 9,
+          "retries": 8,
+          "patch_valid": false,
+          "tests_passed": null,
+          "result_code": "CANDIDATE_A_FAILED",
+          "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'",
+          "context_tokens": 34570,
+          "provider_stderr": "Unable to find image 'vial-code-agent-opencode:1.18.18' locally\ndocker: Error response from daemon: pull access denied for vial-code-agent-opencode, repository does not exist or may require 'docker login'\n\nRun 'docker run --help' for more information",
+          "prompt_sha256": "e0a6938fd35bdef46ed48438747dae3ce37229b4559045b32d32253f2768cbd9",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "5ffbfe9da98ab406c619eacb50c91350d34fb0acfc50dc1e56739072756b84c4",
+          "failure_stage": "provider"
+        },
+        "openai/gpt-5.6-sol": {
+          "candidate_id": "B",
+          "model": "openai/gpt-5.6-sol",
+          "pipeline": {
+            "patch": "FAIL",
+            "static": "FAIL",
+            "behavioral": "NOT_RUN",
+            "result": "CANDIDATE_B_FAILED"
+          },
+          "returned_patch": false,
+          "patch_returns": 0,
+          "attempts": 9,
+          "retries": 8,
+          "patch_valid": false,
+          "tests_passed": null,
+          "result_code": "CANDIDATE_B_FAILED",
+          "failure_detail": "PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: PATCH_CONTRACT: ; corrective attempt: circuit-breaker: 2 consecutive failures with signature 'patch_contract'",
+          "context_tokens": 34570,
+          "provider_stderr": "Unable to find image 'vial-code-agent-opencode:1.18.18' locally\ndocker: Error response from daemon: pull access denied for vial-code-agent-opencode, repository does not exist or may require 'docker login'\n\nRun 'docker run --help' for more information",
+          "prompt_sha256": "e0a6938fd35bdef46ed48438747dae3ce37229b4559045b32d32253f2768cbd9",
+          "protocol": {
+            "output": "unified_diff",
+            "validation": "static_then_behavioral",
+            "tests": "same_instance_fail_to_pass_pass_to_pass"
+          },
+          "protocol_sha256": "70ca4af53cc623a3c06e58f7e5cf59b65631d3ff2b0b7c40c67b376a97a0a107",
+          "workspace_sha256": "5ffbfe9da98ab406c619eacb50c91350d34fb0acfc50dc1e56739072756b84c4",
+          "failure_stage": "provider"
+        }
+      },
+      "detail": "fewer than two candidates have complete passing evidence",
+      "adapter": "vial",
+      "environment": {
+        "repo": "django/django",
+        "base_commit": "59ab3fd0e9e606d7f0f7ca26609c06ee679ece97",
+        "python_version": "3.8",
+        "image": "vial-code-agent-swebench-python38@sha256:9c5a72e016469c52bffbcefabbea0be254e3d50e448c22d1a81afaf57ea933a0",
+        "dependencies": [
+          "asgiref",
+          "pytz",
+          "sqlparse"
+        ],
+        "test_command": [],
+        "timeout_seconds": 900,
+        "fingerprint": "19f6f1c21045851fa5726041c54a451dabfcfddf63ec3f4fea75f0056d69ade2",
+        "metadata": {
+          "base_commit": "59ab3fd0e9e606d7f0f7ca26609c06ee679ece97",
+          "catalog_key": "django/django@59ab3fd0e9e606d7f0f7ca26609c06ee679ece97",
+          "catalog_version": "2026-08-30"
+        }
+      },
+      "duration_seconds": 67.829,
+      "failure_class": "candidate",
+      "failure_subclass": "candidate_set_insufficient",
+      "environment_valid": true,
+      "environment_status": "VALID",
+      "agent_attempted": true,
+      "consensus_approved": false,
+      "patch_valid": false,
+      "tests_passed": false
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-terra",
+    "adapters": [
+      "vial"
+    ],
+    "run_tests": true,
+    "offset": 6,
+    "limit": 1,
+    "shard_index": 0,
+    "shard_count": 1,
+    "selected_indices": [
+      6
+    ],
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.6-sol",
+    "adjudicator_model": "openai/gpt-5.6-luna-fast"
+  }
+}
