@@ -89,8 +89,20 @@ class PatchApplier:
             changed = self.paths(patch)
             unexpected = changed - allowed_paths
             if unexpected:
+                existing = {p for p in allowed_paths if (self.root / p).is_file()}
+                missing = {p for p in allowed_paths if not (self.root / p).is_file()}
+                hint = ""
+                if unexpected & missing:
+                    hint = (
+                        f" (missing files: {', '.join(sorted(unexpected & missing))}; "
+                        "use --- /dev/null and +++ b/<path> for new files)")
+                elif unexpected - existing:
+                    hint = (
+                        f" (unexpected paths: {', '.join(sorted(unexpected))}; "
+                        f"allowed: {', '.join(sorted(allowed_paths))})")
                 names = ", ".join(sorted(unexpected))
-                raise PatchError(f"patch changes files outside selected context: {names}")
+                raise PatchError(
+                    f"patch changes files outside selected context: {names}{hint}")
         self._check(patch, reverse=reverse)
 
     def repair_candidate(self, patch: str) -> str | None:

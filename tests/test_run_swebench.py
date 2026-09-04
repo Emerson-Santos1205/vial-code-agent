@@ -581,6 +581,31 @@ class BuildSwebenchPromptTests(unittest.TestCase):
             self.assertIn("EVIDENCE FROM PREVIOUS ATTEMPT:", prompt)
             self.assertIn("previous attempt failed", prompt)
 
+    def test_prompt_authorizes_only_oracle_listed_new_files(self) -> None:
+        instance = {
+            "repo": "owner/repo",
+            "base_commit": "abc",
+            "problem_statement": "fix",
+            "fail_to_pass": [],
+            "pass_to_pass": [],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "pkg").mkdir()
+            (root / "pkg" / "existing.py").write_text("x = 1\n", encoding="utf-8")
+            prompt = build_swebench_prompt(
+                instance, root, [root / "pkg" / "existing.py"],
+                {"pkg/existing.py", "pkg/new_file.py"}, self._mock_env())
+            self.assertIn("You may create only these missing files if needed:", prompt)
+            self.assertIn("MISSING ALLOWED FILES (create with --- /dev/null / +++ b/<path>):", prompt)
+            self.assertIn("pkg/new_file.py", prompt)
+            self.assertIn("Do not create any other files.", prompt)
+            self.assertIn("Use exact repo-relative paths from ALLOWED FILES in diff headers.", prompt)
+            self.assertIn("For a newly created file, use `--- /dev/null` and `+++ b/<exact path>`.", prompt)
+            self.assertIn("Existing files:", prompt)
+            self.assertIn("New files to create:", prompt)
+            self.assertIn("For each file in the diff, the hunk line numbers must match the CURRENT STATE shown.", prompt)
+
 
 class GenerateCandidateSetTests(unittest.TestCase):
     def test_calls_generate_for_each_request(self) -> None:

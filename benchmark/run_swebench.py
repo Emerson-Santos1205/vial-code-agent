@@ -106,7 +106,15 @@ def _atomic_write(path: Path, content: str) -> None:
 
 def _append_checkpoint(path: Path, entry: dict) -> None:
     """Append one complete checkpoint record with a single durable write."""
-    payload = (json.dumps(entry, sort_keys=True) + "\n").encode("utf-8")
+    def _default(obj: object) -> object:
+        if isinstance(obj, CandidateOutcome):
+            return obj.to_dict()
+        if isinstance(obj, CandidateConsensus):
+            return obj.to_dict()
+        if isinstance(obj, CandidateResult):
+            return {"model": str(obj.model), "label": obj.label}
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    payload = (json.dumps(entry, sort_keys=True, default=_default) + "\n").encode("utf-8")
     descriptor = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o644)
     try:
         os.write(descriptor, payload)
@@ -154,7 +162,7 @@ def select_test_image(instance: dict, override: str | None = None) -> tuple[str,
 
 def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
                           allowed_paths: set[str], environment: EnvironmentSpec,
-                          feedback: str = "", max_chars: int = 24000) -> str:
+                          feedback: str = "", max_chars: int = 32000) -> str:
     """Build an explicit, bounded contract for one SWE-bench generation."""
     fail_tests = _as_tests(instance.get("fail_to_pass"))
     pass_tests = _as_tests(instance.get("pass_to_pass"))
@@ -163,12 +171,37 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
             f"[{len(_as_tests(instance.get('pass_to_pass'))) - 50} additional tests "
             "are mounted and executed by the benchmark]"
         ]
+    creatable_paths = sorted(
+        path for path in allowed_paths if not (root / path).exists())
+    existing_paths = sorted(
+        path for path in allowed_paths if (root / path).exists())
+    missing_allowed_files = ""
+    if creatable_paths:
+        missing_allowed_files = (
+            "MISSING ALLOWED FILES (create with --- /dev/null / +++ b/<path>):\n" +
+            "\n".join(f"- {path}" for path in creatable_paths))
+    file_creation_rule = "- Do not create files unless explicitly authorized.\n"
+    if creatable_paths:
+        file_creation_rule = (
+            "- You may create only these missing files if needed:\n" +
+            "\n".join(f"  - {path}" for path in creatable_paths) + "\n" +
+            "- Do not create any other files.\n")
+    allowed_files_section = "ALLOWED FILES:\n"
+    if existing_paths:
+        allowed_files_section += "Existing files:\n" + "\n".join(
+            f"- {path}" for path in existing_paths) + "\n"
+    if creatable_paths:
+        allowed_files_section += "New files to create:\n" + "\n".join(
+            f"- {path}" for path in creatable_paths) + "\n"
+    elif not existing_paths:
+        allowed_files_section += "\n".join(
+            f"- {path}" for path in sorted(allowed_paths)) + "\n"
     sections = [
         f"REPOSITORY:\n{instance.get('repo', '')}",
         f"BASE COMMIT:\n{instance.get('base_commit', '')}",
         f"PYTHON:\n{environment.python_version}",
-        "ALLOWED FILES:\n" + "\n".join(
-            f"- {path}" for path in sorted(allowed_paths)),
+        allowed_files_section.rstrip(),
+        missing_allowed_files,
         "FILES WERE READ FROM:\n" + "\n".join(
             f"- {path.relative_to(root).as_posix()} ({path})" for path in files),
         f"ISSUE:\n{instance.get('problem_statement', '')}",
@@ -176,14 +209,18 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
         "PASS_TO_PASS:\n" + "\n".join(pass_tests),
         "RULES:\n"
         "- Do not modify tests.\n"
-        "- Do not create files unless explicitly authorized.\n"
+        f"{file_creation_rule}"
         "- Do not change dependencies unless requested.\n"
         f"- Do not use APIs newer than Python {environment.python_version}.\n"
         "- Make the smallest causal change; each hunk must match the current checkout exactly.\n"
+        "- Use exact repo-relative paths from ALLOWED FILES in diff headers.\n"
+        "- For a newly created file, use `--- /dev/null` and `+++ b/<exact path>`.\n"
+        "- For each file in the diff, the hunk line numbers must match the CURRENT STATE shown.\n"
         "- If a hunk cannot be anchored to the shown current state, reread the file before answering.\n"
         "- Do not claim tests were executed.\n"
         "- Return a minimal change as one applicable unified diff.",
     ]
+    sections = [section for section in sections if section]
     if feedback:
         sections.append(f"EVIDENCE FROM PREVIOUS ATTEMPT:\n{feedback}")
     current = []
@@ -332,6 +369,7 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
         uid = getattr(os, "getuid", lambda: 65532)()
         gid = getattr(os, "getgid", lambda: 65532)()
         docker_env = ["-e", "PYTHONPATH=/workspace",
+                      "-e", "HOME=/tmp",
                       "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
                       # Candidate workspaces intentionally omit .git; give
@@ -540,7 +578,7 @@ def _run_test_groups(root: Path, fail_tests: list[str], pass_tests: list[str],
         setup.extend("python -m pip install -r "
                      + shlex.quote(f"/workspace/{path.relative_to(root).as_posix()}")
                      + " --disable-pip-version-check" for path in requirements)
-    if not official_image and not prepared_image and dependencies:
+    if not official_image and dependencies:
         setup.append("python -m pip install " + " ".join(shlex.quote(item)
                                                          for item in dependencies))
     if not official_image and not prepared_image and (root / "astropy").is_dir():
@@ -860,7 +898,8 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
             "target file from the current workspace, preserve existing APIs, "
             "and return only a minimal unified diff. Do not modify tests.\n\n"
             f"BEHAVIORAL RETRY {retry_number + 1}/2:\n" +
-            str(current_behavior.get("detail", "")))
+            str(current_behavior.get("detail", "")) +
+            "\n\nAPPLIED PATCH THAT FAILED:\n" + current_patch)
         prompt = build_swebench_prompt(
             instance, root, files, allowed_paths,
             environment or EnvironmentSpec(
@@ -966,7 +1005,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     diagnostics = []
     generated = None
     candidate_prompt = prompt
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             generated = CodeAgent(provider, runtime=runtime).generate(
                 candidate_prompt, root, files, runtime=runtime)
@@ -974,11 +1013,10 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostics.append(f"provider error: {error}")
             attempts += 1
             retries += int(attempt > 0)
-            if attempt == 0:
-                candidate_prompt = prompt + (
-                    "\n\nThe previous model request failed before returning a "
-                    "patch. Retry once and return only a complete minimal unified "
-                    "diff.\nPROVIDER DIAGNOSTIC: " + str(error))
+            candidate_prompt = prompt + (
+                "\n\nThe previous model request failed before returning a "
+                "patch. Retry and return only a complete minimal unified diff.\n"
+                "PROVIDER DIAGNOSTIC: " + str(error))
             continue
         generated_attempts = max(int(generated.attempts or 1), 1)
         attempts += generated_attempts
@@ -988,22 +1026,25 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostics.append(diagnostic)
             candidate_prompt = prompt + (
                 "\n\nThe previous response contained no applicable patch. "
-                "Retry once from the original task and workspace. Return only "
+                "Retry from the original task and workspace. Return only "
                 "a complete minimal unified diff.\n"
-                f"PATCH CONTRACT DIAGNOSTIC: {diagnostic}")
+                "PATCH CONTRACT DIAGNOSTIC: " + diagnostic)
             continue
         patch_returns += 1
         try:
             patch = _validate_candidate(root, generated.patch, allowed_paths)
         except PatchError as error:
             diagnostics.append(str(error))
-            candidate_prompt = prompt + (
+            candidate_prompt = (
+                prompt +
                 "\n\nThe previous patch failed static validation against the "
                 "exact workspace. Re-read every target file and verify each "
                 "removed line character-for-character before regenerating. "
                 "Do not trust stale line numbers, do not repeat an unanchored "
                 "hunk, and return only a complete minimal unified diff.\n"
-                f"PATCH VALIDATION DIAGNOSTIC: {error}")
+                "PATCH VALIDATION DIAGNOSTIC: " + str(error) +
+                "\n\nPREVIOUS FAILED PATCH (do not repeat it):\n" +
+                generated.patch)
             continue
         outcome = _candidate_outcome(
             label, model, returned_patch=True, patch_valid=True,
@@ -1277,18 +1318,30 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
     with tempfile.TemporaryDirectory(
             prefix="vial-swebench-", ignore_cleanup_errors=True) as directory:
         root = Path(directory) / "repo"
-        try:
-            clone = subprocess.run(
-                ["git", "clone", "--filter=blob:none", "https://github.com/" +
-                 instance["repo"] + ".git", str(root)], capture_output=True,
-                text=True, encoding="utf-8", errors="replace", check=False,
-                timeout=300)
-        except subprocess.TimeoutExpired:
-            return {"id": instance["id"], "passed": False,
-                    "stage": "clone", "detail": "clone timed out after 300s"}
+        clone_detail = ""
+        for clone_attempt in range(3):
+            if root.exists():
+                shutil.rmtree(root, ignore_errors=True)
+            try:
+                clone = subprocess.run(
+                    ["git", "clone", "--filter=blob:none", "https://github.com/" +
+                     instance["repo"] + ".git", str(root)], capture_output=True,
+                    text=True, encoding="utf-8", errors="replace", check=False,
+                    timeout=300)
+            except subprocess.TimeoutExpired:
+                clone_detail = "clone timed out after 300s"
+                clone = SimpleNamespace(returncode=124, stderr=clone_detail)
+            if clone.returncode == 0:
+                break
+            clone_detail = str(clone.stderr)[-1000:]
+            transient = any(marker in clone_detail.lower() for marker in (
+                "early eof", "unexpected disconnect", "rpc failed",
+                "server closed abruptly", "timed out"))
+            if not transient or clone_attempt == 2:
+                break
         if clone.returncode:
             return {"id": instance["id"], "passed": False,
-                    "stage": "clone", "detail": clone.stderr[-1000:]}
+                    "stage": "clone", "detail": clone_detail}
         try:
             checkout = subprocess.run(
                 ["git", "checkout", instance["base_commit"]], cwd=root,
@@ -1300,14 +1353,15 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
         if checkout.returncode:
             return {"id": instance["id"], "passed": False,
                     "stage": "checkout", "detail": checkout.stderr[-1000:]}
-        solution_files = [root / path for path in changed_paths(instance["patch"])
+        solution_paths = changed_paths(instance["patch"])
+        solution_files = [root / path for path in solution_paths
                           if (root / path).is_file()]
         test_files = [root / path for path in changed_paths(instance.get("test_patch", ""))
                       if (root / path).is_file()]
         files = list(dict.fromkeys(solution_files + test_files))
         if not files:
             files = list(root.rglob("*.py"))[:20]
-        allowed_paths = {path.relative_to(root).as_posix() for path in solution_files}
+        allowed_paths = set(solution_paths)
         if not allowed_paths:
             allowed_paths = {path.relative_to(root).as_posix() for path in files}
         baseline = None
@@ -1693,7 +1747,7 @@ def main() -> int:
                         help="zero-based shard index within --shard-count")
     parser.add_argument("--shard-count", type=int, default=1,
                         help="number of balanced shards for the selected range")
-    parser.add_argument("--model", default="opencode/big-pickle")
+    parser.add_argument("--model", default="openai/gpt-5.6-luna")
     parser.add_argument("--adapter", choices=["baseline", "opencode", "vial"],
                         default="vial", help="generation protocol to evaluate")
     parser.add_argument("--adapters",
@@ -1710,11 +1764,16 @@ def main() -> int:
                         help="directory for the reproducible JSON report")
     parser.add_argument("--consensus-file", type=Path, default=None,
                         help="JSON map of task id to independent consensus evidence")
-    parser.add_argument("--consensus-model", default="opencode/mimo-v2.5-free",
+    parser.add_argument("--consensus-model", default="openai/gpt-5.5",
                         help="independent second model used to validate each patch")
-    parser.add_argument("--adjudicator-model", default="opencode/nemotron-3-ultra-free",
+    parser.add_argument("--adjudicator-model", default="opencode/mimo-v2.5-free",
                         help="optional independent adjudicator for divergent candidates")
     args = parser.parse_args()
+    for optional_model in ("consensus_model", "adjudicator_model"):
+        value = getattr(args, optional_model)
+        if isinstance(value, str) and value.lower() in {
+                "", "none", "null", "disabled"}:
+            setattr(args, optional_model, None)
     if not args.run_tests:
         parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
@@ -1790,6 +1849,12 @@ def main() -> int:
             }
             result["duration_seconds"] = round(time.monotonic() - started, 3)
             result = _annotate_result(result, environment)
+            candidate_outcomes = result.get("candidate_outcomes")
+            if candidate_outcomes:
+                result["candidate_outcomes"] = _serialize_candidate_outcomes(candidate_outcomes)
+            consensus = result.get("consensus")
+            if isinstance(consensus, CandidateConsensus):
+                result["consensus"] = consensus.to_dict()
             results.append(result)
             _append_checkpoint(checkpoint, {"adapter": adapter, "index": index,
                                             "identity": identity,
@@ -1926,8 +1991,16 @@ def main() -> int:
                    "adjudicator_model": args.adjudicator_model,
               }}
     output = args.out / f"report-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    _atomic_write(output, json.dumps(report, indent=2) + "\n")
-    print(json.dumps({"report": str(output), **report}, indent=2))
+    def _report_default(obj: object) -> object:
+        if isinstance(obj, CandidateOutcome):
+            return obj.to_dict()
+        if isinstance(obj, CandidateConsensus):
+            return obj.to_dict()
+        if isinstance(obj, CandidateResult):
+            return {"model": str(obj.model), "label": obj.label}
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    _atomic_write(output, json.dumps(report, indent=2, default=_report_default) + "\n")
+    print(json.dumps({"report": str(output), **report}, indent=2, default=_report_default))
     return 0 if all_instances_passed else 1
 
 
