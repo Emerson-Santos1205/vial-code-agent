@@ -80,6 +80,19 @@ RISK_HIGH = "high"
 RISK_CRITICAL = "critical"
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
+# Decision Expiration TTL defaults in seconds (§21 / SDK-005).
+DEFAULT_DECISION_TTL_BY_RISK = {
+    RISK_CRITICAL: 300.0,   # 5 minutes
+    RISK_HIGH: 300.0,       # 5 minutes
+    RISK_MEDIUM: 1800.0,    # 30 minutes
+    RISK_LOW: 86400.0,      # 24 hours
+}
+DEFAULT_DECISION_TTL_BY_COST_TIER = {
+    "advanced": 300.0,      # 5 minutes
+    "light": 1800.0,        # 30 minutes
+    "deterministic": 86400.0, # 24 hours
+}
+
 # Policies bound to Decision authority (SDK-005 policy field).
 POLICY_INSPECT = "inspect"
 POLICY_DEVELOPMENT = "development"
@@ -682,12 +695,32 @@ class VialRuntime:
     # ------------------------------------------------------------------ #
     # Decision lifecycle + authorized Tool invocation (SDK-005, TOOLS-007)
     # ------------------------------------------------------------------ #
+    def compute_decision_ttl(self, risk: str = RISK_MEDIUM,
+                             cost_tier: str | None = None) -> float:
+        """Compute maximum TTL (seconds) for a Decision based on risk and cost tier.
+
+        High risk or high cost operations expire faster to enforce auditability
+        and prevent stale authorization state (§21 / SDK-005).
+        """
+        ttl_risk = DEFAULT_DECISION_TTL_BY_RISK.get(risk, DEFAULT_DECISION_TTL_BY_RISK[RISK_MEDIUM])
+        if cost_tier and cost_tier in DEFAULT_DECISION_TTL_BY_COST_TIER:
+            ttl_cost = DEFAULT_DECISION_TTL_BY_COST_TIER[cost_tier]
+            return min(ttl_risk, ttl_cost)
+        return ttl_risk
+
     def propose_decision(self, objective: str, type: str = "operation",
                          policy: str = POLICY_DEVELOPMENT,
                          context_id: str = "", risk: str = RISK_MEDIUM,
                          rationale: str = "", evidence: list[str] | None = None,
-                         confidence: float = 0.95) -> Any:
+                         confidence: float = 0.95,
+                         expires_at: float | None = None,
+                         ttl: float | None = None,
+                         cost_tier: str | None = None) -> Any:
         """propose -> approve -> authorize a Decision (SDK-005 §51, RUNTIME-006)."""
+        if expires_at is None:
+            effective_ttl = ttl if ttl is not None else self.compute_decision_ttl(risk, cost_tier)
+            expires_at = time.time() + effective_ttl
+
         authority = self._decision.Authority(
             actor=self.authority, role="org-root",
             scope="organization", policy=policy)
@@ -703,19 +736,24 @@ class VialRuntime:
             confidence=confidence,
             risk=risk,
             priority="high",
+            expires_at=expires_at,
         )
         self.decision_engine.approve(decision.id, self.actor)
         self.decision_engine.authorize(decision.id, self.authority)
         return decision
 
-    def propose_patch_decision(self, context_id: str = "") -> Any:
+    def propose_patch_decision(self, context_id: str = "",
+                               expires_at: float | None = None,
+                               ttl: float | None = None) -> Any:
         """propose -> approve -> authorize a patch-apply Decision (SDK-005)."""
         return self.propose_decision(
             objective="apply generated code patch", type="patch_apply",
             policy=POLICY_CODE_APPLY, context_id=context_id,
             risk=RISK_MEDIUM,
             rationale="authorized code change for the current task context",
-            evidence=[f"context:{context_id}"])
+            evidence=[f"context:{context_id}"],
+            expires_at=expires_at,
+            ttl=ttl)
 
     def authorize_decision(self, decision_id: str, actor: str) -> Any:
         return self.decision_engine.authorize(decision_id, actor)
