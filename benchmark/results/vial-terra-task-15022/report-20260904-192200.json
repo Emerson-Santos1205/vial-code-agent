@@ -1,0 +1,178 @@
+{
+  "benchmark": "swebench-500-shard-17",
+  "total": 1,
+  "tasks": 1,
+  "passed": 0,
+  "environment_valid": 0,
+  "environment_invalid": 1,
+  "environment_valid_rate": 0.0,
+  "agent_attempted": 0,
+  "consensus_approved": 0,
+  "patch_valid": 0,
+  "tests_passed": 0,
+  "agent_solved": 0,
+  "agent_success_rate": 0.0,
+  "repeat_count": 1,
+  "unstable_tasks": 0,
+  "stable_tasks": 0,
+  "candidate_attempts": 0,
+  "candidate_retries": 0,
+  "candidate_returned_patch": 0,
+  "valid_patch": 0,
+  "tests_passed_by_candidate": 0,
+  "static_evidence": 0,
+  "behavioral_evidence": 0,
+  "complete_evidence": 0,
+  "reliable_candidates": 0,
+  "both_valid": 0,
+  "agreement": 0,
+  "candidate_a_patch_valid": 0,
+  "candidate_b_patch_valid": 0,
+  "candidate_a_valid": 0,
+  "candidate_b_valid": 0,
+  "consensus_success": 0,
+  "candidate_failure_breakdown": {
+    "A": {},
+    "B": {}
+  },
+  "diagnostic_table": {},
+  "hash_parity": {},
+  "protocol_parity_tasks": 0,
+  "protocol_parity": 0,
+  "candidate_completion_rate": 0.0,
+  "candidate_patch_validity": 0.0,
+  "candidate_behavioral_success": 0.0,
+  "swebench_evidence_rate": 0.0,
+  "candidate_behavioral_evidence_rate": 0.0,
+  "candidate_reliability_rate": 0.0,
+  "candidate_agreement": 0.0,
+  "candidate_a_success_rate": 0.0,
+  "candidate_b_success_rate": 0.0,
+  "candidate_a_patch_validity_rate": 0.0,
+  "candidate_b_patch_validity_rate": 0.0,
+  "both_valid_rate": 0.0,
+  "consensus_success_rate": 0.0,
+  "protocol_parity_rate": 0.0,
+  "candidate_failure_results": 0,
+  "consensus_failure_results": 0,
+  "end_to_end_success": 0,
+  "end_to_end_success_rate": 0.0,
+  "resolution": {
+    "percent": 0.0,
+    "is_100_percent": false,
+    "definition": "100% is declared only when every selected instance and adapter result has passed=True."
+  },
+  "patch_applicable": 0,
+  "fail_to_pass": 0,
+  "pass_to_pass": 0,
+  "patch_failures": 0,
+  "environment_failures": 1,
+  "test_failures": 0,
+  "governance_failures": 0,
+  "baseline_checked": 1,
+  "baseline_failures": 1,
+  "failure_breakdown": {
+    "environment.python_version": 1
+  },
+  "tokens": 0,
+  "retries": 0,
+  "economics": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "tokens_per_task": 0.0,
+    "tokens_per_resolved_task": 0.0,
+    "duration_seconds": 24.282,
+    "seconds_per_task": 24.282,
+    "seconds_per_resolved_task": 0.0,
+    "sample_size": 1,
+    "sample_size_status": "diagnostic_only"
+  },
+  "by_adapter": {
+    "vial": {
+      "metrics": {
+        "tasks": 1,
+        "environment_valid": 0,
+        "environment_valid_rate": 0.0,
+        "agent_solved": 0,
+        "agent_success_rate": 0.0,
+        "end_to_end_success_rate": 0.0
+      },
+      "economics": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "tokens_per_task": 0.0,
+        "tokens_per_resolved_task": 0.0,
+        "duration_seconds": 24.282,
+        "seconds_per_task": 24.282,
+        "seconds_per_resolved_task": 0.0,
+        "sample_size": 1,
+        "sample_size_status": "diagnostic_only"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "django__django-15022",
+      "passed": false,
+      "stage": "baseline_tests",
+      "baseline": {
+        "fail_to_pass": false,
+        "pass_to_pass": false,
+        "expected": false,
+        "detail": "FAIL_TO_PASS:\n\n\n[runner=:1]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:1\n\nSTDERR:\ny\", line 16, in <module>\n    from django.core.serializers.json import DjangoJSONEncoder\n  File \"/workspace/django/core/serializers/__init__.py\", line 23, in <module>\n    from django.core.serializers.base import SerializerDoesNotExist\n  File \"/workspace/django/core/serializers/base.py\", line 8, in <module>\n    from django.db import models\n  File \"/workspace/django/db/models/__init__.py\", line 3, in <module>\n    from django.db.models.aggregates import *  # NOQA\n  File \"/workspace/django/db/models/aggregates.py\", line 5, in <module>\n    from django.db.models.expressions import Case, Func, Star, When\n  File \"/workspace/django/db/models/expressions.py\", line 10, in <module>\n    from django.db.models import fields\n  File \"/workspace/django/db/models/fields/__init__.py\", line 12, in <module>\n    from django import forms\n  File \"/workspace/django/forms/__init__.py\", line 6, in <module>\n    from django.forms.boundfield import *  # NOQA\n  File \"/workspace/django/forms/boundfield.py\", line 4, in <module>\n    from django.forms.utils import pretty_name\n  File \"/workspace/django/forms/utils.py\", line 6, in <module>\n    from django.forms.renderers import get_default_renderer\n  File \"/workspace/django/forms/renderers.py\", line 5, in <module>\n    from django.template.backends.django import DjangoTemplates\n  File \"/workspace/django/template/__init__.py\", line 44, in <module>\n    from .engine import Engine\n  File \"/workspace/django/template/engine.py\", line 7, in <module>\n    from .base import Template\n  File \"/workspace/django/template/base.py\", line 59, in <module>\n    from django.utils.formats import localize\n  File \"/workspace/django/utils/formats.py\", line 9, in <module>\n    from django.utils import dateformat, numberformat\n  File \"/workspace/django/utils/dateformat.py\", line 21, in <module>\n    from django.utils.timezone import (\n  File \"/workspace/django/utils/timezone.py\", line 12, in <module>\n    from backports import zoneinfo\nModuleNotFoundError: No module named 'backports'\n\n\nPASS_TO_PASS:\n\n\n[runner=:1]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:1\n\nSTDERR:\ny\", line 16, in <module>\n    from django.core.serializers.json import DjangoJSONEncoder\n  File \"/workspace/django/core/serializers/__init__.py\", line 23, in <module>\n    from django.core.serializers.base import SerializerDoesNotExist\n  File \"/workspace/django/core/serializers/base.py\", line 8, in <module>\n    from django.db import models\n  File \"/workspace/django/db/models/__init__.py\", line 3, in <module>\n    from django.db.models.aggregates import *  # NOQA\n  File \"/workspace/django/db/models/aggregates.py\", line 5, in <module>\n    from django.db.models.expressions import Case, Func, Star, When\n  File \"/workspace/django/db/models/expressions.py\", line 10, in <module>\n    from django.db.models import fields\n  File \"/workspace/django/db/models/fields/__init__.py\", line 12, in <module>\n    from django import forms\n  File \"/workspace/django/forms/__init__.py\", line 6, in <module>\n    from django.forms.boundfield import *  # NOQA\n  File \"/workspace/django/forms/boundfield.py\", line 4, in <module>\n    from django.forms.utils import pretty_name\n  File \"/workspace/django/forms/utils.py\", line 6, in <module>\n    from django.forms.renderers import get_default_renderer\n  File \"/workspace/django/forms/renderers.py\", line 5, in <module>\n    from django.template.backends.django import DjangoTemplates\n  File \"/workspace/django/template/__init__.py\", line 44, in <module>\n    from .engine import Engine\n  File \"/workspace/django/template/engine.py\", line 7, in <module>\n    from .base import Template\n  File \"/workspace/django/template/base.py\", line 59, in <module>\n    from django.utils.formats import localize\n  File \"/workspace/django/utils/formats.py\", line 9, in <module>\n    from django.utils import dateformat, numberformat\n  File \"/workspace/django/utils/dateformat.py\", line 21, in <module>\n    from django.utils.timezone import (\n  File \"/workspace/django/utils/timezone.py\", line 12, in <module>\n    from backports import zoneinfo\nModuleNotFoundError: No module named 'backports'\n"
+      },
+      "detail": "FAIL_TO_PASS:\n\n\n[runner=:1]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:1\n\nSTDERR:\ny\", line 16, in <module>\n    from django.core.serializers.json import DjangoJSONEncoder\n  File \"/workspace/django/core/serializers/__init__.py\", line 23, in <module>\n    from django.core.serializers.base import SerializerDoesNotExist\n  File \"/workspace/django/core/serializers/base.py\", line 8, in <module>\n    from django.db import models\n  File \"/workspace/django/db/models/__init__.py\", line 3, in <module>\n    from django.db.models.aggregates import *  # NOQA\n  File \"/workspace/django/db/models/aggregates.py\", line 5, in <module>\n    from django.db.models.expressions import Case, Func, Star, When\n  File \"/workspace/django/db/models/expressions.py\", line 10, in <module>\n    from django.db.models import fields\n  File \"/workspace/django/db/models/fields/__init__.py\", line 12, in <module>\n    from django import forms\n  File \"/workspace/django/forms/__init__.py\", line 6, in <module>\n    from django.forms.boundfield import *  # NOQA\n  File \"/workspace/django/forms/boundfield.py\", line 4, in <module>\n    from django.forms.utils import pretty_name\n  File \"/workspace/django/forms/utils.py\", line 6, in <module>\n    from django.forms.renderers import get_default_renderer\n  File \"/workspace/django/forms/renderers.py\", line 5, in <module>\n    from django.template.backends.django import DjangoTemplates\n  File \"/workspace/django/template/__init__.py\", line 44, in <module>\n    from .engine import Engine\n  File \"/workspace/django/template/engine.py\", line 7, in <module>\n    from .base import Template\n  File \"/workspace/django/template/base.py\", line 59, in <module>\n    from django.utils.formats import localize\n  File \"/workspace/django/utils/formats.py\", line 9, in <module>\n    from django.utils import dateformat, numberformat\n  File \"/workspace/django/utils/dateformat.py\", line 21, in <module>\n    from django.utils.timezone import (\n  File \"/workspace/django/utils/timezone.py\", line 12, in <module>\n    from backports import zoneinfo\nModuleNotFoundError: No module named 'backports'\n\n\nPASS_TO_PASS:\n\n\n[runner=:1]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:1\n__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:1\n\nSTDERR:\ny\", line 16, in <module>\n    from django.core.serializers.json import DjangoJSONEncoder\n  File \"/workspace/django/core/serializers/__init__.py\", line 23, in <module>\n    from django.core.serializers.base import SerializerDoesNotExist\n  File \"/workspace/django/core/serializers/base.py\", line 8, in <module>\n    from django.db import models\n  File \"/workspace/django/db/models/__init__.py\", line 3, in <module>\n    from django.db.models.aggregates import *  # NOQA\n  File \"/workspace/django/db/models/aggregates.py\", line 5, in <module>\n    from django.db.models.expressions import Case, Func, Star, When\n  File \"/workspace/django/db/models/expressions.py\", line 10, in <module>\n    from django.db.models import fields\n  File \"/workspace/django/db/models/fields/__init__.py\", line 12, in <module>\n    from django import forms\n  File \"/workspace/django/forms/__init__.py\", line 6, in <module>\n    from django.forms.boundfield import *  # NOQA\n  File \"/workspace/django/forms/boundfield.py\", line 4, in <module>\n    from django.forms.utils import pretty_name\n  File \"/workspace/django/forms/utils.py\", line 6, in <module>\n    from django.forms.renderers import get_default_renderer\n  File \"/workspace/django/forms/renderers.py\", line 5, in <module>\n    from django.template.backends.django import DjangoTemplates\n  File \"/workspace/django/template/__init__.py\", line 44, in <module>\n    from .engine import Engine\n  File \"/workspace/django/template/engine.py\", line 7, in <module>\n    from .base import Template\n  File \"/workspace/django/template/base.py\", line 59, in <module>\n    from django.utils.formats import localize\n  File \"/workspace/django/utils/formats.py\", line 9, in <module>\n    from django.utils import dateformat, numberformat\n  File \"/workspace/django/utils/dateformat.py\", line 21, in <module>\n    from django.utils.timezone import (\n  File \"/workspace/django/utils/timezone.py\", line 12, in <module>\n    from backports import zoneinfo\nModuleNotFoundError: No module named 'backports'\n",
+      "adapter": "vial",
+      "environment": {
+        "repo": "django/django",
+        "base_commit": "e1d673c373a7d032060872b690a92fc95496612e",
+        "python_version": "3.8",
+        "image": "vial-code-agent-swebench-python38@sha256:7332c2d51e6779e32ee4c2ebaaed0ae15ea5d1b9a42177ee20a9550f65b7a264",
+        "dependencies": [
+          "asgiref",
+          "pytz",
+          "sqlparse"
+        ],
+        "test_command": [],
+        "timeout_seconds": 900,
+        "fingerprint": "c5fdcf4de136643acf0e134469926fe81b67d01dae82a842649d37179474bf01",
+        "metadata": {
+          "base_commit": "e1d673c373a7d032060872b690a92fc95496612e",
+          "catalog_key": "django/django@e1d673c373a7d032060872b690a92fc95496612e",
+          "catalog_version": "2026-08-30"
+        }
+      },
+      "duration_seconds": 24.282,
+      "failure_class": "environment",
+      "failure_subclass": "python_version",
+      "environment_valid": false,
+      "environment_status": "INVALID",
+      "agent_attempted": false,
+      "infrastructure_note": "infrastructure failure \u2014 not counted against agent budget",
+      "consensus_approved": false,
+      "result_code": "TASK_FAILED",
+      "patch_valid": false,
+      "tests_passed": false
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-terra",
+    "adapters": [
+      "vial"
+    ],
+    "run_tests": true,
+    "offset": 4,
+    "limit": 1,
+    "shard_index": 0,
+    "shard_count": 1,
+    "selected_indices": [
+      4
+    ],
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.6-sol",
+    "adjudicator_model": "openai/gpt-5.6-luna-fast"
+  }
+}

@@ -47,6 +47,26 @@ except ImportError:
 DEFAULT_TEST_IMAGE = "python:3.8-slim"
 ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
 PREPARED_IMAGE_PREFIX = "vial-code-agent-swebench-"
+CIRCUIT_BREAKER_THRESHOLD = 2
+_rate_limit_hit = False  # Global flag: set True when any provider hits usage limit
+
+
+def _normalize_failure_signature(detail: str) -> str:
+    """Extract a stable failure class from diagnostic text for circuit-breaking."""
+    text = (detail or "").lower()
+    if "usage limit" in text or "rate limit" in text:
+        return "provider_rate_limit"
+    if "provider error" in text:
+        return "provider_error"
+    if "patch_contract" in text or "patch contract" in text:
+        return "patch_contract"
+    if "no patch" in text or "no patch returned" in text:
+        return "no_patch"
+    if "validation" in text or "does not apply" in text:
+        return "patch_validation"
+    if "timeout" in text:
+        return "timeout"
+    return text[:120] if text else "unknown"
 
 
 def is_prepared_test_image(image: str | None) -> bool:
@@ -95,6 +115,20 @@ def validate_environment_images(images: set[str], docker: str = "docker") -> dic
         raise RuntimeError("required Docker images are unavailable: " +
                            ", ".join(missing))
     return resolved
+
+
+def _validate_provider_image(docker: str = "docker") -> None:
+    """Verify the OpenCode provider Docker image exists before starting tasks."""
+    from src.vial_code_agent.docker_provider import DockerOpenCodeProvider
+    image = DockerOpenCodeProvider.__init__.__defaults__[0]
+    result = subprocess.run(
+        [docker, "image", "inspect", "--format", "{{.Id}}", image],
+        capture_output=True, text=True, encoding="utf-8",
+        errors="replace", check=False)
+    if result.returncode:
+        raise RuntimeError(
+            f"Provider Docker image '{image}' not found. "
+            f"Build it with: docker build -f docker/opencode.Dockerfile -t {image} .")
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -995,16 +1029,34 @@ def _serialize_candidate_outcomes(outcomes: dict[str, CandidateOutcome] | dict[s
     return result
 
 
+def _rate_limit_failure(instance: dict, adapter: str, model: str,
+                       identity: str) -> dict:
+    """Create a deterministic failure result when the provider hits its usage limit."""
+    return {
+        "id": instance["id"],
+        "passed": False,
+        "stage": "provider",
+        "detail": "rate limit: usage limit has been reached",
+        "result_code": "PROVIDER_RATE_LIMIT",
+        "adapter": adapter,
+    }
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
                                    runtime: VialRuntime) -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
+    global _rate_limit_hit
+    if _rate_limit_hit:
+        raise RuntimeError("rate limit: skipping further API calls this session")
     provider = DockerOpenCodeProvider(model, timeout_seconds=900)
     attempts = retries = patch_returns = 0
     diagnostics = []
     generated = None
     candidate_prompt = prompt
+    previous_signature = ""
+    consecutive_same = 0
     for attempt in range(3):
         try:
             generated = CodeAgent(provider, runtime=runtime).generate(
@@ -1013,6 +1065,17 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostics.append(f"provider error: {error}")
             attempts += 1
             retries += int(attempt > 0)
+            sig = _normalize_failure_signature(str(error))
+            if sig == "provider_rate_limit":
+                _rate_limit_hit = True
+            if sig == previous_signature:
+                consecutive_same += 1
+            else:
+                consecutive_same = 0
+            previous_signature = sig
+            if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
+                diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
+                break
             candidate_prompt = prompt + (
                 "\n\nThe previous model request failed before returning a "
                 "patch. Retry and return only a complete minimal unified diff.\n"
@@ -1024,6 +1087,17 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         if generated.patch is None:
             diagnostic = str(generated.failure_type or "no patch returned")
             diagnostics.append(diagnostic)
+            sig = _normalize_failure_signature(diagnostic)
+            if sig == "provider_rate_limit":
+                _rate_limit_hit = True
+            if sig == previous_signature:
+                consecutive_same += 1
+            else:
+                consecutive_same = 0
+            previous_signature = sig
+            if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
+                diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
+                break
             candidate_prompt = prompt + (
                 "\n\nThe previous response contained no applicable patch. "
                 "Retry from the original task and workspace. Return only "
@@ -1035,6 +1109,15 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             patch = _validate_candidate(root, generated.patch, allowed_paths)
         except PatchError as error:
             diagnostics.append(str(error))
+            sig = _normalize_failure_signature(str(error))
+            if sig == previous_signature:
+                consecutive_same += 1
+            else:
+                consecutive_same = 0
+            previous_signature = sig
+            if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
+                diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
+                break
             candidate_prompt = (
                 prompt +
                 "\n\nThe previous patch failed static validation against the "
@@ -1199,6 +1282,18 @@ def _candidate_set_consensus(root: Path, candidates: list[CandidateResult],
                  and (not run_tests or
                       candidate.outcome.tests_passed is True)]
     if len(qualified) < 2:
+        failure_sigs = [_normalize_failure_signature(c.outcome.failure_detail or "")
+                        for c in candidates]
+        identical_failures = (len(set(failure_sigs)) <= 1 and
+                              failure_sigs[0] != "unknown")
+        env_comparison = {
+            "identical_workspace_shas": len({c.outcome.workspace_sha256 for c in candidates}) <= 1,
+            "failure_signatures": {str(c.model): sig for c, sig in zip(candidates, failure_sigs, strict=False)},
+            "identical_failures": identical_failures,
+            "note": ("both candidates hit the same infrastructure failure"
+                     if identical_failures else
+                     "candidates failed with different signatures"),
+        }
         return CandidateConsensus(
             agreed=False,
             agreement_ratio=0.0,
@@ -1212,6 +1307,7 @@ def _candidate_set_consensus(root: Path, candidates: list[CandidateResult],
                 "diagnostics": {
                     str(candidate.model): candidate.outcome.failure_detail
                     for candidate in candidates},
+                "environment_comparison": env_comparison,
             },
             candidate_outcomes=outcomes,
             note="fewer than two candidates have complete passing evidence",
@@ -1270,6 +1366,9 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
     result["environment_status"] = (
         "VALID" if result["environment_valid"] else "INVALID")
     result["agent_attempted"] = result.get("stage") not in environment_invalid_stages
+    if not result["environment_valid"]:
+        result["infrastructure_note"] = (
+            "infrastructure failure — not counted against agent budget")
     consensus_result = result.get("consensus") or {}
     if isinstance(consensus_result, CandidateConsensus):
         consensus_result = consensus_result.to_dict()
@@ -1738,6 +1837,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
 
 
 def main() -> int:
+    global _rate_limit_hit
     parser = argparse.ArgumentParser()
     parser.add_argument("--workload", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=None,
@@ -1768,6 +1868,8 @@ def main() -> int:
                         help="independent second model used to validate each patch")
     parser.add_argument("--adjudicator-model", default="opencode/mimo-v2.5-free",
                         help="optional independent adjudicator for divergent candidates")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="run each task N times to measure variance (default: 1)")
     args = parser.parse_args()
     for optional_model in ("consensus_model", "adjudicator_model"):
         value = getattr(args, optional_model)
@@ -1805,6 +1907,7 @@ def main() -> int:
     image_refs = validate_environment_images({resolver.resolve(
         instance, args.test_image, args.official_images).image
         for _, instance in selected})
+    _validate_provider_image(docker="docker")
     completed: dict[str, dict] = {}
     if checkpoint.is_file():
         for line in checkpoint.read_text(encoding="utf-8").splitlines():
@@ -1823,42 +1926,65 @@ def main() -> int:
             key = f"{adapter}:{index}"
             if key in completed:
                 continue
+            if _rate_limit_hit:
+                print("[rate-limit] skipping remaining tasks (rate limit detected)")
+                break
             environment = resolver.resolve(instance, args.test_image,
                                             args.official_images)
             environment = replace(environment, image=image_refs[environment.image])
-            started = time.monotonic()
-            result = run_instance(instance, args.model, args.run_tests,
-                                  environment.image, environment,
-                                  (consensus_by_id.get(instance.get("id"))
-                                   if adapter == "vial" else None),
-                                  args.consensus_model if adapter == "vial" else None,
-                                  args.adjudicator_model if adapter == "vial" else None,
-                                  "vial" if adapter == "preflight" else adapter,
-                                  args.preflight_only)
-            result["adapter"] = adapter
-            result["environment"] = {
-                "repo": instance.get("repo", ""),
-                "base_commit": instance.get("base_commit", ""),
-                "python_version": environment.python_version,
-                "image": environment.image,
-                "dependencies": list(environment.dependencies),
-                "test_command": list(environment.test_command),
-                "timeout_seconds": environment.timeout_seconds,
-                "fingerprint": environment.fingerprint,
-                "metadata": dict(environment.metadata),
-            }
-            result["duration_seconds"] = round(time.monotonic() - started, 3)
-            result = _annotate_result(result, environment)
-            candidate_outcomes = result.get("candidate_outcomes")
-            if candidate_outcomes:
-                result["candidate_outcomes"] = _serialize_candidate_outcomes(candidate_outcomes)
-            consensus = result.get("consensus")
-            if isinstance(consensus, CandidateConsensus):
-                result["consensus"] = consensus.to_dict()
-            results.append(result)
+            run_results = []
+            for _repeat_idx in range(args.repeat):
+                started = time.monotonic()
+                try:
+                    result = run_instance(instance, args.model, args.run_tests,
+                                      environment.image, environment,
+                                      (consensus_by_id.get(instance.get("id"))
+                                       if adapter == "vial" else None),
+                                      args.consensus_model if adapter == "vial" else None,
+                                      args.adjudicator_model if adapter == "vial" else None,
+                                      "vial" if adapter == "preflight" else adapter,
+                                       args.preflight_only)
+                except RuntimeError as exc:
+                    if "rate limit" in str(exc).lower():
+                        _rate_limit_hit = True
+                        result = _rate_limit_failure(
+                            instance, adapter, args.model, identity)
+                    else:
+                        raise
+                result["adapter"] = adapter
+                result["environment"] = {
+                    "repo": instance.get("repo", ""),
+                    "base_commit": instance.get("base_commit", ""),
+                    "python_version": environment.python_version,
+                    "image": environment.image,
+                    "dependencies": list(environment.dependencies),
+                    "test_command": list(environment.test_command),
+                    "timeout_seconds": environment.timeout_seconds,
+                    "fingerprint": environment.fingerprint,
+                    "metadata": dict(environment.metadata),
+                }
+                result["duration_seconds"] = round(time.monotonic() - started, 3)
+                result = _annotate_result(result, environment)
+                candidate_outcomes = result.get("candidate_outcomes")
+                if candidate_outcomes:
+                    result["candidate_outcomes"] = _serialize_candidate_outcomes(candidate_outcomes)
+                consensus = result.get("consensus")
+                if isinstance(consensus, CandidateConsensus):
+                    result["consensus"] = consensus.to_dict()
+                run_results.append(result)
+            if args.repeat > 1:
+                pass_count = sum(1 for r in run_results if r.get("passed"))
+                final = run_results[-1]
+                final["repeat_count"] = args.repeat
+                final["repeat_pass_count"] = pass_count
+                final["repeat_pass_rate"] = round(pass_count / args.repeat, 4)
+                final["repeat_variance"] = "stable" if pass_count in (0, args.repeat) else "unstable"
+            else:
+                final = run_results[0]
+            results.append(final)
             _append_checkpoint(checkpoint, {"adapter": adapter, "index": index,
                                             "identity": identity,
-                                            "result": result})
+                                            "result": final})
     failure_breakdown: dict[str, int] = {}
     for result in results:
         key = f"{result['failure_class']}.{result['failure_subclass']}"
@@ -1889,6 +2015,11 @@ def main() -> int:
               "tests_passed": sum(row["tests_passed"] for row in results),
               "agent_solved": metrics["agent_solved"],
                "agent_success_rate": metrics["agent_success_rate"],
+               "repeat_count": args.repeat,
+               "unstable_tasks": sum(1 for row in results
+                                     if row.get("repeat_variance") == "unstable"),
+               "stable_tasks": sum(1 for row in results
+                                   if row.get("repeat_variance") == "stable"),
                "candidate_attempts": metrics.get("candidate_attempts", 0),
                "candidate_retries": metrics.get("candidate_retries", 0),
                "candidate_returned_patch": metrics.get(

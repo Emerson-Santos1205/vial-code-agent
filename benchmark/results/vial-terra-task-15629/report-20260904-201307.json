@@ -1,0 +1,178 @@
+{
+  "benchmark": "swebench-500-shard-20",
+  "total": 1,
+  "tasks": 1,
+  "passed": 0,
+  "environment_valid": 0,
+  "environment_invalid": 1,
+  "environment_valid_rate": 0.0,
+  "agent_attempted": 0,
+  "consensus_approved": 0,
+  "patch_valid": 0,
+  "tests_passed": 0,
+  "agent_solved": 0,
+  "agent_success_rate": 0.0,
+  "repeat_count": 1,
+  "unstable_tasks": 0,
+  "stable_tasks": 0,
+  "candidate_attempts": 0,
+  "candidate_retries": 0,
+  "candidate_returned_patch": 0,
+  "valid_patch": 0,
+  "tests_passed_by_candidate": 0,
+  "static_evidence": 0,
+  "behavioral_evidence": 0,
+  "complete_evidence": 0,
+  "reliable_candidates": 0,
+  "both_valid": 0,
+  "agreement": 0,
+  "candidate_a_patch_valid": 0,
+  "candidate_b_patch_valid": 0,
+  "candidate_a_valid": 0,
+  "candidate_b_valid": 0,
+  "consensus_success": 0,
+  "candidate_failure_breakdown": {
+    "A": {},
+    "B": {}
+  },
+  "diagnostic_table": {},
+  "hash_parity": {},
+  "protocol_parity_tasks": 0,
+  "protocol_parity": 0,
+  "candidate_completion_rate": 0.0,
+  "candidate_patch_validity": 0.0,
+  "candidate_behavioral_success": 0.0,
+  "swebench_evidence_rate": 0.0,
+  "candidate_behavioral_evidence_rate": 0.0,
+  "candidate_reliability_rate": 0.0,
+  "candidate_agreement": 0.0,
+  "candidate_a_success_rate": 0.0,
+  "candidate_b_success_rate": 0.0,
+  "candidate_a_patch_validity_rate": 0.0,
+  "candidate_b_patch_validity_rate": 0.0,
+  "both_valid_rate": 0.0,
+  "consensus_success_rate": 0.0,
+  "protocol_parity_rate": 0.0,
+  "candidate_failure_results": 0,
+  "consensus_failure_results": 0,
+  "end_to_end_success": 0,
+  "end_to_end_success_rate": 0.0,
+  "resolution": {
+    "percent": 0.0,
+    "is_100_percent": false,
+    "definition": "100% is declared only when every selected instance and adapter result has passed=True."
+  },
+  "patch_applicable": 0,
+  "fail_to_pass": 0,
+  "pass_to_pass": 0,
+  "patch_failures": 0,
+  "environment_failures": 1,
+  "test_failures": 0,
+  "governance_failures": 0,
+  "baseline_checked": 1,
+  "baseline_failures": 1,
+  "failure_breakdown": {
+    "environment.python_version": 1
+  },
+  "tokens": 0,
+  "retries": 0,
+  "economics": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "tokens_per_task": 0.0,
+    "tokens_per_resolved_task": 0.0,
+    "duration_seconds": 41.156,
+    "seconds_per_task": 41.156,
+    "seconds_per_resolved_task": 0.0,
+    "sample_size": 1,
+    "sample_size_status": "diagnostic_only"
+  },
+  "by_adapter": {
+    "vial": {
+      "metrics": {
+        "tasks": 1,
+        "environment_valid": 0,
+        "environment_valid_rate": 0.0,
+        "agent_solved": 0,
+        "agent_success_rate": 0.0,
+        "end_to_end_success_rate": 0.0
+      },
+      "economics": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "tokens_per_task": 0.0,
+        "tokens_per_resolved_task": 0.0,
+        "duration_seconds": 41.156,
+        "seconds_per_task": 41.156,
+        "seconds_per_resolved_task": 0.0,
+        "sample_size": 1,
+        "sample_size_status": "diagnostic_only"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "django__django-15629",
+      "passed": false,
+      "stage": "baseline_tests",
+      "baseline": {
+        "fail_to_pass": true,
+        "pass_to_pass": true,
+        "expected": false,
+        "detail": "FAIL_TO_PASS:\n\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCreating test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\n.......................................................\n----------------------------------------------------------------------\nRan 55 tests in 2.121s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\n\n\nPASS_TO_PASS:\n\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCreating test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\n.......................................................\n----------------------------------------------------------------------\nRan 55 tests in 2.121s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\n"
+      },
+      "detail": "FAIL_TO_PASS:\n\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCreating test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\n.......................................................\n----------------------------------------------------------------------\nRan 55 tests in 2.121s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\n\n\nPASS_TO_PASS:\n\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n\n[runner=:0]\nSTDOUT:\nDefaulting to user installation because normal site-packages is not writeable\nRequirement already satisfied: asgiref in /usr/local/lib/python3.8/site-packages (3.8.1)\nRequirement already satisfied: pytz in /usr/local/lib/python3.8/site-packages (2026.3.post1)\nRequirement already satisfied: sqlparse in /usr/local/lib/python3.8/site-packages (0.5.5)\nRequirement already satisfied: typing-extensions>=4 in /usr/local/lib/python3.8/site-packages (from asgiref) (4.13.2)\n__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n__VIAL_PASS_BEGIN__\nTesting against Django installed in '/workspace/django' with up to 12 processes\nFound 55 test(s).\nSystem check identified no issues (0 silenced).\n__VIAL_PASS_END__:0\n\nSTDERR:\nCreating test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCloning test database for alias 'default'...\nCreating test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\nCloning test database for alias 'other'...\n.......................................................\n----------------------------------------------------------------------\nRan 55 tests in 2.121s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\nDestroying test database for alias 'other'...\n",
+      "adapter": "vial",
+      "environment": {
+        "repo": "django/django",
+        "base_commit": "694cf458f16b8d340a3195244196980b2dec34fd",
+        "python_version": "3.8",
+        "image": "vial-code-agent-swebench-python38@sha256:9c5a72e016469c52bffbcefabbea0be254e3d50e448c22d1a81afaf57ea933a0",
+        "dependencies": [
+          "asgiref",
+          "pytz",
+          "sqlparse"
+        ],
+        "test_command": [],
+        "timeout_seconds": 900,
+        "fingerprint": "1af78ea570144321d97a3ae3e21d562813737d9ea41979822099d910f012877e",
+        "metadata": {
+          "base_commit": "694cf458f16b8d340a3195244196980b2dec34fd",
+          "catalog_key": "django/django@694cf458f16b8d340a3195244196980b2dec34fd",
+          "catalog_version": "2026-08-30"
+        }
+      },
+      "duration_seconds": 41.156,
+      "failure_class": "environment",
+      "failure_subclass": "python_version",
+      "environment_valid": false,
+      "environment_status": "INVALID",
+      "agent_attempted": false,
+      "infrastructure_note": "infrastructure failure \u2014 not counted against agent budget",
+      "consensus_approved": false,
+      "result_code": "TASK_FAILED",
+      "patch_valid": false,
+      "tests_passed": false
+    }
+  ],
+  "execution": {
+    "model": "openai/gpt-5.6-terra",
+    "adapters": [
+      "vial"
+    ],
+    "run_tests": true,
+    "offset": 1,
+    "limit": 1,
+    "shard_index": 0,
+    "shard_count": 1,
+    "selected_indices": [
+      1
+    ],
+    "test_image_override": null,
+    "consensus_file": null,
+    "consensus_model": "openai/gpt-5.6-sol",
+    "adjudicator_model": "openai/gpt-5.6-luna-fast"
+  }
+}
