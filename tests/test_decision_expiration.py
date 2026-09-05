@@ -1,14 +1,15 @@
-from pathlib import Path
 import time
+from pathlib import Path
+
 import pytest
 
 from vial_code_agent.core import VialCoreReference
 from vial_code_agent.vial_runtime import (
-    VialRuntime,
+    RISK_CRITICAL,
+    RISK_HIGH,
     RISK_LOW,
     RISK_MEDIUM,
-    RISK_HIGH,
-    RISK_CRITICAL,
+    VialRuntime,
 )
 
 
