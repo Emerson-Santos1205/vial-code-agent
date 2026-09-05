@@ -3,6 +3,8 @@ from __future__ import annotations
 import difflib
 import functools
 import os
+import shutil
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -10,6 +12,7 @@ from pathlib import Path
 
 from .evidence import validate_candidate
 from .model import HttpModelProvider, ModelResponse, OpenCodeProvider
+from .patches import PatchApplier, PatchError
 from .vial_runtime import VialRuntime
 
 
@@ -380,9 +383,10 @@ class RoutingGraph:
 
         (ref_a, resp_a), (ref_b, resp_b) = max(
             combinations(valid.items(), 2),
-            key=lambda pair: _agreement_ratio(pair[0][1], pair[1][1]),
+            key=lambda pair: _agreement_ratio(
+                pair[0][1], pair[1][1], root),
         )
-        ratio = _agreement_ratio(resp_a, resp_b)
+        ratio = _agreement_ratio(resp_a, resp_b, root)
         evidence: dict[str, dict[str, object]] = {}
         evidence_passed = True
         if require_evidence:
@@ -408,16 +412,22 @@ class RoutingGraph:
             note=f"consensus={agreed} ratio={ratio:.2f}")
 
 
-def _agreement_ratio(a: ModelResponse, b: ModelResponse) -> float:
+def _agreement_ratio(a: ModelResponse, b: ModelResponse,
+                     root: Path | None = None) -> float:
     """Semantic similarity between two model responses, in [0, 1].
 
-    Compares at the file/hunk level rather than raw text: two patches that
-    change the same files with equivalent hunks score high even if the prose
-    around them differs. Falls back to character-level SequenceMatcher when
-    neither response contains a unified diff.
+    When *root* is provided and both responses contain unified diffs, applies
+    each patch to an isolated copy of the workspace and compares the resulting
+    file bytes.  This catches intra-hunk conflicts that pure text comparison
+    misses (e.g. two patches touching the same lines differently).
+
+    Falls back to file/hunk-level comparison when the workspace is unavailable
+    or neither response contains a diff, and finally to raw text similarity.
     """
     patch_a = _extract_candidate_patch(a.text)
     patch_b = _extract_candidate_patch(b.text)
+    if patch_a and patch_b and root is not None:
+        return _apply_and_compare(root, patch_a, patch_b)
     if patch_a and patch_b:
         files_a = _parse_diff_files(patch_a)
         files_b = _parse_diff_files(patch_b)
@@ -438,6 +448,45 @@ def _agreement_ratio(a: ModelResponse, b: ModelResponse) -> float:
             file_scores.append(ratio)
         return sum(file_scores) / len(file_scores) if file_scores else 1.0
     return difflib.SequenceMatcher(None, a.text, b.text).ratio()
+
+
+def _apply_and_compare(root: Path, first: str, second: str) -> float:
+    """Apply both patches to isolated workspace copies and compare file bytes.
+
+    Returns 1.0 if both patches produce identical file contents, 0.0 otherwise.
+    On application failure (malformed patch, conflict), returns 0.0.
+    """
+    try:
+        with tempfile.TemporaryDirectory(
+                prefix="vial-agreement-",
+                ignore_cleanup_errors=True) as directory:
+            first_root = Path(directory) / "first"
+            second_root = Path(directory) / "second"
+            shutil.copytree(root, first_root,
+                            ignore=shutil.ignore_patterns(".vial-state"))
+            shutil.copytree(root, second_root,
+                            ignore=shutil.ignore_patterns(".vial-state"))
+            try:
+                PatchApplier(first_root).apply(first)
+                PatchApplier(second_root).apply(second)
+            except PatchError:
+                return 0.0
+            paths: set[str] = set()
+            applier = PatchApplier(root)
+            for patch in (first, second):
+                paths.update(applier.paths(patch))
+            for relative in sorted(paths):
+                first_path = first_root / relative
+                second_path = second_root / relative
+                first_bytes = (first_path.read_bytes()
+                               if first_path.is_file() else None)
+                second_bytes = (second_path.read_bytes()
+                                if second_path.is_file() else None)
+                if first_bytes != second_bytes:
+                    return 0.0
+            return 1.0
+    except OSError:
+        return 0.0
 
 
 def _parse_diff_files(patch: str) -> dict[str, list[str]]:

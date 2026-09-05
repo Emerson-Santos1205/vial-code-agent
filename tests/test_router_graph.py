@@ -290,5 +290,75 @@ class RoutingGraphTests(unittest.TestCase):
             graph.cancel_active()  # no-op with no active provider
 
 
+class AgreementRatioTests(unittest.TestCase):
+    """Tests for _agreement_ratio with apply-and-compare conflict detection."""
+
+    PATCH_TEMPLATE = (
+        "diff --git a/file.txt b/file.txt\n"
+        "--- a/file.txt\n"
+        "+++ b/file.txt\n"
+        "@@ -1,3 +1,3 @@\n"
+        " line1\n"
+        "-old\n"
+        "+{new}\n"
+        " line3\n"
+    )
+
+    def test_identical_patches_yield_one(self) -> None:
+        from vial_code_agent.router import _agreement_ratio
+        from vial_code_agent.model import ModelResponse
+        patch = self.PATCH_TEMPLATE.format(new="same")
+        a = ModelResponse(text=f"some prose\n\n{patch}", returncode=0)
+        b = ModelResponse(text=f"different prose\n\n{patch}", returncode=0)
+        ratio = _agreement_ratio(a, b)
+        self.assertEqual(ratio, 1.0)
+
+    def test_different_patches_yield_zero(self) -> None:
+        from vial_code_agent.router import _agreement_ratio
+        from vial_code_agent.model import ModelResponse
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "file.txt").write_text("line1\nold\nline3\n")
+            patch_a = self.PATCH_TEMPLATE.format(new="alpha")
+            patch_b = self.PATCH_TEMPLATE.format(new="beta")
+            a = ModelResponse(text=patch_a, returncode=0)
+            b = ModelResponse(text=patch_b, returncode=0)
+            ratio = _agreement_ratio(a, b, root=root)
+            self.assertEqual(ratio, 0.0)
+
+    def test_apply_and_compare_with_workspace(self) -> None:
+        from vial_code_agent.router import _agreement_ratio
+        from vial_code_agent.model import ModelResponse
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "file.txt").write_text("line1\nold\nline3\n")
+            patch_a = self.PATCH_TEMPLATE.format(new="from_a")
+            patch_b = self.PATCH_TEMPLATE.format(new="from_b")
+            a = ModelResponse(text=patch_a, returncode=0)
+            b = ModelResponse(text=patch_b, returncode=0)
+            ratio = _agreement_ratio(a, b, root=root)
+            self.assertEqual(ratio, 0.0)
+
+    def test_apply_and_compare_identical_with_workspace(self) -> None:
+        from vial_code_agent.router import _agreement_ratio
+        from vial_code_agent.model import ModelResponse
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "file.txt").write_text("line1\nold\nline3\n")
+            patch = self.PATCH_TEMPLATE.format(new="same")
+            a = ModelResponse(text=patch, returncode=0)
+            b = ModelResponse(text=patch, returncode=0)
+            ratio = _agreement_ratio(a, b, root=root)
+            self.assertEqual(ratio, 1.0)
+
+    def test_fallback_to_text_when_no_patches(self) -> None:
+        from vial_code_agent.router import _agreement_ratio
+        from vial_code_agent.model import ModelResponse
+        a = ModelResponse(text="hello world", returncode=0)
+        b = ModelResponse(text="hello world", returncode=0)
+        ratio = _agreement_ratio(a, b)
+        self.assertEqual(ratio, 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
