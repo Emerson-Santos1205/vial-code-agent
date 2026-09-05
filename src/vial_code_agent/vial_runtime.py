@@ -724,7 +724,7 @@ class VialRuntime:
         authority = self._decision.Authority(
             actor=self.authority, role="org-root",
             scope="organization", policy=policy)
-        decision = self.decision_engine.propose(
+        propose_kwargs = dict(
             objective=objective,
             actor=self.actor,
             authority=authority,
@@ -736,8 +736,11 @@ class VialRuntime:
             confidence=confidence,
             risk=risk,
             priority="high",
-            expires_at=expires_at,
         )
+        import inspect
+        if "expires_at" in inspect.signature(self.decision_engine.propose).parameters:
+            propose_kwargs["expires_at"] = expires_at
+        decision = self.decision_engine.propose(**propose_kwargs)
         self.decision_engine.approve(decision.id, self.actor)
         self.decision_engine.authorize(decision.id, self.authority)
         return decision
