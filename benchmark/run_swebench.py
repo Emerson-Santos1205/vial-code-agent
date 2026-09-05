@@ -116,6 +116,20 @@ def validate_environment_images(images: set[str], docker: str = "docker") -> dic
     return resolved
 
 
+def _validate_provider_image(docker: str = "docker") -> None:
+    """Verify the OpenCode provider Docker image exists before starting tasks."""
+    from src.vial_code_agent.docker_provider import DockerOpenCodeProvider
+    image = DockerOpenCodeProvider.__init__.__defaults__[0]
+    result = subprocess.run(
+        [docker, "image", "inspect", "--format", "{{.Id}}", image],
+        capture_output=True, text=True, encoding="utf-8",
+        errors="replace", check=False)
+    if result.returncode:
+        raise RuntimeError(
+            f"Provider Docker image '{image}' not found. "
+            f"Build it with: docker build -f docker/opencode.Dockerfile -t {image} .")
+
+
 def _atomic_write(path: Path, content: str) -> None:
     """Replace a report atomically so interrupted writes cannot corrupt it."""
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -1871,6 +1885,7 @@ def main() -> int:
     image_refs = validate_environment_images({resolver.resolve(
         instance, args.test_image, args.official_images).image
         for _, instance in selected})
+    _validate_provider_image(docker="docker")
     completed: dict[str, dict] = {}
     if checkpoint.is_file():
         for line in checkpoint.read_text(encoding="utf-8").splitlines():
