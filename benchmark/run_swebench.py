@@ -1108,6 +1108,12 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
+            provider_stderr = getattr(
+                getattr(generated, "response", None), "stderr", "") or ""
+            if "usage limit" in provider_stderr.lower():
+                _rate_limit_hit = True
+                diagnostics.append("rate limit detected in provider stderr")
+                break
             candidate_prompt = prompt + (
                 "\n\nThe previous response contained no applicable patch. "
                 "Retry from the original task and workspace. Return only "

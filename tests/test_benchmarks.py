@@ -582,6 +582,7 @@ class BenchmarkMetricTests(unittest.TestCase):
         generated.patch = None
         generated.attempts = 3
         generated.failure_type = "no patch"
+        generated.response = Mock(text="", stderr="")
         agent = Mock()
         agent.generate.return_value = generated
 
