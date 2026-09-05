@@ -741,6 +741,8 @@ class VialRuntime:
         if "expires_at" in inspect.signature(self.decision_engine.propose).parameters:
             propose_kwargs["expires_at"] = expires_at
         decision = self.decision_engine.propose(**propose_kwargs)
+        if getattr(decision, "expires_at", None) is None:
+            decision.expires_at = expires_at
         self.decision_engine.approve(decision.id, self.actor)
         self.decision_engine.authorize(decision.id, self.authority)
         return decision
