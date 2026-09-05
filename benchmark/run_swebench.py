@@ -48,6 +48,7 @@ DEFAULT_TEST_IMAGE = "python:3.8-slim"
 ASTROPY_BUILD_COMMAND = "python setup.py build_ext --inplace"
 PREPARED_IMAGE_PREFIX = "vial-code-agent-swebench-"
 CIRCUIT_BREAKER_THRESHOLD = 2
+_rate_limit_hit = False  # Global flag: set True when any provider hits usage limit
 
 
 def _normalize_failure_signature(detail: str) -> str:
@@ -1028,11 +1029,27 @@ def _serialize_candidate_outcomes(outcomes: dict[str, CandidateOutcome] | dict[s
     return result
 
 
+def _rate_limit_failure(instance: dict, adapter: str, model: str,
+                       identity: str) -> dict:
+    """Create a deterministic failure result when the provider hits its usage limit."""
+    return {
+        "id": instance["id"],
+        "passed": False,
+        "stage": "provider",
+        "detail": "rate limit: usage limit has been reached",
+        "result_code": "PROVIDER_RATE_LIMIT",
+        "adapter": adapter,
+    }
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
                                    runtime: VialRuntime) -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
+    global _rate_limit_hit
+    if _rate_limit_hit:
+        raise RuntimeError("rate limit: skipping further API calls this session")
     provider = DockerOpenCodeProvider(model, timeout_seconds=900)
     attempts = retries = patch_returns = 0
     diagnostics = []
@@ -1049,6 +1066,8 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             attempts += 1
             retries += int(attempt > 0)
             sig = _normalize_failure_signature(str(error))
+            if sig == "provider_rate_limit":
+                _rate_limit_hit = True
             if sig == previous_signature:
                 consecutive_same += 1
             else:
@@ -1069,6 +1088,8 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             diagnostic = str(generated.failure_type or "no patch returned")
             diagnostics.append(diagnostic)
             sig = _normalize_failure_signature(diagnostic)
+            if sig == "provider_rate_limit":
+                _rate_limit_hit = True
             if sig == previous_signature:
                 consecutive_same += 1
             else:
@@ -1816,6 +1837,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
 
 
 def main() -> int:
+    global _rate_limit_hit
     parser = argparse.ArgumentParser()
     parser.add_argument("--workload", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=None,
@@ -1904,20 +1926,31 @@ def main() -> int:
             key = f"{adapter}:{index}"
             if key in completed:
                 continue
+            if _rate_limit_hit:
+                print("[rate-limit] skipping remaining tasks (rate limit detected)")
+                break
             environment = resolver.resolve(instance, args.test_image,
                                             args.official_images)
             environment = replace(environment, image=image_refs[environment.image])
             run_results = []
             for _repeat_idx in range(args.repeat):
                 started = time.monotonic()
-                result = run_instance(instance, args.model, args.run_tests,
+                try:
+                    result = run_instance(instance, args.model, args.run_tests,
                                       environment.image, environment,
                                       (consensus_by_id.get(instance.get("id"))
                                        if adapter == "vial" else None),
                                       args.consensus_model if adapter == "vial" else None,
                                       args.adjudicator_model if adapter == "vial" else None,
                                       "vial" if adapter == "preflight" else adapter,
-                                      args.preflight_only)
+                                       args.preflight_only)
+                except RuntimeError as exc:
+                    if "rate limit" in str(exc).lower():
+                        _rate_limit_hit = True
+                        result = _rate_limit_failure(
+                            instance, adapter, args.model, identity)
+                    else:
+                        raise
                 result["adapter"] = adapter
                 result["environment"] = {
                     "repo": instance.get("repo", ""),
