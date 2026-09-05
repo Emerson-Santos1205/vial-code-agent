@@ -1057,6 +1057,8 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     candidate_prompt = prompt
     previous_signature = ""
     consecutive_same = 0
+    total_attempts_this_task = 0
+    MAX_ATTEMPTS_PER_MODEL_TASK = 6
     for attempt in range(3):
         try:
             generated = CodeAgent(provider, runtime=runtime).generate(
@@ -1064,6 +1066,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         except (OSError, RuntimeError) as error:
             diagnostics.append(f"provider error: {error}")
             attempts += 1
+            total_attempts_this_task += 1
             retries += int(attempt > 0)
             sig = _normalize_failure_signature(str(error))
             if sig == "provider_rate_limit":
@@ -1073,6 +1076,9 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             else:
                 consecutive_same = 0
             previous_signature = sig
+            if total_attempts_this_task >= MAX_ATTEMPTS_PER_MODEL_TASK:
+                diagnostics.append(f"circuit-breaker: {total_attempts_this_task} total attempts exceeded cap ({MAX_ATTEMPTS_PER_MODEL_TASK})")
+                break
             if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
@@ -1083,6 +1089,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             continue
         generated_attempts = max(int(generated.attempts or 1), 1)
         attempts += generated_attempts
+        total_attempts_this_task += generated_attempts
         retries += max(generated_attempts - 1, 0) + int(attempt > 0)
         if generated.patch is None:
             diagnostic = str(generated.failure_type or "no patch returned")
@@ -1095,6 +1102,9 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             else:
                 consecutive_same = 0
             previous_signature = sig
+            if total_attempts_this_task >= MAX_ATTEMPTS_PER_MODEL_TASK:
+                diagnostics.append(f"circuit-breaker: {total_attempts_this_task} total attempts exceeded cap ({MAX_ATTEMPTS_PER_MODEL_TASK})")
+                break
             if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
@@ -1115,6 +1125,9 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             else:
                 consecutive_same = 0
             previous_signature = sig
+            if total_attempts_this_task >= MAX_ATTEMPTS_PER_MODEL_TASK:
+                diagnostics.append(f"circuit-breaker: {total_attempts_this_task} total attempts exceeded cap ({MAX_ATTEMPTS_PER_MODEL_TASK})")
+                break
             if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
@@ -1868,7 +1881,7 @@ def main() -> int:
                         help="independent second model used to validate each patch")
     parser.add_argument("--adjudicator-model", default="opencode/mimo-v2.5-free",
                         help="optional independent adjudicator for divergent candidates")
-    parser.add_argument("--repeat", type=int, default=1,
+    parser.add_argument("--repeat", type=int, default=3,
                         help="run each task N times to measure variance (default: 1)")
     args = parser.parse_args()
     for optional_model in ("consensus_model", "adjudicator_model"):
