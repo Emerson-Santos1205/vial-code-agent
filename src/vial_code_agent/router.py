@@ -409,15 +409,55 @@ class RoutingGraph:
 
 
 def _agreement_ratio(a: ModelResponse, b: ModelResponse) -> float:
-    """Textual similarity between two model responses, in [0, 1].
+    """Semantic similarity between two model responses, in [0, 1].
 
-    A simple, dependency-free proxy for "did independent models converge on
-    the same answer". It does not understand code semantics -- two correct
-    but differently-worded patches can score low -- so ``min_agreement``
-    should be tuned per use, and a low ratio should route to a human, not to
-    an automatic rejection.
+    Compares at the file/hunk level rather than raw text: two patches that
+    change the same files with equivalent hunks score high even if the prose
+    around them differs. Falls back to character-level SequenceMatcher when
+    neither response contains a unified diff.
     """
+    patch_a = _extract_candidate_patch(a.text)
+    patch_b = _extract_candidate_patch(b.text)
+    if patch_a and patch_b:
+        files_a = _parse_diff_files(patch_a)
+        files_b = _parse_diff_files(patch_b)
+        all_files = sorted(set(files_a) | set(files_b))
+        if not all_files:
+            return 1.0
+        file_scores = []
+        for path in all_files:
+            hunks_a = files_a.get(path, [])
+            hunks_b = files_b.get(path, [])
+            if not hunks_a and not hunks_b:
+                continue
+            if not hunks_a or not hunks_b:
+                file_scores.append(0.0)
+                continue
+            ratio = difflib.SequenceMatcher(
+                None, "\n".join(hunks_a), "\n".join(hunks_b)).ratio()
+            file_scores.append(ratio)
+        return sum(file_scores) / len(file_scores) if file_scores else 1.0
     return difflib.SequenceMatcher(None, a.text, b.text).ratio()
+
+
+def _parse_diff_files(patch: str) -> dict[str, list[str]]:
+    """Extract per-file hunk bodies from a unified diff."""
+    files: dict[str, list[str]] = {}
+    current_file = None
+    current_hunks: list[str] = []
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            if current_file and current_hunks:
+                files[current_file] = current_hunks
+            current_file = line[6:]
+            current_hunks = []
+        elif line.startswith("@@"):
+            current_hunks.append(line)
+        elif current_file is not None:
+            current_hunks.append(line)
+    if current_file and current_hunks:
+        files[current_file] = current_hunks
+    return files
 
 
 @dataclass(frozen=True)

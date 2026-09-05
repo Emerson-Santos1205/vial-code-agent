@@ -433,6 +433,7 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         has_patch=generated.patch is not None,
         route=generated.route,
         reused=generated.reused,
+        reuse_outcome=generated.reuse_outcome,
         quality=generated.quality,
         attempts=generated.attempts,
         failure_type=generated.failure_type,
@@ -445,7 +446,12 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         if generated.response.text:
             print(f"model response:\n{generated.response.text.strip()[:2000]}", file=sys.stderr)
         return 1
-    print("patch:")
+    route_info = f"route={generated.route}"
+    if generated.reuse_outcome and generated.reuse_outcome != "n/a":
+        route_info += f" reuse={generated.reuse_outcome}"
+    if generated.reused:
+        route_info += " (cached)"
+    print(f"patch: [{route_info}]")
     print(generated.patch)
     if not generated.workspace_changed:
         try:
