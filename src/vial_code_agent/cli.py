@@ -201,16 +201,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    if args.serve:
-        from .web_server import serve
-        serve(root, config, args.host, args.port)
-        return 0
-
     try:
         runtime = _build_runtime(root, config, vial)
     except ValueError as error:
         print(f"error: {wrap(error, ERR_INVALID_CONFIG).message}", file=sys.stderr)
         return 2
+
+    if args.serve:
+        from .web_server import serve
+        serve(root, config, args.host, args.port, runtime=runtime)
+        return 0
 
     if args.status:
         if runtime is None:

@@ -9,6 +9,7 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 from .chat import ChatController
 from .config import AgentConfig
@@ -67,11 +68,79 @@ OPENAPI_SPEC: dict[str, object] = {
                 },
             }
         },
+        "/api/v1/decisions": {
+            "get": {
+                "summary": "List pending decisions awaiting approval or consensus",
+                "responses": {
+                    "200": {"description": "List of pending decisions"}
+                },
+            }
+        },
+        "/api/v1/decisions/{id}/approve": {
+            "post": {
+                "summary": "Approve a pending decision",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": "Decision ID",
+                    }
+                ],
+                "requestBody": {
+                    "required": False,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "note": {"type": "string"},
+                                    "approver": {"type": "string"},
+                                },
+                            }
+                        }
+                    },
+                },
+                "responses": {
+                    "200": {"description": "Decision approved"},
+                    "400": {"description": "Invalid approval request"},
+                    "404": {"description": "Decision not found"},
+                },
+            }
+        },
+        "/api/v1/trace/{id}": {
+            "get": {
+                "summary": "Audit trace for a decision",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": "Decision ID",
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Audit trace details"},
+                    "404": {"description": "Decision not found"},
+                },
+            }
+        },
+        "/api/v1/status": {
+            "get": {
+                "summary": "Runtime snapshot status",
+                "responses": {
+                    "200": {"description": "Snapshot of organizational runtime"}
+                },
+            }
+        },
     },
 }
 
 
-def make_server(root: Path, config: AgentConfig, host: str, port: int) -> ThreadingHTTPServer:
+def make_server(root: Path, config: AgentConfig, host: str, port: int,
+                runtime: Any = None) -> ThreadingHTTPServer:
     root = root.resolve()
     store = SessionStore(root / ".vial-sessions")
 
@@ -91,9 +160,72 @@ def make_server(root: Path, config: AgentConfig, host: str, port: int) -> Thread
             if self.path in ("/api/v1/schema", "/openapi.json"):
                 self._send(HTTPStatus.OK, OPENAPI_SPEC)
                 return
+            if self.path == "/api/v1/decisions":
+                if runtime is None:
+                    self._send(HTTPStatus.OK, {"decisions": []})
+                else:
+                    self._send(HTTPStatus.OK, {"decisions": runtime.pending_decisions()})
+                return
+            if self.path == "/api/v1/status":
+                if runtime is None:
+                    self._send(HTTPStatus.OK, {"vial_core": "unavailable"})
+                else:
+                    self._send(HTTPStatus.OK, runtime.snapshot())
+                return
+            if self.path.startswith("/api/v1/trace/"):
+                decision_id = self.path[len("/api/v1/trace/"):].strip()
+                if not decision_id:
+                    self._send(HTTPStatus.BAD_REQUEST, {"error": "decision_id is required"})
+                    return
+                if runtime is None:
+                    self._send(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "governed runtime unavailable"})
+                    return
+                trace = runtime.decision_trace(decision_id)
+                if not trace.get("found", False):
+                    self._send(HTTPStatus.NOT_FOUND, {"error": f"unknown decision '{decision_id}'"})
+                    return
+                if "decision_id" not in trace:
+                    trace["decision_id"] = trace.get("id", decision_id)
+                self._send(HTTPStatus.OK, trace)
+                return
             self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
         def do_POST(self) -> None:  # noqa: N802
+            if self.path.startswith("/api/v1/decisions/") and self.path.endswith("/approve"):
+                prefix = "/api/v1/decisions/"
+                suffix = "/approve"
+                decision_id = self.path[len(prefix):-len(suffix)].strip()
+                if not decision_id:
+                    self._send(HTTPStatus.BAD_REQUEST, {"error": "decision_id is required"})
+                    return
+                if runtime is None:
+                    self._send(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "governed runtime unavailable"})
+                    return
+                body: dict[str, Any] = {}
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 0:
+                    try:
+                        body = json.loads(self.rfile.read(length).decode("utf-8"))
+                    except json.JSONDecodeError:
+                        self._send(HTTPStatus.BAD_REQUEST, {"error": "invalid json payload"})
+                        return
+                approver = str(body.get("approver") or getattr(runtime, "authority", "org-root"))
+                note = str(body.get("note", "approved via API"))
+                try:
+                    record = runtime.approve_decision(decision_id, approver=approver, note=note)
+                    runtime.persist()
+                    self._send(HTTPStatus.OK, {
+                        "approved": True,
+                        "decision_id": decision_id,
+                        "approver": record.approver,
+                        "note": record.note,
+                    })
+                except KeyError:
+                    self._send(HTTPStatus.NOT_FOUND, {"error": f"unknown decision '{decision_id}'"})
+                except (PermissionError, ValueError) as err:
+                    self._send(HTTPStatus.BAD_REQUEST, {"error": str(err)})
+                return
+
             if self.path != "/chat":
                 self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
@@ -123,7 +255,8 @@ def make_server(root: Path, config: AgentConfig, host: str, port: int) -> Thread
             controller = ChatController(
                 root, store, session_id, provider, model, config.opencode_executable,
                 config.auto_approve, config.opencode_agent,
-                registry=ServerRegistry(root), model_timeout=config.model_timeout)
+                registry=ServerRegistry(root), runtime=runtime,
+                model_timeout=config.model_timeout)
             text, route = controller.respond(message)
             self._send(HTTPStatus.OK, {
                 "session_id": session_id, "route": route, "text": text,
@@ -135,8 +268,9 @@ def make_server(root: Path, config: AgentConfig, host: str, port: int) -> Thread
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def serve(root: Path, config: AgentConfig, host: str = "127.0.0.1", port: int = 8765) -> None:
-    server = make_server(root, config, host, port)
+def serve(root: Path, config: AgentConfig, host: str = "127.0.0.1", port: int = 8765,
+          runtime: Any = None) -> None:
+    server = make_server(root, config, host, port, runtime=runtime)
     print(f"VIAL server listening on http://{host}:{port} for {root}")
     try:
         server.serve_forever()
