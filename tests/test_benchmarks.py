@@ -590,8 +590,8 @@ class BenchmarkMetricTests(unittest.TestCase):
             candidate = _generate_validated_candidate(
                 "A", "a/model", "prompt", Path("."), [], set(), Mock())
 
-        self.assertEqual(candidate.outcome.attempts, 9)
-        self.assertEqual(candidate.outcome.retries, 8)
+        self.assertEqual(candidate.outcome.attempts, 6)
+        self.assertEqual(candidate.outcome.retries, 5)
 
     def test_one_valid_candidate_is_insufficient_not_consensus_failed(self) -> None:
         invalid = CandidateResult(
