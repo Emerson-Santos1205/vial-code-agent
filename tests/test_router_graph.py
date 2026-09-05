@@ -305,8 +305,8 @@ class AgreementRatioTests(unittest.TestCase):
     )
 
     def test_identical_patches_yield_one(self) -> None:
-        from vial_code_agent.router import _agreement_ratio
         from vial_code_agent.model import ModelResponse
+        from vial_code_agent.router import _agreement_ratio
         patch = self.PATCH_TEMPLATE.format(new="same")
         a = ModelResponse(text=f"some prose\n\n{patch}", returncode=0)
         b = ModelResponse(text=f"different prose\n\n{patch}", returncode=0)
@@ -314,8 +314,8 @@ class AgreementRatioTests(unittest.TestCase):
         self.assertEqual(ratio, 1.0)
 
     def test_different_patches_yield_zero(self) -> None:
-        from vial_code_agent.router import _agreement_ratio
         from vial_code_agent.model import ModelResponse
+        from vial_code_agent.router import _agreement_ratio
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "file.txt").write_text("line1\nold\nline3\n")
@@ -327,8 +327,8 @@ class AgreementRatioTests(unittest.TestCase):
             self.assertEqual(ratio, 0.0)
 
     def test_apply_and_compare_with_workspace(self) -> None:
-        from vial_code_agent.router import _agreement_ratio
         from vial_code_agent.model import ModelResponse
+        from vial_code_agent.router import _agreement_ratio
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "file.txt").write_text("line1\nold\nline3\n")
@@ -340,8 +340,8 @@ class AgreementRatioTests(unittest.TestCase):
             self.assertEqual(ratio, 0.0)
 
     def test_apply_and_compare_identical_with_workspace(self) -> None:
-        from vial_code_agent.router import _agreement_ratio
         from vial_code_agent.model import ModelResponse
+        from vial_code_agent.router import _agreement_ratio
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "file.txt").write_text("line1\nold\nline3\n")
@@ -352,8 +352,8 @@ class AgreementRatioTests(unittest.TestCase):
             self.assertEqual(ratio, 1.0)
 
     def test_fallback_to_text_when_no_patches(self) -> None:
-        from vial_code_agent.router import _agreement_ratio
         from vial_code_agent.model import ModelResponse
+        from vial_code_agent.router import _agreement_ratio
         a = ModelResponse(text="hello world", returncode=0)
         b = ModelResponse(text="hello world", returncode=0)
         ratio = _agreement_ratio(a, b)
