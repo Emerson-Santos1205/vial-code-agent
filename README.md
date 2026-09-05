@@ -222,14 +222,6 @@ python benchmark/run_swebench.py --workload benchmark/swebench-verified-diverse-
   --run-tests --preflight-only --limit 10 --out benchmark/results/preflight
 ```
 
-Para repositórios cuja versão Python não possui imagem histórica dedicada,
-construa a imagem genérica correspondente antes do preflight:
-
-```text
-docker build --build-arg PYTHON_VERSION=3.12 -f docker/swebench-generic.Dockerfile \
-  -t vial-code-agent-swebench-python312:local .
-```
-
 ## Instalação
 
 O projeto depende do VIAL Core em `vendor/vial-core`, configurado como um
