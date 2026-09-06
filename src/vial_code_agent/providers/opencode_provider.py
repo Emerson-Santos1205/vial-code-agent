@@ -131,7 +131,7 @@ class OpenCodeProvider(ModelProvider):
         self._active_proc: subprocess.Popen[str] | None = None
         self.last_response: ModelResponse | None = None
 
-    def generate(
+    def generate(  # type: ignore[override]
         self,
         prompt: str,
         timeout_seconds: int = 180,
@@ -181,10 +181,12 @@ class OpenCodeProvider(ModelProvider):
             text=text,
             returncode=process.returncode,
             stderr=_extract_error(process),
-            **usage,
+            input_tokens=usage.get("input_tokens") or 0,
+            output_tokens=usage.get("output_tokens") or 0,
+            total_tokens=usage.get("total_tokens") or 0,
         )
 
-    def chat(
+    def chat(  # type: ignore[override]
         self,
         prompt: str,
         directory: Path | None = None,
@@ -211,7 +213,7 @@ class OpenCodeProvider(ModelProvider):
         text, _ = _parse_events(process.stdout)
         return ModelResponse(text, process.returncode, _extract_error(process))
 
-    def chat_stream(
+    def chat_stream(  # type: ignore[override]
         self,
         prompt: str,
         directory: Path | None = None,

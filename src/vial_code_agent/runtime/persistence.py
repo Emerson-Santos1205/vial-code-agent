@@ -13,93 +13,93 @@ class PersistenceMixin:
     """Persistence and serialization methods for VialRuntime state."""
 
     def persist(self) -> None:
-        if not self.persist_state:
+        if not self.persist_state:  # type: ignore[attr-defined]
             return
         try:
             records = {
                 "organization.json": self._organization_to_dict(),
                 "decisions.json": {
                 did: self._decision_to_dict(d)
-                for did, d in self.decision_engine.decisions.items()},
+                for did, d in self.decision_engine.decisions.items()},  # type: ignore[attr-defined]
                 "intents.json": {
                 op_id: self._intent_to_dict(intent)
-                for op_id, intent in self.coordinator.intents.items()},
+                for op_id, intent in self.coordinator.intents.items()},  # type: ignore[attr-defined]
                 "reuse.json": {
                 "_stats": {
-                    "reuse_hits": self.reuse_engine.reuse_hits,
-                    "recomputes": self.reuse_engine.recomputes,
-                    "invalidations": self.reuse_engine.invalidations,
+                    "reuse_hits": self.reuse_engine.reuse_hits,  # type: ignore[attr-defined]
+                    "recomputes": self.reuse_engine.recomputes,  # type: ignore[attr-defined]
+                    "invalidations": self.reuse_engine.invalidations,  # type: ignore[attr-defined]
                 },
                 "cache": {
                     sig: self._reuse_to_dict(entry)
-                    for sig, entry in self.reuse_engine.cache.items()},
+                    for sig, entry in self.reuse_engine.cache.items()},  # type: ignore[attr-defined]
                 },
-                "audit.json": [record.__dict__ for record in self.patch_tool.audit_records],
+                "audit.json": [record.__dict__ for record in self.patch_tool.audit_records],  # type: ignore[attr-defined]
                 "approvals.json": [record.__dict__ for record in self.approvals.values()],
                 "consensus.json": [record.__dict__ for record in self.consensus_records.values()],
-                "cost.json": self._costs.to_dict(),
+                "cost.json": self._costs.to_dict(),  # type: ignore[attr-defined]
                 "executions.json": self.executions,
                 "events.json": self.events.to_list(),
                 "contexts.json": {
                 context_id: self._context_to_dict(context)
                 for context_id, context in self.contexts.items()},
             }
-            if self.project.snapshot is not None:
-                records["project.json"] = self.project.snapshot.to_dict()
-            self.repository.save_snapshot(records)
+            if self.project.snapshot is not None:  # type: ignore[attr-defined]
+                records["project.json"] = self.project.snapshot.to_dict()  # type: ignore[attr-defined]
+            self.repository.save_snapshot(records)  # type: ignore[attr-defined]
             for name, value in records.items():
-                self.repository.save(name, value)
+                self.repository.save(name, value)  # type: ignore[attr-defined]
         except Exception as exc:
             raise PersistenceError(
-                f"failed to persist VIAL runtime state in {self.state_root}") from exc
+                f"failed to persist VIAL runtime state in {self.state_root}") from exc  # type: ignore[attr-defined]
 
     def _load_persisted(self) -> None:
-        if not self.persist_state:
+        if not self.persist_state:  # type: ignore[attr-defined]
             return
         try:
-            snapshot = self.repository.load_snapshot()
+            snapshot = self.repository.load_snapshot()  # type: ignore[attr-defined]
 
             def has_record(name: str) -> bool:
                 return (name in snapshot if snapshot is not None else
-                        (self.state_root / name).is_file())
+                        (self.state_root / name).is_file())  # type: ignore[attr-defined]
 
             def load_record(name: str) -> Any:
                 return (snapshot[name] if snapshot is not None
-                        else self.repository.load(name))
+                        else self.repository.load(name))  # type: ignore[attr-defined]
 
             if has_record("organization.json"):
                 data = load_record("organization.json")
-                self.organization.authority = data["authority"]
-                self.organization.config_version = data["config_version"]
-                self.organization.state_version = data["state_version"]
-                self.organization.fields = {
-                    key: self._state.StateField(
+                self.organization.authority = data["authority"]  # type: ignore[attr-defined]
+                self.organization.config_version = data["config_version"]  # type: ignore[attr-defined]
+                self.organization.state_version = data["state_version"]  # type: ignore[attr-defined]
+                self.organization.fields = {  # type: ignore[attr-defined]
+                    key: self._state.StateField(  # type: ignore[attr-defined]
                         key, field["value"], field["relevance"], field["authority"])
                     for key, field in data["fields"].items()}
-                self.organization.transitions = [
+                self.organization.transitions = [  # type: ignore[attr-defined]
                     self._transition_from_dict(t) for t in data["transitions"]]
             if has_record("decisions.json"):
                 data = load_record("decisions.json")
-                self.decision_engine.decisions = {
+                self.decision_engine.decisions = {  # type: ignore[attr-defined]
                     did: self._decision_from_dict(d) for did, d in data.items()}
             if has_record("intents.json"):
                 data = load_record("intents.json")
-                self.coordinator.intents = {
-                    op_id: self._coordinator.Intent(**intent)
+                self.coordinator.intents = {  # type: ignore[attr-defined]
+                    op_id: self._coordinator.Intent(**intent)  # type: ignore[attr-defined]
                     for op_id, intent in data.items()}
             if has_record("reuse.json"):
                 data = load_record("reuse.json")
                 stats = data.get("_stats", {})
-                self.reuse_engine.reuse_hits = stats.get("reuse_hits", 0)
-                self.reuse_engine.recomputes = stats.get("recomputes", 0)
-                self.reuse_engine.invalidations = stats.get("invalidations", 0)
-                self.reuse_engine.cache = {
-                    sig: self._reuse.CachedResult(**entry)
+                self.reuse_engine.reuse_hits = stats.get("reuse_hits", 0)  # type: ignore[attr-defined]
+                self.reuse_engine.recomputes = stats.get("recomputes", 0)  # type: ignore[attr-defined]
+                self.reuse_engine.invalidations = stats.get("invalidations", 0)  # type: ignore[attr-defined]
+                self.reuse_engine.cache = {  # type: ignore[attr-defined]
+                    sig: self._reuse.CachedResult(**entry)  # type: ignore[attr-defined]
                     for sig, entry in data.get("cache", data).items()}
             if has_record("audit.json"):
                 data = load_record("audit.json")
-                self.patch_tool.audit_records = [
-                    self._tool.AuditRecord(**record) for record in data]
+                self.patch_tool.audit_records = [  # type: ignore[attr-defined]
+                    self._tool.AuditRecord(**record) for record in data]  # type: ignore[attr-defined]
             if has_record("approvals.json"):
                 data = load_record("approvals.json")
                 self.approvals = {
@@ -112,7 +112,7 @@ class PersistenceMixin:
                     for record in data}
             if has_record("cost.json"):
                 data = load_record("cost.json")
-                self._costs = self._cost.CostComponents(
+                self._costs = self._cost.CostComponents(  # type: ignore[attr-defined]
                     tokens=data.get("tokens", 0.0),
                     inference=data.get("inference", 0.0),
                     latency=data.get("latency", 0.0),
@@ -123,13 +123,13 @@ class PersistenceMixin:
             if has_record("executions.json"):
                 self.executions = list(load_record("executions.json"))
             if has_record("events.json"):
-                self.events = EventStore.from_list(
+                self.events = EventStore.from_list(  # type: ignore[attr-defined]
                     load_record("events.json"))
-                self.events.configure({self.actor, self.authority})
+                self.events.configure({self.actor, self.authority})  # type: ignore[attr-defined]
             if has_record("project.json"):
-                self.project.restore(ProjectSnapshot.from_dict(
+                self.project.restore(ProjectSnapshot.from_dict(  # type: ignore[attr-defined]
                     load_record("project.json")))
-                self.project.configure({self.actor, self.authority})
+                self.project.configure({self.actor, self.authority})  # type: ignore[attr-defined]
             if has_record("contexts.json"):
                 self.contexts = {
                     context_id: self._context_from_dict(data)
@@ -137,20 +137,20 @@ class PersistenceMixin:
                     in load_record("contexts.json").items()}
         except Exception as exc:
             raise PersistenceError(
-                f"failed to restore VIAL runtime state from {self.state_root}") from exc
+                f"failed to restore VIAL runtime state from {self.state_root}") from exc  # type: ignore[attr-defined]
 
     def _organization_to_dict(self) -> dict[str, Any]:
         return {
-            "org_id": self.organization.org_id,
-            "authority": self.organization.authority,
-            "config_version": self.organization.config_version,
-            "state_version": self.organization.state_version,
+            "org_id": self.organization.org_id,  # type: ignore[attr-defined]
+            "authority": self.organization.authority,  # type: ignore[attr-defined]
+            "config_version": self.organization.config_version,  # type: ignore[attr-defined]
+            "state_version": self.organization.state_version,  # type: ignore[attr-defined]
             "fields": {
                 key: {"value": field.value, "relevance": field.relevance,
                       "authority": field.authority}
-                for key, field in self.organization.fields.items()},
+                for key, field in self.organization.fields.items()},  # type: ignore[attr-defined]
             "transitions": [self._transition_to_dict(t)
-                            for t in self.organization.transitions],
+                            for t in self.organization.transitions],  # type: ignore[attr-defined]
         }
 
     @staticmethod
@@ -167,16 +167,16 @@ class PersistenceMixin:
         }
 
     def _transition_from_dict(self, d: dict[str, Any]) -> Any:
-        return self._state.StateTransition(**d)
+        return self._state.StateTransition(**d)  # type: ignore[attr-defined]
 
     @staticmethod
     def _decision_to_dict(d: Any) -> dict[str, Any]:
         return d.to_dict()
 
     def _decision_from_dict(self, d: dict[str, Any]) -> Any:
-        authority = self._decision.Authority(**d["authority"])
+        authority = self._decision.Authority(**d["authority"])  # type: ignore[attr-defined]
         fields = {k: v for k, v in d.items() if k != "authority"}
-        return self._decision.Decision(**fields, authority=authority)
+        return self._decision.Decision(**fields, authority=authority)  # type: ignore[attr-defined]
 
     @staticmethod
     def _context_to_dict(context: Any) -> dict[str, Any]:
@@ -197,7 +197,7 @@ class PersistenceMixin:
         }
 
     def _context_from_dict(self, d: dict[str, Any]) -> Any:
-        return self._context.Context(**d)
+        return self._context.Context(**d)  # type: ignore[attr-defined]
 
     @staticmethod
     def _intent_to_dict(intent: Any) -> dict[str, Any]:

@@ -109,6 +109,10 @@ class DockerOpenCodeProvider:
                     break
         response = ModelResponse(
             text=text, returncode=completed.returncode,
-            stderr=_extract_error(completed), **usage)
+            stderr=_extract_error(completed),
+            input_tokens=usage.get("input_tokens") or 0,
+            output_tokens=usage.get("output_tokens") or 0,
+            total_tokens=usage.get("total_tokens") or 0,
+        )
         self.last_response = response
         return response

@@ -16,13 +16,13 @@ def _trim_messages(messages: list[dict[str, str]]) -> None:
         total -= len(messages.pop(0)["content"])
 
 
-def _as_int(value: object) -> int | None:
+def _as_int(value: object) -> int:
     if value is None:
-        return None
+        return 0
     try:
-        return int(value)
+        return int(value)  # type: ignore[call-overload]
     except (TypeError, ValueError):
-        return None
+        return 0
 
 
 class HttpModelProvider(ModelProvider):
@@ -90,7 +90,7 @@ class HttpModelProvider(ModelProvider):
             first = choices[0]
             message = first.get("message", {}) if isinstance(first, dict) else {}
             content = message.get("content", "") if isinstance(message, dict) else ""
-        usage: dict = data.get("usage") or {}
+        usage: dict[str, object] = data.get("usage") or {}  # type: ignore[assignment]
         return ModelResponse(
             text=content if isinstance(content, str) else str(content),
             returncode=0,
@@ -100,7 +100,7 @@ class HttpModelProvider(ModelProvider):
             total_tokens=_as_int(usage.get("total_tokens")),
         )
 
-    def chat(
+    def chat(  # type: ignore[override]
         self,
         prompt: str,
         directory: Path | None = None,
@@ -129,7 +129,7 @@ class HttpModelProvider(ModelProvider):
             first = choices[0]
             message = first.get("message", {}) if isinstance(first, dict) else {}
             content = message.get("content", "") if isinstance(message, dict) else ""
-        usage: dict = data.get("usage") or {}
+        usage: dict[str, object] = data.get("usage") or {}  # type: ignore[assignment]
         return ModelResponse(
             text=content if isinstance(content, str) else str(content),
             returncode=0,

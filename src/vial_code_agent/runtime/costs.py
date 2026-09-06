@@ -37,7 +37,7 @@ class CostAccountingMixin:
 
     def capable_tiers(self) -> list[str]:
         tiers = set()
-        for resource in self.registry.list():
+        for resource in self.registry.list():  # type: ignore[attr-defined]
             for capability in resource.capabilities.values():
                 tier = capability.constraints.get("tier")
                 if tier:
@@ -52,7 +52,7 @@ class CostAccountingMixin:
         if not deterministic:
             tiers = [tier for tier in tiers if tier != "deterministic"]
         try:
-            tier = self.selector.select(deterministic, tiers)
+            tier = self.selector.select(deterministic, tiers)  # type: ignore[attr-defined]
         except Exception:
             tier = "advanced"
         return TIER_MODEL.get(tier, "reasoning")
@@ -60,25 +60,25 @@ class CostAccountingMixin:
     def record_inference(self, input_tokens: int, output_tokens: int,
                          tier: str = "advanced") -> None:
         multiplier = RESOURCE_TIERS.get(tier, RESOURCE_TIERS["advanced"])
-        self._accumulate(self.cost_model.infer(
+        self._accumulate(self.cost_model.infer(  # type: ignore[attr-defined]
             input_tokens or 0, output_tokens or 0, tier_multiplier=multiplier))
 
     def record_retrieval(self, n_ops: int = 1) -> None:
-        self._accumulate(self.cost_model.retrieval(n_ops))
+        self._accumulate(self.cost_model.retrieval(n_ops))  # type: ignore[attr-defined]
 
     def record_construction(self, n_contexts: int = 1) -> None:
-        self._accumulate(self.cost_model.construction(n_contexts))
+        self._accumulate(self.cost_model.construction(n_contexts))  # type: ignore[attr-defined]
 
     def record_validation(self, n_validations: int = 1) -> None:
-        self._accumulate(self.cost_model.validation(n_validations))
+        self._accumulate(self.cost_model.validation(n_validations))  # type: ignore[attr-defined]
 
     def _accumulate(self, components: Any) -> None:
-        self._costs.tokens += components.tokens
-        self._costs.inference += components.inference
-        self._costs.latency += components.latency
-        self._costs.retrieval += components.retrieval
-        self._costs.construction += components.construction
-        self._costs.validation += components.validation
+        self._costs.tokens += components.tokens  # type: ignore[attr-defined]
+        self._costs.inference += components.inference  # type: ignore[attr-defined]
+        self._costs.latency += components.latency  # type: ignore[attr-defined]
+        self._costs.retrieval += components.retrieval  # type: ignore[attr-defined]
+        self._costs.construction += components.construction  # type: ignore[attr-defined]
+        self._costs.validation += components.validation  # type: ignore[attr-defined]
 
     def costs(self) -> dict[str, float]:
-        return self._costs.to_dict()
+        return self._costs.to_dict()  # type: ignore[attr-defined]

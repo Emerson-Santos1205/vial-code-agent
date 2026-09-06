@@ -537,8 +537,8 @@ class HttpModelProviderEdgeTests(unittest.TestCase):
 
     def test_as_int_rejects_bad_values(self) -> None:
         from vial_code_agent.model import _as_int
-        self.assertIsNone(_as_int("not-a-number"))
-        self.assertIsNone(_as_int(None))
+        self.assertEqual(_as_int("not-a-number"), 0)
+        self.assertEqual(_as_int(None), 0)
 
 
 class _JsonBody:

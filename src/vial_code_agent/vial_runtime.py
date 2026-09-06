@@ -36,13 +36,9 @@ from typing import Any
 
 from .core import VialCoreReference
 from .events import EventStore, VialEvent
-from .persistence import TransactionalJsonRepository
+from .persistence import PersistenceError, TransactionalJsonRepository
 from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 from .records import ApprovalRecord, ConsensusRecord  # noqa: F401 (re-export)
-
-
-class PersistenceError(RuntimeError):
-    """Persistence failed and the runtime cannot claim durable state."""
 
 # Organizational identity defaults (SDK-002 §4).
 ORG_ID = "ORG-VIAL-CODE-AGENT"

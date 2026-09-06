@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 
+class PersistenceError(RuntimeError):
+    """Persistence failed and the runtime cannot claim durable state."""
+
+
 class TransactionalJsonRepository:
     """Wrap the VIAL repository with generation + checksum publication."""
 
