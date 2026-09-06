@@ -1,18 +1,18 @@
 # VIAL Code Agent
 
-Agente de coding baseado no VIAL Core, com Runtime governado, persistência
-auditável e uma CLI de release segura.
+Governed coding agent built on VIAL Core, with an auditable runtime,
+transactable persistence, and a safe release CLI.
 
-## Camadas
+## Layers
 
-- `vial_code_agent.core`: integração com o VIAL Core.
-- `vial_code_agent.vial_runtime`: estado, autorização, consenso, ferramentas e mutações.
-- `vial_code_agent.agent`: geração de código e roteamento de modelos.
-- `vial_code_agent.api`: fronteira pública estável para integrações.
-- `vial_code_agent.cli` e `vial_code_agent.app`: interfaces, sem regras de governança próprias.
+- `vial_code_agent.core`: VIAL Core integration.
+- `vial_code_agent.vial_runtime`: state, authorization, consensus, tools, and mutations.
+- `vial_code_agent.agent`: code generation and model routing.
+- `vial_code_agent.api`: stable public boundary for integrations.
+- `vial_code_agent.cli` and `vial_code_agent.app`: interfaces with no governance logic of their own.
 
-Mutação de workspace deve passar por `VialRuntime.apply_patch`; o caminho
-governado valida escopo, autorização, consenso, auditoria, commit e recuperação.
+Workspace mutations must go through `VialRuntime.apply_patch`; the governed
+path validates scope, authorization, consensus, audit, commit, and recovery.
 
 ## Coding agent
 
@@ -23,80 +23,81 @@ python -m benchmark.run_benchmark --agent --model openai/gpt-4o
 python -m benchmark.run_benchmark --adapters baseline,opencode,vial --model openai/gpt-4o
 ```
 
-O benchmark padrão é um **Unit / Regression Benchmark** sintético: executa 100
-fixtures isoladas em oito categorias, todas derivadas de transformações pequenas
-e determinísticas. Ele mede aplicação de patch, validação, rollback, retries e
-execução de testes; **não é uma estimativa de qualidade de coding agent e não
-substitui SWE-bench**.
+The default benchmark is a synthetic **Unit / Regression Benchmark**: it runs
+100 isolated fixtures across eight categories, all derived from small,
+deterministic transforms. It measures patch application, validation, rollback,
+retries, and test execution; **it is not a coding-agent quality estimate and
+does not replace SWE-bench**.
 
-O modo `--agent` (ou `--adapter opencode`) gera o patch através do coding-agent
-configurado, aplica-o em uma fixture descartável, roda os testes da tarefa e
-grava relatório JSON em `benchmark/results/`. Os relatórios incluem taxa de
-sucesso, latência, tokens, regressões, falhas de patch, rollbacks e intervenção
-humana.
+The `--agent` (or `--adapter opencode`) mode generates the patch through the
+configured coding agent, applies it to a disposable fixture, runs the task
+tests, and writes a JSON report to `benchmark/results/`. Reports include
+success rate, latency, tokens, regressions, patch failures, rollbacks, and
+human intervention.
 
-Os modelos usam o formato `provider/model`. Os defaults públicos são
-`openai/gpt-4o-mini` para tarefas rápidas e `openai/gpt-4o` para raciocínio; a
-disponibilidade depende da autenticação do provider. Não use aliases internos de
-uma execução como identificadores públicos de configuração.
+Models use the `provider/model` format. Public defaults are
+`openai/gpt-4o-mini` for fast tasks and `openai/gpt-4o` for reasoning;
+availability depends on provider authentication. Do not use internal
+execution aliases as public configuration identifiers.
 
-Nos relatórios SWE-bench, o sucesso é decomposto em duas métricas: `agent_success_rate`
-é soluções corretas dividido pelas tarefas ambientalmente válidas, enquanto
-`end_to_end_success_rate` é soluções corretas dividido por todas as tarefas.
-Assim, falhas classificadas como `environment` não são confundidas com falhas do
-agente, mas continuam incluídas na avaliação end-to-end.
+In SWE-bench reports, success is decomposed into two metrics:
+`agent_success_rate` is correct solutions divided by environmentally valid
+tasks, while `end_to_end_success_rate` is correct solutions divided by all
+tasks. Thus, failures classified as `environment` are not confused with agent
+failures but remain included in the end-to-end evaluation.
 
-`--adapters baseline,opencode,vial` executa a mesma matriz sintética em três caminhos:
-provider direto, agente convencional e agente composto pelo VIAL Runtime.
-Workloads reais podem ser fornecidos com `--workload caminho/para/workload.json`
-usando a mesma estrutura de `tasks` com `id`, `category`, `prompt`, `initial`,
-`patch` e `tests`.
+`--adapters baseline,opencode,vial` runs the same synthetic matrix through
+three paths: direct provider, conventional agent, and VIAL-Runtime-composed
+agent. Real workloads can be supplied with
+`--workload path/to/workload.json` using the same `tasks` structure with
+`id`, `category`, `prompt`, `initial`, `patch`, and `tests`.
 
-Para baixar instâncias reais do SWE-bench Lite:
+To download real SWE-bench Lite instances:
 
 ```text
 python benchmark/fetch_swebench.py --split test --offset 0 --length 10 --out benchmark/swebench-lite-real.json
 ```
 
-O dataset contém issue, repositório, commit base, patch de referência e listas
-de testes. A execução completa requer clonar cada repositório no commit base e
-instalar suas dependências, por isso não é tratada como fixture local simples.
-No executor SWE-bench, a imagem de testes é escolhida por instância/repositório
-quando `--test-image` não é informado; esse parâmetro existe apenas como
-override experimental para reproduções controladas.
-O contrato de ambiente é resolvido antes do workspace e pode declarar versão
-Python, dependências, comando de testes e metadados. As imagens são famílias
-reutilizáveis por versão, não uma imagem obrigatória por instância.
-O relatório SWE-bench é persistido em `benchmark/results/` e registra repositório,
-commit base, imagem, Python, dependências, timeout, classificação e evidência por
-tarefa. A aplicação do patch do agente é fail-closed: sem consenso independente
-fornecido por `--consensus-file`, a tarefa é bloqueada sem mutar o workspace.
-Para gerar esse consenso automaticamente, informe um segundo modelo independente
-com `--consensus-model`; candidatos divergentes são bloqueados.
-Para Astropy, o ambiente usa a imagem pré-construída
-`vial-code-agent-swebench-python39:local`, que fixa `pytest==7.4.4`, `Cython<3`,
-`pytest-astropy==0.9.0` e `pytest-astropy-header==0.1.2`, compila as extensões
-com `build_ext --inplace` contra o ABI corrente do container, e executa pytest
-com o plugin de warnings desativado.
-compatível com os commits históricos do SWE-bench.
+The dataset contains issue, repository, base commit, reference patch, and test
+lists. Full execution requires cloning each repository at the base commit and
+installing its dependencies, so it is not treated as a simple local fixture.
+In the SWE-bench executor, the test image is chosen per instance/repository
+when `--test-image` is not provided; this parameter exists only as an
+experimental override for controlled reproductions.
+The environment contract is resolved before the workspace and can declare
+Python version, dependencies, test command, and metadata. Images are reusable
+families by version, not a mandatory image per instance.
+The SWE-bench report is persisted in `benchmark/results/` and records
+repository, base commit, image, Python, dependencies, timeout, classification,
+and evidence per task. The agent patch application is fail-closed: without
+independent consensus provided via `--consensus-file`, the task is blocked
+without mutating the workspace.
+To generate that consensus automatically, provide a second independent model
+with `--consensus-model`; divergent candidates are blocked.
+For Astropy, the environment uses the pre-built image
+`vial-code-agent-swebench-python39:local`, which pins `pytest==7.4.4`,
+`Cython<3`, `pytest-astropy==0.9.0`, and `pytest-astropy-header==0.1.2`,
+compiles extensions with `build_ext --inplace` against the container's current
+ABI, and runs pytest with the warnings plugin disabled.
+Compatible with historical SWE-bench commits.
 
-Validação de testes em sandbox Docker:
+Test validation in Docker sandbox:
 
 ```text
 python benchmark/run_sandbox.py --limit 1
 ```
 
-O executor usa rede desabilitada, filesystem read-only e apenas `/tmp` gravável.
+The executor uses disabled network, read-only filesystem, and only `/tmp`
+writable.
 
-Imagem do provider OpenCode:
+OpenCode provider image:
 
 ```text
 docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
 docker run --rm vial-code-agent-opencode:1.18.18 --version
 ```
 
-Credenciais devem ser montadas somente durante a execução, nunca copiadas para
-a imagem:
+Credentials must be mounted only at runtime, never copied into the image:
 
 ```text
 docker run --rm --network none \
@@ -104,65 +105,64 @@ docker run --rm --network none \
   vial-code-agent-opencode:1.18.18 providers list
 ```
 
-Consenso para mutações pode exigir evidência: cada candidato é aplicado em uma
-cópia descartável e validado estaticamente; quando `--test-command` é usado,
-os testes comportamentais também precisam passar antes do consenso ser aceito.
+Consensus for mutations may require evidence: each candidate is applied to a
+disposable copy and statically validated; when `--test-command` is used,
+behavioral tests must also pass before consensus is accepted.
 
-### Custo da Segurança Fail-Closed
+### Fail-Closed Security Cost
 
-O protocolo de consenso troca custo de inferência por menor risco de aplicar uma
-solução inválida. Em uma execução diagnóstica de 10 tarefas, foram registradas
-48 tentativas de candidato, 28 patches retornados, 23 patches estaticamente
-válidos e 17 candidatos aprovados também pelos testes comportamentais. A
-execução consumiu 199.713 tokens, ou aproximadamente 19.971 tokens por tarefa.
+The consensus protocol trades inference cost for lower risk of applying an
+invalid solution. In a diagnostic run of 10 tasks, 48 candidate attempts were
+recorded, 28 patches returned, 23 patches statically valid, and 17 candidates
+also approved by behavioral tests. The run consumed 199,713 tokens,
+approximately 19,971 tokens per task.
 
-Nesse relatório, `candidate_completion_rate` é a razão entre patches retornados
-e tentativas de candidato (`28/48 = 0,58`). Já
-`candidate_reliability_rate` exige validade estática e aprovação comportamental,
-e usa todas as tentativas como denominador (`17/48 = 0,35`). Retries e respostas
-sem patch permanecem no denominador; portanto, essas métricas tornam visível o
-trabalho de modelo descartado antes da governança. O custo é intencional: o
-fluxo é fail-closed e não muta o workspace sem evidência independente suficiente.
+In that report, `candidate_completion_rate` is the ratio of returned patches to
+candidate attempts (`28/48 = 0.58`). `candidate_reliability_rate` requires
+static validity and behavioral approval, using all attempts as denominator
+(`17/48 = 0.35`). Retries and responses without a patch remain in the
+denominator; therefore these metrics make discarded model work visible before
+governance. The cost is intentional: the flow is fail-closed and does not
+mutate the workspace without sufficient independent evidence.
 
-Esses números são diagnósticos de uma execução específica, não uma estimativa
-fixa de custo. Variam conforme modelo, prompt, workload, retries e testes.
+These numbers are diagnostics of a specific run, not a fixed cost estimate.
+They vary by model, prompt, workload, retries, and tests.
 
-### Primeira Evidência SWE-bench Publicada
+### First Published SWE-bench Evidence
 
-O primeiro relatório real versionado está disponível em
+The first versioned real report is available at
 [`benchmark/results/swebench-lite-10-consensus-2026-08-23.json`](benchmark/results/swebench-lite-10-consensus-2026-08-23.json).
-Ele cobre 10 tarefas do SWE-bench Lite com dois candidatos independentes,
-validação comportamental e adjudicação quando aplicável. O resultado foi 7/10
-end-to-end, com 6/10 candidatos A válidos, 7/10 candidatos B válidos e 7/10
-consensos aprovados. As três tarefas bloqueadas permanecem no relatório, com
-suas evidências de candidato insuficiente, em vez de serem removidas do score.
+It covers 10 SWE-bench Lite tasks with two independent candidates, behavioral
+validation, and adjudication where applicable. The result was 7/10
+end-to-end, with 6/10 candidate A valid, 7/10 candidate B valid, and 7/10
+consensus approved. The three blocked tasks remain in the report with their
+insufficient-candidate evidence rather than being removed from the score.
 
-O primeiro piloto do SWE-bench Verified usa 5 instâncias e está disponível em
+The first SWE-bench Verified pilot uses 5 instances and is available at
 [`benchmark/results/swebench-verified-5-consensus-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-2026-08-25.json).
-Ele obteve 2/5 end-to-end, com 4/5 ambientes válidos. Este é um piloto de
-infraestrutura e não uma amostra estatística ou um número de marketing.
-O rerun após as correções do executor está em
-[`benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json): os 5 ambientes foram válidos, com 2/5 end-to-end.
+It achieved 2/5 end-to-end with 4/5 valid environments. This is an
+infrastructure pilot, not a statistical sample or marketing number.
+The rerun after executor fixes is at
+[`benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json`](benchmark/results/swebench-verified-5-consensus-rerun-2026-08-25.json): all 5 environments were valid, with 2/5 end-to-end.
 
-Uma comparação sintética de 100 tarefas por adaptador está disponível em
+A synthetic comparison of 100 tasks per adapter is available at
 [`benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json`](benchmark/results/synthetic-adapter-cost-comparison-2026-08-23.json).
-Nesse workload, `opencode` e `vial` obtiveram 100/100. O caminho VIAL consumiu
-84.701 tokens contra 66.756 do caminho `opencode` (+26,9%) e teve latência média
-de 9,40 s contra 9,01 s (+4,3%). Essa é uma medida do protocolo completo neste
-benchmark sintético, não do overhead isolado do VIAL Core nem uma estimativa de
-qualidade em SWE-bench.
+In that workload, `opencode` and `vial` both achieved 100/100. The VIAL path
+consumed 84,701 tokens versus 66,756 for the `opencode` path (+26.9%) and had
+an average latency of 9.40 s versus 9.01 s (+4.3%). This is a measurement of
+the complete protocol on this synthetic benchmark, not isolated VIAL Core
+overhead or a SWE-bench quality estimate.
 
-Novas execuções devem usar SWE-bench Verified. O workflow manual padrão busca
-50 instâncias de `princeton-nlp/SWE-bench_Verified`; resultados com menos de 50
-tarefas são marcados como `diagnostic_only`. O relatório inclui `economics` com
-tokens de inferência de todos os candidatos, duração e custo/tempo por tarefa
-resolvida. Tokens de contexto VIAL são mantidos separados e não são vendidos
-como consumo do modelo.
+New runs should use SWE-bench Verified. The default manual workflow fetches
+50 instances from `princeton-nlp/SWE-bench_Verified`; results with fewer than
+50 tasks are marked `diagnostic_only`. The report includes `economics` with
+inference tokens from all candidates, duration, and cost/time per resolved
+task. VIAL context tokens are kept separate and not sold as model consumption.
 
-Para executar uma amostra grande sem concentrar todas as instâncias em um único
-job, divida o intervalo em shards balanceados. Cada shard registra os índices
-processados no relatório e pode usar um diretório `--out` próprio para manter o
-checkpoint isolado.
+To run a large sample without concentrating all instances in a single job,
+split the range into balanced shards. Each shard records the processed indices
+in the report and can use its own `--out` directory to keep checkpoints
+isolated.
 
 ```text
 python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json \
@@ -170,28 +170,29 @@ python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json 
   --shard-index 0 --shard-count 10 --out benchmark/results/verified-00
 ```
 
-Repita para `--shard-index` de `0` a `9`. O workflow `SWE-bench Real
-Evaluation` expõe os mesmos campos para disparar cada shard separadamente.
+Repeat for `--shard-index` from `0` to `9`. The `SWE-bench Real Evaluation`
+workflow exposes the same fields to trigger each shard separately.
 
-Depois de concluir os shards, consolide-os sem misturar modelos ou workloads:
+After completing the shards, consolidate them without mixing models or
+workloads:
 
 ```text
 python -m benchmark.aggregate_swebench benchmark/results/comparison-*/report-*.json \
   --out benchmark/results/verified-comparison.json
 ```
 
-O agregador rejeita contratos incompatíveis e resultados duplicados por
+The aggregator rejects incompatible contracts and duplicate results by
 `adapter:task_id`.
 
-O workflow manual publica o relatório e o checkpoint de cada shard como
-artefato do GitHub Actions. Baixe todos os artefatos, extraia os relatórios e
-execute o agregador localmente para gerar o resultado consolidado.
+The manual workflow publishes each shard's report and checkpoint as a GitHub
+Actions artifact. Download all artifacts, extract the reports, and run the
+aggregator locally to produce the consolidated result.
 
-O executor real também compara os três protocolos sobre a mesma seleção de
-instâncias. `baseline` faz uma chamada direta ao provider, `opencode` usa o
-`CodeAgent` sem runtime e `vial` usa o runtime governado. O relatório cria
-`by_adapter` com sucesso e economia para cada caminho, e mantém checkpoints por
-`adapter:index` para que uma interrupção não misture resultados.
+The real executor also compares the three protocols on the same instance
+selection. `baseline` makes a direct provider call, `opencode` uses the
+`CodeAgent` without runtime, and `vial` uses the governed runtime. The report
+creates `by_adapter` with success and savings for each path, and maintains
+checkpoints by `adapter:index` so an interruption does not mix results.
 
 ```text
 python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json \
@@ -200,72 +201,71 @@ python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json 
   --out benchmark/results/comparison-00
 ```
 
-Quando `vial` recebe `--consensus-model`, somente esse adapter usa o segundo
-modelo e a validação de consenso; `baseline` e `opencode` permanecem medidas de
-um candidato no mesmo modelo primário.
+When `vial` receives `--consensus-model`, only that adapter uses the second
+model and consensus validation; `baseline` and `opencode` remain single-
+candidate measurements on the same primary model.
 
-Monte pilotos com repositórios distintos para não medir apenas a infraestrutura
-de uma única base histórica:
+Build pilots with distinct repositories to avoid measuring only one base
+history's infrastructure:
 
 ```text
 python benchmark/fetch_swebench.py --dataset princeton-nlp/SWE-bench_Verified \
   --split test --length 10 --unique-repos --out benchmark/swebench-verified-diverse-10.json
 ```
 
-Antes do comparativo, valide cada ambiente uma única vez. `--preflight-only`
-executa `FAIL_TO_PASS` e `PASS_TO_PASS`, mas não chama modelo nem cria patches;
-instâncias cujo comportamento base não corresponde ao contrato ficam marcadas
-como `baseline_tests` e não devem entrar no score comercial.
+Before the comparison, validate each environment once. `--preflight-only`
+runs `FAIL_TO_PASS` and `PASS_TO_PASS` but does not call a model or create
+patches; instances whose baseline behavior does not match the contract are
+marked `baseline_tests` and should not enter the commercial score.
 
 ```text
 python benchmark/run_swebench.py --workload benchmark/swebench-verified-diverse-10.json \
   --run-tests --preflight-only --limit 10 --out benchmark/results/preflight
 ```
 
-## Instalação
+## Installation
 
-O projeto depende do VIAL Core em `vendor/vial-core`, configurado como um
-submódulo Git. Para um clone novo, inicialize o repositório incluindo os
-submódulos:
+The project depends on VIAL Core in `vendor/vial-core`, configured as a Git
+submodule. For a fresh clone, initialize the repository including submodules:
 
 ```text
 git clone --recurse-submodules https://github.com/Emerson-Santos1205/vial-code-agent.git
 cd vial-code-agent
 ```
 
-Se o repositório já foi clonado sem `--recurse-submodules`, inicialize o
-submódulo manualmente:
+If the repository was already cloned without `--recurse-submodules`, initialize
+the submodule manually:
 
 ```text
 git submodule update --init --recursive
 ```
 
-Confirme que `vendor/vial-core` existe antes de executar a aplicação ou os
-benchmarks. Em seguida, instale o pacote localmente:
+Confirm that `vendor/vial-core` exists before running the application or
+benchmarks. Then install the package locally:
 
 ```text
 python -m pip install -e .
 ```
 
-Para desenvolvimento completo (incluindo ferramentas de linting e checagem de tipos):
+For full development (including linting and type-checking tools):
 
 ```text
 python -m pip install -e .[dev]
 ```
 
-### Qualidade de Código & Testes
+### Code Quality & Tests
 
-Para executar a suíte completa de testes e verificações estáticas de qualidade:
+To run the full test suite and static quality checks:
 
 ```text
-python -m pytest                        # Roda os 417 testes unitários e de integração
-python -m ruff check src/ tests/        # Linting e validação de imports com Ruff
-python -m mypy src/vial_code_agent      # Verificação estática de tipos
+python -m pytest                        # Run the 417 unit and integration tests
+python -m ruff check src/ tests/        # Linting and import validation with Ruff
+python -m mypy src/vial_code_agent      # Static type checking
 ```
 
-### Providers e VS Code
+### Providers & VS Code
 
-Configure provedores OpenAI-compatíveis sem depender de aliases do OpenCode:
+Configure OpenAI-compatible providers without depending on OpenCode aliases:
 
 ```text
 vial --root . --add-server local http://127.0.0.1:11434/v1
@@ -273,32 +273,32 @@ vial --root . --add-model local/qwen2.5-coder
 vial --root . --pool-set local/qwen2.5-coder openai/gpt-4o
 ```
 
-Para a extensão VS Code ou integrações HTTP, inicie o servidor loopback:
+For the VS Code extension or HTTP integrations, start the loopback server:
 
 ```text
 vial --root . --serve
 ```
 
-O servidor expõe:
-- `GET /health`: Estado do servidor e raiz do workspace.
-- `GET /api/v1/schema` ou `GET /openapi.json`: Especificação OpenAPI 3.0 completa da API.
-- `POST /chat`: Envio de prompts para o agente.
+The server exposes:
+- `GET /health`: Server status and workspace root.
+- `GET /api/v1/schema` or `GET /openapi.json`: Full OpenAPI 3.0 API specification.
+- `POST /chat`: Send prompts to the agent.
 
-Antes do primeiro uso, diagnostique a instalação sem chamar nenhum modelo:
+Before first use, diagnose the installation without calling any model:
 
 ```text
 vial --root . --doctor
 vial --root . --doctor --json
 ```
 
-O servidor aceita apenas endereços loopback e fixa o workspace no processo que
-o iniciou; ele não aceita caminhos de workspace vindos da extensão.
+The server accepts only loopback addresses and pins the workspace to the
+process that started it; it does not accept workspace paths from the extension.
 
 ## Release Orchestrator
 
-O CLI de release orchestration é invocado via `python -m release_orchestrator`.
+The release orchestration CLI is invoked via `python -m release_orchestrator`.
 
-### Uso
+### Usage
 
 ```text
 python -m release_orchestrator scan
@@ -311,43 +311,43 @@ python -m release_orchestrator rollback 1.2.3 --confirm
 python -m release_orchestrator rollback 1.2.3 --dry-run
 ```
 
-### Subcomandos
+### Subcommands
 
-- `scan`: mostra branch atual, último commit e arquivos modificados.
-- `changelog`: gera `CHANGELOG.md` a partir de uma tag.
-- `check`: valida README, testes, segredos, suíte de testes e working tree.
-- `release`: valida semver, exige `--confirm`, executa checks, atualiza `VERSION` e `CHANGELOG.md`, e cria tag anotada.
-- `rollback`: remove somente a tag criada pela ferramenta.
+- `scan`: show current branch, latest commit, and modified files.
+- `changelog`: generate `CHANGELOG.md` from a tag.
+- `check`: validate README, tests, secrets, test suite, and working tree.
+- `release`: validate semver, require `--confirm`, run checks, update `VERSION` and `CHANGELOG.md`, and create an annotated tag.
+- `rollback`: remove only the tag created by the tool.
 
-### Artefatos de release
+### Release artifacts
 
-Tags `vMAJOR.MINOR.PATCH` iniciam o workflow de distribuição. O workflow valida
-os entry points instalando o wheel e publica wheel/sdist como artefatos do
-GitHub Actions. O PyPI não faz parte do caminho crítico atual e será habilitado
-quando o produto estiver maduro o suficiente para distribuição pública.
+Tags `vMAJOR.MINOR.PATCH` trigger the distribution workflow. The workflow
+validates entry points by installing the wheel and publishes wheel/sdist as
+GitHub Actions artifacts. PyPI is not part of the current critical path and
+will be enabled when the product is mature enough for public distribution.
 
-### Códigos de saída
+### Exit codes
 
-- `0`: sucesso.
-- `1`: falha de validação, repositório sujo, arquivo secreto, teste quebrado, confirmação ausente ou operação recusada.
+- `0`: success.
+- `1`: validation failure, dirty repository, secret file, broken test, missing confirmation, or refused operation.
 
-Todos os erros são enviados para `stderr`.
+All errors are sent to `stderr`.
 
-### Limitações
+### Limitations
 
-- Usa a biblioteca padrão do Python e `textual` para a interface TUI.
-- Requer `git` e `python -m unittest` disponíveis no ambiente.
-- `changelog` recusa sobrescrever `CHANGELOG.md` sem `--force`.
-- `rollback` remove apenas tags no formato `release-orchestrator-vMAJOR.MINOR.PATCH`.
-- `--dry-run` não persiste alterações.
-- `release` exige `--confirm` antes de criar tag e atualizar arquivos.
+- Uses the Python standard library and `textual` for the TUI interface.
+- Requires `git` and `python -m unittest` available in the environment.
+- `changelog` refuses to overwrite `CHANGELOG.md` without `--force`.
+- `rollback` removes only tags in the `release-orchestrator-vMAJOR.MINOR.PATCH` format.
+- `--dry-run` does not persist changes.
+- `release` requires `--confirm` before creating the tag and updating files.
 
 ### JSON
 
-`scan`, `check` e `changelog` suportam `--json` para saída estruturada.
+`scan`, `check`, and `changelog` support `--json` for structured output.
 
-## Licença
+## License
 
-O VIAL Code Agent é distribuído sob a [Apache License 2.0](LICENSE). O VIAL
-Core incluído em `vendor/vial-core` é um submódulo separado, com sua própria
-declaração de licença.
+VIAL Code Agent is distributed under the [Apache License 2.0](LICENSE). The
+VIAL Core included in `vendor/vial-core` is a separate submodule with its own
+license declaration.

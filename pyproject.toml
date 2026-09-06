@@ -28,6 +28,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.4",
     "mypy>=1.10",
+    "commitizen>=3.13",
 ]
 
 [project.scripts]
@@ -51,4 +52,14 @@ ignore_missing_imports = true
 warn_unused_configs = true
 show_error_codes = true
 
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.3.0"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+    "src/vial_code_agent/__init__.py:__version__",
+]
+update_changelog_on_bump = true
+annotated_tag = true
 

@@ -32,6 +32,17 @@ jobs:
         run: python -m pytest -q --cov=vial_code_agent --cov-report=term-missing --cov-fail-under=70
       - name: Compile sources
         run: python -m compileall -q src tests benchmark
+      - name: Check VIAL Core submodule drift
+        run: |
+          python -c "
+          from vial_code_agent.core import VialCoreReference
+          vial = VialCoreReference('.')
+          drift = vial.check_drift()
+          if not drift.get('synced', True):
+              print(f'::error::VIAL Core submodule is out of sync: {drift}')
+              exit(1)
+          print('VIAL Core submodule is in sync')
+          "
       - name: Adversarial checks
         run: python benchmark/run_adversarial.py
       - name: Docker sandbox smoke test
