@@ -36,7 +36,7 @@ jobs:
         run: |
           python -c "
           from vial_code_agent.core import VialCoreReference
-          vial = VialCoreReference('.')
+          vial = VialCoreReference('vendor/vial-core')
           drift = vial.check_drift()
           if not drift.get('synced', True):
               print(f'::error::VIAL Core submodule is out of sync: {drift}')
