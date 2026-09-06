@@ -90,15 +90,23 @@ class VialCoreReference:
         root = Path(self.root)
         gitmodules = root.parent / ".gitmodules" if root.name == "vendor" else root / ".gitmodules"
         branch = "development"
+        url = ""
         if gitmodules.is_file():
             for line in gitmodules.read_text().splitlines():
                 stripped = line.strip()
                 if stripped.startswith("branch ="):
                     branch = stripped.split("=", 1)[1].strip()
-                    break
+                elif stripped.startswith("url ="):
+                    url = stripped.split("=", 1)[1].strip()
         ref = f"refs/heads/{branch}"
+        cmd = ["git", "ls-remote"]
+        if url:
+            cmd.append(url)
+        else:
+            cmd.append("origin")
+        cmd.append(ref)
         res = subprocess.run(
-            ["git", "ls-remote", "origin", ref], cwd=str(self.root), text=True, capture_output=True, check=False
+            cmd, cwd=str(self.root), text=True, capture_output=True, check=False
         )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip().split()[0]
