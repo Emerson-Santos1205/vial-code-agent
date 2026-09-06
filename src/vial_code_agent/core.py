@@ -14,6 +14,9 @@ class VialCoreReference:
 
     root: Path
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "root", Path(self.root))
+
     def exists(self) -> bool:
         return Path(self.root).is_dir()
 
