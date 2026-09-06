@@ -87,8 +87,18 @@ class VialCoreReference:
         if not self.exists():
             return ""
         import subprocess
+        root = Path(self.root)
+        gitmodules = root.parent / ".gitmodules" if root.name == "vendor" else root / ".gitmodules"
+        branch = "development"
+        if gitmodules.is_file():
+            for line in gitmodules.read_text().splitlines():
+                stripped = line.strip()
+                if stripped.startswith("branch ="):
+                    branch = stripped.split("=", 1)[1].strip()
+                    break
+        ref = f"refs/heads/{branch}"
         res = subprocess.run(
-            ["git", "ls-remote", "origin", "HEAD"], cwd=str(self.root), text=True, capture_output=True, check=False
+            ["git", "ls-remote", "origin", ref], cwd=str(self.root), text=True, capture_output=True, check=False
         )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip().split()[0]
