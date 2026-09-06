@@ -606,6 +606,50 @@ class BuildSwebenchPromptTests(unittest.TestCase):
             self.assertIn("New files to create:", prompt)
             self.assertIn("For each file in the diff, the hunk line numbers must match the CURRENT STATE shown.", prompt)
 
+    def test_search_replace_format_rules(self) -> None:
+        instance = {
+            "repo": "owner/repo",
+            "base_commit": "abc",
+            "problem_statement": "fix",
+            "fail_to_pass": [],
+            "pass_to_pass": [],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "src").mkdir()
+            (root / "src" / "main.py").write_text("x = 1\n", encoding="utf-8")
+            prompt = build_swebench_prompt(
+                instance, root, [root / "src" / "main.py"],
+                {"src/main.py"}, self._mock_env(),
+                edit_format="search-replace")
+            self.assertIn("SEARCH/REPLACE blocks", prompt)
+            self.assertIn("<<<<<<< SEARCH", prompt)
+            self.assertIn("=======", prompt)
+            self.assertIn(">>>>>>> REPLACE", prompt)
+            self.assertIn("Each SEARCH block must match the current state exactly", prompt)
+            self.assertIn("Return only SEARCH/REPLACE blocks. Do not include prose.", prompt)
+            self.assertNotIn("unified diff", prompt.lower())
+
+    def test_unified_diff_format_rules_default(self) -> None:
+        instance = {
+            "repo": "owner/repo",
+            "base_commit": "abc",
+            "problem_statement": "fix",
+            "fail_to_pass": [],
+            "pass_to_pass": [],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "src").mkdir()
+            (root / "src" / "main.py").write_text("x = 1\n", encoding="utf-8")
+            prompt = build_swebench_prompt(
+                instance, root, [root / "src" / "main.py"],
+                {"src/main.py"}, self._mock_env())
+            self.assertIn("Return a minimal change as one applicable unified diff.", prompt)
+            self.assertIn("Use exact repo-relative paths from ALLOWED FILES in diff headers.", prompt)
+            self.assertIn("Return only the complete unified diff. Do not include prose.", prompt)
+            self.assertNotIn("<<<<<<< SEARCH", prompt)
+
 
 class GenerateCandidateSetTests(unittest.TestCase):
     def test_calls_generate_for_each_request(self) -> None:

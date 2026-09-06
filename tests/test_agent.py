@@ -100,3 +100,91 @@ class AgentTests(unittest.TestCase):
             self.assertFalse(result.workspace_changed)
             self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
 
+    def test_search_replace_format_converts_to_unified_diff(self) -> None:
+        sr_text = (
+            "### source.py\n"
+            "<<<<<<< SEARCH\n"
+            "old\n"
+            "=======\n"
+            "new\n"
+            ">>>>>>> REPLACE\n"
+        )
+        provider = Mock()
+        provider.generate.return_value = ModelResponse(sr_text, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate(
+                "change it", root, [source], edit_format="search-replace")
+            self.assertIsNotNone(result.patch)
+            self.assertIn("diff --git", result.patch)
+            self.assertIn("+++ b/source.py", result.patch)
+
+    def test_search_replace_format_is_parsed_after_retry(self) -> None:
+        sr_text = (
+            "### source.py\n"
+            "<<<<<<< SEARCH\n"
+            "old\n"
+            "=======\n"
+            "new\n"
+            ">>>>>>> REPLACE\n"
+        )
+        provider = Mock()
+        provider.generate.side_effect = [
+            ModelResponse("not a patch", 0),
+            ModelResponse(sr_text, 0),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate(
+                "change it", root, [source], edit_format="search-replace")
+            self.assertEqual(result.attempts, 2)
+            self.assertIsNotNone(result.patch)
+
+    def test_search_replace_format_passes_through_unified_diff(self) -> None:
+        diff = "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n"
+        provider = Mock()
+        provider.generate.return_value = ModelResponse(diff, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate(
+                "change it", root, [source], edit_format="search-replace")
+            self.assertIsNotNone(result.patch)
+            self.assertIn("+++ b/source.py", result.patch)
+            self.assertIn("-old", result.patch)
+            self.assertIn("+new", result.patch)
+
+    def test_search_replace_format_prompt_contains_search_replace(self) -> None:
+        provider = Mock()
+        provider.generate.return_value = ModelResponse(
+            "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n", 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            CodeAgent(provider).generate(
+                "change it", root, [source], edit_format="search-replace")
+            call_args = provider.generate.call_args
+            prompt = call_args[0][0]
+            self.assertIn("SEARCH/REPLACE blocks", prompt)
+            self.assertIn("<<<<<<< SEARCH", prompt)
+
+    def test_unified_diff_format_prompt_contains_unified_diff(self) -> None:
+        provider = Mock()
+        provider.generate.return_value = ModelResponse(
+            "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n", 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            CodeAgent(provider).generate(
+                "change it", root, [source], edit_format="unified-diff")
+            call_args = provider.generate.call_args
+            prompt = call_args[0][0]
+            self.assertIn("unified diff", prompt)
+            self.assertNotIn("<<<<<<< SEARCH", prompt)

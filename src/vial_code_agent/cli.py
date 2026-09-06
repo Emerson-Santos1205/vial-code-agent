@@ -137,6 +137,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="allow mutation without VIAL Runtime (unsafe compatibility mode)")
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep changes when verification fails")
+    parser.add_argument("--edit-format",
+                        choices=["unified-diff", "search-replace"],
+                        default="unified-diff",
+                        help="format the model must return (default: unified-diff)")
     return parser
 
 
@@ -421,7 +425,8 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         provider = OpenCodeProvider(
             route or "auto", executable, auto_approve, agent)
         generated = CodeAgent(provider, runtime=runtime).generate(
-            args.fix, root, files, max_chars, vial, runtime=runtime)
+            args.fix, root, files, max_chars, vial, runtime=runtime,
+            edit_format=args.edit_format)
     except RuntimeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
