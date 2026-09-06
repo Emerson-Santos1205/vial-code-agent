@@ -25,7 +25,7 @@ jobs:
           python -m pip install -e .[dev] pytest pytest-cov ruff mypy
           python -m pip install -e vendor/vial-core
       - name: Quick smoke test (core modules)
-        run: python -m pytest tests/test_core_modules.py -q --tb=short
+        run: python -m pytest vendor/vial-core/tests/test_core_modules.py -q --tb=short
       - name: Lint with Ruff
         run: python -m ruff check src/ tests/
       - name: Type check with MyPy
