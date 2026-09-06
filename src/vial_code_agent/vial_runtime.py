@@ -31,18 +31,14 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .core import VialCoreReference
 from .events import EventStore, VialEvent
-from .persistence import TransactionalJsonRepository
+from .persistence import PersistenceError, TransactionalJsonRepository
 from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
-
-
-class PersistenceError(RuntimeError):
-    """Persistence failed and the runtime cannot claim durable state."""
+from .records import ApprovalRecord, ConsensusRecord  # noqa: F401 (re-export)
 
 # Organizational identity defaults (SDK-002 §4).
 ORG_ID = "ORG-VIAL-CODE-AGENT"
@@ -100,39 +96,6 @@ POLICY_CODE_APPLY = "code-apply"
 CONSENSUS_MIN_AGREEMENT = 0.6
 
 _LOCAL_SECRET = "local-vial-dev-secret"
-
-
-@dataclass
-class ApprovalRecord:
-    """A recorded human/administrative approval (SDK-005, RUNTIME-006 §8).
-
-    Approval remains semantically distinct from Decision and Authorization:
-    a Decision may be authorized yet still require an Approval before
-    invocation when policy demands it.
-    """
-    decision_id: str
-    approver: str
-    note: str = ""
-    timestamp: float = field(default_factory=time.time)
-
-
-@dataclass
-class ConsensusRecord:
-    """A recorded cross-model consensus outcome for a Decision.
-
-    Stores every raw per-model answer (not just the winner) so a divergence
-    can be handed to a human reviewer with full context. ``agreed`` is the
-    verdict used by the consensus gate; ``agreement_ratio`` is the textual
-    similarity that produced it (``router._agreement_ratio``).
-    """
-    decision_id: str
-    agreed: bool
-    agreement_ratio: float = 0.0
-    models: list[str] = field(default_factory=list)
-    responses: dict[str, str] = field(default_factory=dict)
-    evidence: dict[str, dict[str, object]] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-    note: str = ""
 
 
 def file_field_key(relative: str) -> str:

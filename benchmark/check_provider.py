@@ -5,8 +5,12 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
+
+_MAX_ATTEMPTS = 3
+_BACKOFF_SECONDS = [15, 30, 45]
 
 
 def _event_summary(stdout: str) -> tuple[str, list[dict[str, str]]]:
@@ -96,7 +100,17 @@ def main() -> int:
         result = {"model": args.model, "image": args.image, "status": "unhealthy",
                   "error": "credentials_not_found"}
     else:
-        result = check_provider(args.model, args.image, args.auth)
+        result = None
+        for attempt in range(_MAX_ATTEMPTS):
+            result = check_provider(args.model, args.image, args.auth)
+            if result.get("status") == "healthy":
+                break
+            if attempt < _MAX_ATTEMPTS - 1:
+                wait = _BACKOFF_SECONDS[attempt]
+                print(f"Attempt {attempt + 1}/{_MAX_ATTEMPTS} failed "
+                      f"({result.get('error', 'unknown')}), "
+                      f"retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

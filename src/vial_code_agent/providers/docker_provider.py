@@ -7,11 +7,16 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .model import ModelResponse, OpenCodeProvider, _extract_error, _find_diff_text, _parse_events
+from vial_code_agent.providers import ModelProvider, ModelResponse
+from vial_code_agent.providers.opencode_provider import (
+    OpenCodeProvider,
+    _extract_error,
+    _find_diff_text,
+    _parse_events,
+)
 
 
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
-    """Terminate Docker and any descendants left behind by a timed-out run."""
     if process.poll() is not None:
         return
     if os.name == "nt":
@@ -31,9 +36,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
         process.wait()
 
 
-class DockerOpenCodeProvider:
-    """Run OpenCode with only a staged workspace mounted into the container."""
-
+class DockerOpenCodeProvider(ModelProvider):
     def __init__(self, model: str, image: str = "vial-code-agent-opencode:1.18.18",
                  docker: str = "docker", timeout_seconds: int = 300) -> None:
         self.model = OpenCodeProvider.MODEL_ALIASES.get(model, model)
@@ -42,8 +45,11 @@ class DockerOpenCodeProvider:
         self.timeout_seconds = timeout_seconds
         self.last_response: ModelResponse | None = None
 
-    def generate(self, prompt: str, directory: Path | None = None,
-                 files: list[Path] | None = None, **_: object) -> ModelResponse:
+    def generate(self, prompt: str, *, system: str = "") -> ModelResponse:
+        raise NotImplementedError("DockerOpenCodeProvider.generate requires directory")
+
+    def generate_in_dir(self, prompt: str, directory: Path | None = None,
+                        files: list[Path] | None = None) -> ModelResponse:
         if directory is None:
             raise RuntimeError("Docker provider requires a staging directory")
         auth = Path.home() / ".local" / "share" / "opencode" / "auth.json"
@@ -116,3 +122,6 @@ class DockerOpenCodeProvider:
         )
         self.last_response = response
         return response
+
+    def chat(self, messages: list[dict], *, system: str = "") -> ModelResponse:
+        raise NotImplementedError("Docker provider does not support chat")

@@ -24,6 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[dev] pytest pytest-cov ruff mypy
           python -m pip install -e vendor/vial-core
+      - name: Quick smoke test (core modules)
+        run: python -m pytest vendor/vial-core/tests/test_core_modules.py -q --tb=short
       - name: Lint with Ruff
         run: python -m ruff check src/ tests/
       - name: Type check with MyPy
@@ -32,6 +34,17 @@ jobs:
         run: python -m pytest -q --cov=vial_code_agent --cov-report=term-missing --cov-fail-under=70
       - name: Compile sources
         run: python -m compileall -q src tests benchmark
+      - name: Check VIAL Core submodule drift
+        run: |
+          python -c "
+          from vial_code_agent.core import VialCoreReference
+          vial = VialCoreReference('vendor/vial-core')
+          drift = vial.check_drift()
+          if not drift.get('synced', True):
+              print(f'::error::VIAL Core submodule is out of sync: {drift}')
+              exit(1)
+          print('VIAL Core submodule is in sync')
+          "
       - name: Adversarial checks
         run: python benchmark/run_adversarial.py
       - name: Docker sandbox smoke test

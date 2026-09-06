@@ -14,8 +14,11 @@ class VialCoreReference:
 
     root: Path
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "root", Path(self.root))
+
     def exists(self) -> bool:
-        return self.root.is_dir()
+        return Path(self.root).is_dir()
 
     def prototype(self, module: str) -> Any:
         """Load an official prototype module from the pinned VIAL checkout."""
@@ -75,7 +78,7 @@ class VialCoreReference:
             return ""
         import subprocess
         res = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=self.root, text=True, capture_output=True, check=False
+            ["git", "rev-parse", "HEAD"], cwd=str(self.root), text=True, capture_output=True, check=False
         )
         return res.stdout.strip() if res.returncode == 0 else ""
 
@@ -84,8 +87,18 @@ class VialCoreReference:
         if not self.exists():
             return ""
         import subprocess
+        root = Path(self.root)
+        gitmodules = root.parent / ".gitmodules" if root.name == "vendor" else root / ".gitmodules"
+        branch = "development"
+        if gitmodules.is_file():
+            for line in gitmodules.read_text().splitlines():
+                stripped = line.strip()
+                if stripped.startswith("branch ="):
+                    branch = stripped.split("=", 1)[1].strip()
+                    break
+        ref = f"refs/heads/{branch}"
         res = subprocess.run(
-            ["git", "ls-remote", "origin", "HEAD"], cwd=self.root, text=True, capture_output=True, check=False
+            ["git", "ls-remote", "origin", ref], cwd=str(self.root), text=True, capture_output=True, check=False
         )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip().split()[0]
