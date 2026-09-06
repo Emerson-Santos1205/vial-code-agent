@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class ModelProvider(ABC):
     def chat_stream(self, messages: list[dict], *, system: str = "") -> AsyncIterator[str]:
         raise NotImplementedError("chat_stream not implemented by this provider")
 
-    def cancel(self) -> None:
+    def cancel(self) -> None:  # noqa: B027
         pass
 
     def list_models(self, provider: str | None = None) -> str:

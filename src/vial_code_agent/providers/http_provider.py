@@ -5,7 +5,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from vial_code_agent.providers import ModelInfo, ModelProvider, ModelResponse
+from vial_code_agent.providers import ModelProvider, ModelResponse
 
 _MAX_CONTEXT_CHARS = 28_000
 

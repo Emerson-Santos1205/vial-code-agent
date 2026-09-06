@@ -4,7 +4,7 @@ RFC-004, RFC-010, RFC-004 §21-23.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 RESOURCE_TIERS = {"deterministic": 0, "light": 0.5, "advanced": 1.0}

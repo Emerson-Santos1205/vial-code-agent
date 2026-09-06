@@ -6,6 +6,7 @@ from typing import Any
 from ..events import EventStore
 from ..persistence import PersistenceError
 from ..project import ProjectSnapshot
+from ..records import ApprovalRecord, ConsensusRecord
 
 
 class PersistenceMixin:

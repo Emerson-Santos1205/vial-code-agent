@@ -5,9 +5,8 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import AsyncIterator
 
-from vial_code_agent.providers import ModelInfo, ModelProvider, ModelResponse
+from vial_code_agent.providers import ModelProvider, ModelResponse
 
 _MAX_CONTEXT_CHARS = 28_000
 

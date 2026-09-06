@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 import json
-import os  # re-export for test mock compatibility
+import os  # noqa: F401 — re-export for test mock compatibility
 import re
-import shutil  # re-export for test mock compatibility
-import subprocess  # re-export for test mock compatibility
-import urllib.request  # re-export for test mock compatibility
-from pathlib import Path  # re-export for test mock compatibility
+import shutil  # noqa: F401 — re-export for test mock compatibility
+import subprocess  # noqa: F401 — re-export for test mock compatibility
+import urllib.request  # noqa: F401 — re-export for test mock compatibility
+from pathlib import Path  # noqa: F401 — re-export for test mock compatibility
 
 from vial_code_agent.providers import ModelInfo, ModelProvider, ModelResponse
-from vial_code_agent.providers.http_provider import HttpModelProvider, _trim_messages, _as_int
+from vial_code_agent.providers.http_provider import HttpModelProvider, _as_int, _trim_messages
 from vial_code_agent.providers.opencode_provider import (
+    _MAX_CONTEXT_CHARS,
     OpenCodeProvider,
     _extract_error,
     _find_diff_text,
     _parse_events,
     _resolve_executable,
     _with_history,
-    _MAX_CONTEXT_CHARS,
 )
 
 
