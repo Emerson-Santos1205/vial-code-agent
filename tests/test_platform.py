@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,7 +29,8 @@ class PlatformTests(unittest.TestCase):
                 raise RuntimeError("failed")
             return task
 
-        results = SequentialWorkflow(run).run([("one", "ok"), ("two", "fail"), ("three", "skip")])
+        results = SequentialWorkflow(run).run(
+            [("one", "ok"), ("two", "fail"), ("three", "skip")])
         self.assertEqual([result.passed for result in results], [True, False])
         self.assertEqual(calls, ["ok", "fail"])
 
@@ -37,7 +39,8 @@ class PlatformTests(unittest.TestCase):
             Agent("reviewer", "review", lambda task: f"review:{task}"),
             Agent("tester", "test", lambda task: f"test:{task}"),
         ])
-        self.assertEqual(team.run("change"), {"reviewer": "review:change", "tester": "test:change"})
+        self.assertEqual(team.run("change"), {
+                         "reviewer": "review:change", "tester": "test:change"})
 
     def test_command_runner_blocks_unknown_executable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -58,6 +61,12 @@ class PlatformTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 runner.run(["python3", "-c", "print('x')"])
 
+    def test_command_runner_returns_timeout_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = CommandRunner(Path(directory)).run(
+                [sys.executable, "-c", "import time; time.sleep(2)"], timeout=0.05)
+            self.assertEqual(result.returncode, 124)
+
     def _controller(self, directory: str) -> ChatController:
         root = Path(directory)
         store = SessionStore(root / "sessions")
@@ -71,7 +80,8 @@ class PlatformTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             controller = self._controller(directory)
             self.assertIn("session:", controller.handle("/status").output)
-            self.assertEqual(controller.handle("/models").output, "openai/test")
+            self.assertEqual(controller.handle(
+                "/models").output, "openai/test")
             changed = controller.handle("/model openai/other")
             self.assertEqual(changed.new_model, "openai/other")
             agent = controller.handle("/agent plan")
@@ -86,16 +96,20 @@ class PlatformTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             controller = self._controller(directory)
             self.assertEqual(controller.command_matches("/ex"), ["/exit"])
-            self.assertEqual(controller.command_matches("/model a"), ["/model add"])
-            self.assertEqual(controller.command_matches("/po"), ["/pool", "/pool add", "/pool set", "/pool remove"])
+            self.assertEqual(controller.command_matches(
+                "/model a"), ["/model add"])
+            self.assertEqual(controller.command_matches(
+                "/po"), ["/pool", "/pool add", "/pool set", "/pool remove"])
             self.assertEqual(controller.command_matches("hello"), [])
             self.assertEqual(controller.command_matches("/nope"), [])
 
     def test_chat_controller_governance_commands_need_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             controller = self._controller(directory)
-            self.assertIn("runtime unavailable", controller.handle("/trace DEC-1").output)
-            self.assertIn("runtime unavailable", controller.handle("/approve DEC-1").output)
+            self.assertIn("runtime unavailable",
+                          controller.handle("/trace DEC-1").output)
+            self.assertIn("runtime unavailable",
+                          controller.handle("/approve DEC-1").output)
 
     def test_copy_command_returns_last_assistant_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

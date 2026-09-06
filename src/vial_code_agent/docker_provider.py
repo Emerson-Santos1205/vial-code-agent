@@ -2,33 +2,18 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
+import signal
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from .model import ModelResponse, OpenCodeProvider, _extract_error, _find_diff_text, _parse_events
+from .processes import process_group_kwargs, terminate_process_tree
 
 
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
-    """Terminate Docker and any descendants left behind by a timed-out run."""
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            capture_output=True, check=False,
-        )
-    else:
-        try:
-            os.killpg(process.pid, 15)  # type: ignore[attr-defined]
-        except (ProcessLookupError, OSError):
-            process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+    terminate_process_tree(process, termination_signal=signal.SIGTERM)
 
 
 class DockerOpenCodeProvider:
@@ -54,7 +39,8 @@ class DockerOpenCodeProvider:
         prompt_path.write_text(
             f"{prompt} Return only a unified diff.", encoding="utf-8")
         file_args = " ".join(
-            shlex.quote(f"--file=/workspace/{path.relative_to(directory).as_posix()}")
+            shlex.quote(
+                f"--file=/workspace/{path.relative_to(directory).as_posix()}")
             for path in files or [])
         shell_command = (
             "opencode run --agent build --format json "
@@ -69,7 +55,7 @@ class DockerOpenCodeProvider:
         ]
         process = None
         try:
-            popen_kwargs = {
+            popen_kwargs: dict[str, Any] = {
                 "cwd": directory,
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.PIPE,
@@ -77,11 +63,9 @@ class DockerOpenCodeProvider:
                 "encoding": "utf-8",
                 "errors": "replace",
             }
-            if os.name == "nt":
-                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            else:
-                popen_kwargs["start_new_session"] = True
-            process = subprocess.Popen(command, **popen_kwargs)  # type: ignore[call-overload]
+            popen_kwargs.update(process_group_kwargs())
+            # type: ignore[call-overload]
+            process = subprocess.Popen(command, **popen_kwargs)
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
         except FileNotFoundError as error:
             if getattr(error, "winerror", None) == 206:
@@ -91,7 +75,8 @@ class DockerOpenCodeProvider:
         except subprocess.TimeoutExpired as error:
             if process is not None:
                 _terminate_process_tree(process)
-            raise RuntimeError(f"Docker provider timed out after {self.timeout_seconds}s") from error
+            raise RuntimeError(
+                f"Docker provider timed out after {self.timeout_seconds}s") from error
         finally:
             prompt_path.unlink(missing_ok=True)
         completed = subprocess.CompletedProcess(

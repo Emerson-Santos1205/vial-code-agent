@@ -32,6 +32,7 @@ from vial_code_agent.docker_provider import DockerOpenCodeProvider  # noqa: E402
 from vial_code_agent.model import extract_diff  # noqa: E402
 from vial_code_agent.patch_review import PatchReviewGate  # noqa: E402
 from vial_code_agent.patches import PatchApplier, PatchError  # noqa: E402
+from vial_code_agent.search_replace import parse_search_replace  # noqa: E402
 from vial_code_agent.vial_runtime import VialRuntime  # noqa: E402
 
 try:
@@ -196,7 +197,8 @@ def select_test_image(instance: dict, override: str | None = None) -> tuple[str,
 
 def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
                           allowed_paths: set[str], environment: EnvironmentSpec,
-                          feedback: str = "", max_chars: int = 32000) -> str:
+                          feedback: str = "", max_chars: int = 32000,
+                          edit_format: str = "unified-diff") -> str:
     """Build an explicit, bounded contract for one SWE-bench generation."""
     fail_tests = _as_tests(instance.get("fail_to_pass"))
     pass_tests = _as_tests(instance.get("pass_to_pass"))
@@ -247,12 +249,26 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
         "- Do not change dependencies unless requested.\n"
         f"- Do not use APIs newer than Python {environment.python_version}.\n"
         "- Make the smallest causal change; each hunk must match the current checkout exactly.\n"
-        "- Use exact repo-relative paths from ALLOWED FILES in diff headers.\n"
-        "- For a newly created file, use `--- /dev/null` and `+++ b/<exact path>`.\n"
-        "- For each file in the diff, the hunk line numbers must match the CURRENT STATE shown.\n"
-        "- If a hunk cannot be anchored to the shown current state, reread the file before answering.\n"
         "- Do not claim tests were executed.\n"
-        "- Return a minimal change as one applicable unified diff.",
+        + (
+            "- Use exact repo-relative paths from ALLOWED FILES in diff headers.\n"
+            "- For a newly created file, use `--- /dev/null` and `+++ b/<exact path>`.\n"
+            "- For each file in the diff, the hunk line numbers must match the CURRENT STATE shown.\n"
+            "- If a hunk cannot be anchored to the shown current state, reread the file before answering.\n"
+            "- Return a minimal change as one applicable unified diff."
+            if edit_format == "unified-diff" else
+            "- Each SEARCH block must match the current state exactly, character for character.\n"
+            "- For a newly created file, use an empty SEARCH block.\n"
+            "- If a SEARCH block cannot be anchored to the shown current state, reread the file before answering.\n"
+            "- Return your changes as SEARCH/REPLACE blocks:\n"
+            "  ### path/to/file.py\n"
+            "  <<<<<<< SEARCH\n"
+            "  exact text to find\n"
+            "  =======\n"
+            "  replacement text\n"
+            "  >>>>>>> REPLACE\n"
+            "- Use one SEARCH/REPLACE block per contiguous change per file."
+        ),
     ]
     sections = [section for section in sections if section]
     if feedback:
@@ -273,7 +289,11 @@ def build_swebench_prompt(instance: dict, root: Path, files: list[Path],
         current.append(section)
         used += len(section)
     sections.extend(current)
-    sections.append("\nReturn only the complete unified diff. Do not include prose.")
+    if edit_format == "unified-diff":
+        sections.append("\nReturn only the complete unified diff. Do not include prose.")
+    else:
+        sections.append(
+            "\nReturn only SEARCH/REPLACE blocks. Do not include prose.")
     return "\n\n".join(sections)
 
 
@@ -918,19 +938,23 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
                                 docker_image: str | None, model: str,
                                 runtime: VialRuntime, files: list[Path],
                                 allowed_paths: set[str],
-                                behavior: dict[str, object]
+                                behavior: dict[str, object],
+                                edit_format: str = "unified-diff"
                                 ) -> tuple[str, dict, int, int]:
     """Give a failing candidate two evidence-driven corrective attempts."""
     current_patch = patch
     current_behavior = dict(behavior)
     total_attempts = total_retries = 0
+    format_instruction = (
+        "a minimal unified diff" if edit_format == "unified-diff"
+        else "SEARCH/REPLACE blocks")
     for retry_number in range(2):
         feedback = (
             "The candidate patch applied but failed the isolated benchmark tests. "
             "Infer the causal implementation defect from the FAIL_TO_PASS "
             "assertion and expected behavior before editing. Re-read every "
-            "target file from the current workspace, preserve existing APIs, "
-            "and return only a minimal unified diff. Do not modify tests.\n\n"
+            f"target file from the current workspace, preserve existing APIs, "
+            f"and return only {format_instruction}. Do not modify tests.\n\n"
             f"BEHAVIORAL RETRY {retry_number + 1}/2:\n" +
             str(current_behavior.get("detail", "")) +
             "\n\nAPPLIED PATCH THAT FAILED:\n" + current_patch)
@@ -938,7 +962,7 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
             instance, root, files, allowed_paths,
             environment or EnvironmentSpec(
                 python_version="declared-by-image", image=docker_image or "host"),
-            feedback=feedback)
+            feedback=feedback, edit_format=edit_format)
         try:
             retry = CodeAgent(DockerOpenCodeProvider(
                 model, timeout_seconds=900), runtime=runtime).generate(
@@ -959,8 +983,17 @@ def _retry_behavioral_candidate(root: Path, patch: str, instance: dict,
                 "\nBEHAVIORAL RETRY CONTRACT: " +
                 str(retry.failure_type or "no patch returned"))[-4000:]
             continue
+        raw_patch = retry.patch
+        if edit_format == "search-replace":
+            try:
+                raw_patch = parse_search_replace(raw_patch, root)
+            except PatchError as error:
+                current_behavior["detail"] = (
+                    str(current_behavior.get("detail", "")) +
+                    "\nBEHAVIORAL RETRY PARSE: " + str(error))[-4000:]
+                continue
         try:
-            corrected = _validate_candidate(root, retry.patch, allowed_paths)
+            corrected = _validate_candidate(root, raw_patch, allowed_paths)
         except PatchError as error:
             current_behavior["detail"] = (
                 str(current_behavior.get("detail", "")) +
@@ -1045,7 +1078,8 @@ def _rate_limit_failure(instance: dict, adapter: str, model: str,
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
-                                   runtime: VialRuntime) -> CandidateResult:
+                                   runtime: VialRuntime,
+                                   edit_format: str = "unified-diff") -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
     global _rate_limit_hit
     if _rate_limit_hit:
@@ -1084,7 +1118,9 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
                 break
             candidate_prompt = prompt + (
                 "\n\nThe previous model request failed before returning a "
-                "patch. Retry and return only a complete minimal unified diff.\n"
+                "patch. Retry and return only a complete minimal "
+                + ("unified diff" if edit_format == "unified-diff"
+                   else "set of SEARCH/REPLACE blocks") + ".\n"
                 "PROVIDER DIAGNOSTIC: " + str(error))
             continue
         generated_attempts = max(int(generated.attempts or 1), 1)
@@ -1117,12 +1153,41 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
             candidate_prompt = prompt + (
                 "\n\nThe previous response contained no applicable patch. "
                 "Retry from the original task and workspace. Return only "
-                "a complete minimal unified diff.\n"
+                "a complete minimal "
+                + ("unified diff" if edit_format == "unified-diff"
+                   else "set of SEARCH/REPLACE blocks") + ".\n"
                 "PATCH CONTRACT DIAGNOSTIC: " + diagnostic)
             continue
         patch_returns += 1
+        raw_patch = generated.patch
+        if edit_format == "search-replace":
+            try:
+                raw_patch = parse_search_replace(raw_patch, root)
+            except PatchError as error:
+                diagnostics.append(str(error))
+                sig = _normalize_failure_signature(str(error))
+                if sig == previous_signature:
+                    consecutive_same += 1
+                else:
+                    consecutive_same = 0
+                previous_signature = sig
+                if total_attempts_this_task >= MAX_ATTEMPTS_PER_MODEL_TASK:
+                    diagnostics.append(f"circuit-breaker: {total_attempts_this_task} total attempts exceeded cap ({MAX_ATTEMPTS_PER_MODEL_TASK})")
+                    break
+                if consecutive_same >= CIRCUIT_BREAKER_THRESHOLD:
+                    diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
+                    break
+                candidate_prompt = (
+                    prompt +
+                    "\n\nThe previous response contained malformed "
+                    "SEARCH/REPLACE blocks. Re-read every target file and "
+                    "return only valid SEARCH/REPLACE blocks.\n"
+                    "SEARCH/REPLACE PARSE ERROR: " + str(error) +
+                    "\n\nPREVIOUS FAILED RESPONSE (do not repeat it):\n" +
+                    generated.patch)
+                continue
         try:
-            patch = _validate_candidate(root, generated.patch, allowed_paths)
+            patch = _validate_candidate(root, raw_patch, allowed_paths)
         except PatchError as error:
             diagnostics.append(str(error))
             sig = _normalize_failure_signature(str(error))
@@ -1143,8 +1208,11 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
                 "exact workspace. Re-read every target file and verify each "
                 "removed line character-for-character before regenerating. "
                 "Do not trust stale line numbers, do not repeat an unanchored "
-                "hunk, and return only a complete minimal unified diff.\n"
-                "PATCH VALIDATION DIAGNOSTIC: " + str(error) +
+                "hunk, and return only a complete minimal "
+                + ("unified diff.\n"
+                   if edit_format == "unified-diff"
+                   else "set of SEARCH/REPLACE blocks.\n")
+                + "PATCH VALIDATION DIAGNOSTIC: " + str(error) +
                 "\n\nPREVIOUS FAILED PATCH (do not repeat it):\n" +
                 generated.patch)
             continue
@@ -1162,7 +1230,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
         outcome.prompt_sha256 = hashlib.sha256(
             candidate_prompt.encode("utf-8")).hexdigest()
         outcome.protocol = {
-            "output": "unified_diff",
+            "output": edit_format,
             "validation": "static_then_behavioral",
             "tests": "same_instance_fail_to_pass_pass_to_pass",
         }
@@ -1192,7 +1260,7 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
     outcome.prompt_sha256 = hashlib.sha256(
         candidate_prompt.encode("utf-8")).hexdigest()
     outcome.protocol = {
-        "output": "unified_diff",
+        "output": edit_format,
         "validation": "static_then_behavioral",
         "tests": "same_instance_fail_to_pass_pass_to_pass",
     }
@@ -1421,7 +1489,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                   consensus: dict | None = None,
                   consensus_model: str | None = None,
                   adjudicator_model: str | None = None,
-                  adapter: str = "vial", preflight_only: bool = False) -> dict:
+                  adapter: str = "vial", preflight_only: bool = False,
+                  edit_format: str = "unified-diff") -> dict:
     if adapter not in {"baseline", "opencode", "vial"}:
         raise ValueError(f"unknown adapter: {adapter}")
     if adapter != "vial" and (consensus_model is not None or consensus is not None
@@ -1550,7 +1619,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             instance, root, files, allowed_paths,
             environment or EnvironmentSpec(
                 python_version="declared-by-image",
-                image=docker_image or "host"))
+                image=docker_image or "host"),
+            edit_format=edit_format)
         candidate_outcomes: dict[str, object] = {}
         if consensus_model is not None:
             review_runtime = VialRuntime(
@@ -1558,9 +1628,10 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 root / ".vial-consensus-state", persist_state=False)
             review_runtime.set_workspace_root(root)
             candidates = _generate_candidate_set([
-                ("A", model, prompt, root, files, allowed_paths, runtime),
+                ("A", model, prompt, root, files, allowed_paths, runtime,
+                 edit_format),
                 ("B", consensus_model, prompt, root, files, allowed_paths,
-                 review_runtime),
+                 review_runtime, edit_format),
             ])
             primary, secondary = candidates
             candidate_runtimes = {model: runtime, consensus_model: review_runtime}
@@ -1579,7 +1650,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                                 environment, docker_image,
                                 str(candidate.model),
                                 candidate_runtimes[str(candidate.model)], files,
-                                allowed_paths, behavior))
+                                allowed_paths, behavior,
+                                edit_format=edit_format))
                         candidate.patch = corrected
                         candidate.behavior = behavior
                         candidate.outcome.attempts += retry_attempts
@@ -1629,7 +1701,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                               "unchanged, selecting the one that best solves "
                               "the task and passes the reported tests. Candidate "
                               "patches and diagnostic evidence:\n" +
-                              json.dumps(diagnostics, sort_keys=True)))
+                              json.dumps(diagnostics, sort_keys=True)),
+                    edit_format=edit_format)
                 adjudicator = _generate_validated_candidate(
                     "ADJUDICATOR", adjudicator_model, adjudicator_prompt, root,
                     files, allowed_paths, adjudicator_runtime)
@@ -1681,7 +1754,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             primary = (_generate_baseline_candidate(
                 "A", model, prompt, root, files, allowed_paths)
                 if adapter == "baseline" else _generate_validated_candidate(
-                    "A", model, prompt, root, files, allowed_paths, runtime))
+                    "A", model, prompt, root, files, allowed_paths, runtime,
+                    edit_format=edit_format))
             candidate_outcomes = {model: primary.outcome}
             if primary.patch is None:
                 outcome = primary.outcome
@@ -1889,6 +1963,10 @@ def main() -> int:
                         help="optional independent adjudicator for divergent candidates")
     parser.add_argument("--repeat", type=int, default=3,
                         help="run each task N times to measure variance (default: 1)")
+    parser.add_argument("--edit-format",
+                        choices=["unified-diff", "search-replace"],
+                        default="unified-diff",
+                        help="format the model must return (default: unified-diff)")
     args = parser.parse_args()
     for optional_model in ("consensus_model", "adjudicator_model"):
         value = getattr(args, optional_model)
@@ -1962,7 +2040,8 @@ def main() -> int:
                                       args.consensus_model if adapter == "vial" else None,
                                       args.adjudicator_model if adapter == "vial" else None,
                                       "vial" if adapter == "preflight" else adapter,
-                                       args.preflight_only)
+                                       args.preflight_only,
+                                       edit_format=args.edit_format)
                 except RuntimeError as exc:
                     if "rate limit" in str(exc).lower():
                         _rate_limit_hit = True
