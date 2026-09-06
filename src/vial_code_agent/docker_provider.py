@@ -6,6 +6,7 @@ import shlex
 import signal
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from .model import ModelResponse, OpenCodeProvider, _extract_error, _find_diff_text, _parse_events
 from .processes import process_group_kwargs, terminate_process_tree
@@ -54,7 +55,7 @@ class DockerOpenCodeProvider:
         ]
         process = None
         try:
-            popen_kwargs = {
+            popen_kwargs: dict[str, Any] = {
                 "cwd": directory,
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.PIPE,

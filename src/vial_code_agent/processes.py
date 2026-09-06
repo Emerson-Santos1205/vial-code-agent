@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+from typing import Any
 
 
-def process_group_kwargs() -> dict[str, object]:
+def process_group_kwargs() -> dict[str, Any]:
     if os.name == "nt":
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
     return {"start_new_session": True}
 
 
@@ -25,7 +26,7 @@ def terminate_process_tree(
         )
     else:
         try:
-            os.killpg(process.pid, termination_signal)
+            os.killpg(process.pid, termination_signal)  # type: ignore[attr-defined]
         except (ProcessLookupError, OSError):
             process.kill()
     try:

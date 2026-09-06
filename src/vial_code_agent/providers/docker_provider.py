@@ -6,6 +6,7 @@ import shlex
 import signal
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from vial_code_agent.processes import process_group_kwargs, terminate_process_tree
 from vial_code_agent.providers import ModelProvider, ModelResponse
@@ -62,7 +63,7 @@ class DockerOpenCodeProvider(ModelProvider):
         ]
         process = None
         try:
-            popen_kwargs = {
+            popen_kwargs: dict[str, Any] = {
                 "cwd": directory,
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.PIPE,

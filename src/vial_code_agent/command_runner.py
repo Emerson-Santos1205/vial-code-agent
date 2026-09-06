@@ -4,6 +4,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .processes import process_group_kwargs, terminate_process_tree
 
@@ -34,7 +35,7 @@ class CommandRunner:
         executable = Path(command[0]).name.lower()
         if not self.unsafe and executable not in {name.lower() for name in self.allowed}:
             raise PermissionError(f"command is not allowlisted: {command[0]}")
-        popen_kwargs: dict[str, object] = {
+        popen_kwargs: dict[str, Any] = {
             "cwd": self.root,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,

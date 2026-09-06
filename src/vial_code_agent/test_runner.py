@@ -4,6 +4,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .processes import process_group_kwargs, terminate_process_tree
 
@@ -26,7 +27,7 @@ _terminate_process_tree = terminate_process_tree
 
 def run_tests(root: Path, command: list[str], timeout_seconds: int = 120) -> TestResult:
     started = time.monotonic()
-    popen_kwargs: dict[str, object] = {
+    popen_kwargs: dict[str, Any] = {
         "cwd": root,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
