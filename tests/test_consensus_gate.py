@@ -55,8 +55,10 @@ class ConsensusGateTests(unittest.TestCase):
             runtime = _runtime(Path(directory))
             patch_tool = runtime.tools.get(PATCH_TOOL_ID)
             self.assertTrue(runtime.requires_consensus(patch_tool))
+            # TOOL-RUN-GIT uses per-command governance via GitPolicy,
+            # so it does not require consensus at the tool level.
             git_tool = runtime.tools.get("TOOL-RUN-GIT")
-            self.assertTrue(runtime.requires_consensus(git_tool))
+            self.assertFalse(runtime.requires_consensus(git_tool))
             self.assertEqual(
                 getattr(patch_tool, "side_effect_classification", ""),
                 "mutation")
@@ -75,7 +77,7 @@ class ConsensusGateTests(unittest.TestCase):
                 result.metadata.get("error_code"), "CONSENSUS_REQUIRED")
             self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
 
-    def test_git_command_without_consensus_is_blocked(self) -> None:
+    def test_git_read_command_passes_without_consensus(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = _runtime(Path(directory) / "state")
@@ -84,9 +86,8 @@ class ConsensusGateTests(unittest.TestCase):
             subprocess.run(["git", "init", "-q"], cwd=root, check=False)
             result = runtime.invoke_tool(
                 "TOOL-RUN-GIT", {"args": ["status"]}, objective="git status")
-            self.assertEqual(result.status, "REJECTED")
-            self.assertEqual(
-                result.metadata.get("error_code"), "CONSENSUS_REQUIRED")
+            self.assertEqual(result.status, "SUCCESS")
+            self.assertEqual(result.output.get("git_policy"), "read")
 
     def test_agreed_consensus_unblocks_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

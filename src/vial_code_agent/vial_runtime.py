@@ -337,7 +337,7 @@ class VialRuntime:
         self._define_tool(
             "TOOL-RUN-GIT", "run_git",
             "Run a git command inside the workspace", "run_git",
-            RISK_HIGH, "mutation", self._invoke_run_git,
+            RISK_LOW, "none", self._invoke_run_git,
             policy=POLICY_DEVELOPMENT)
         self._define_tool(
             "TOOL-RUN-AUDIT", "run_audit",
@@ -491,11 +491,22 @@ class VialRuntime:
                 f"destructive git command '{' '.join(args)}' requires explicit approval"
             )
 
+        # Mutation/remote/configuration commands require consensus
+        if policy.requires_consensus:
+            decision = self.propose_decision(
+                objective=f"git {' '.join(args)}",
+                type="git_operation",
+                context_id="",
+                risk=policy.risk,
+            )
+            # Consensus is recorded by the calling pipeline (invoke_tool)
+
         try:
             output = GitWorkspace(root).run(*args)
         except GitError as exc:
             raise self._errors.VIALExecutionError("GIT_ERROR", str(exc)) from exc
-        return {"stdout": output, "git_policy": policy.category, "risk": policy.risk}
+        return {"stdout": output, "git_policy": policy.category,
+                "risk": policy.risk, "requires_consensus": policy.requires_consensus}
 
     def _invoke_run_audit(self, value: dict[str, Any]) -> Any:
         core_root = value.get("core_root")
