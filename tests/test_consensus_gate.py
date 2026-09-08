@@ -175,7 +175,9 @@ class ConsensusGateTests(unittest.TestCase):
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
             decision = runtime.propose_patch_decision("")
-            runtime.record_consensus(decision.id, False, 0.1)
+            runtime.record_consensus(
+                decision.id, False, 0.1, models=["a/x", "b/y"],
+                responses={"a/x": "patch_a", "b/y": "patch_b"})
             result = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=decision)
             self.assertEqual(result.status, "REJECTED")
@@ -269,7 +271,9 @@ class ConsensusPersistenceTests(unittest.TestCase):
             state = Path(directory)
             runtime = _runtime(state)
             decision = runtime.propose_patch_decision("")
-            runtime.record_consensus(decision.id, False, 0.1)
+            runtime.record_consensus(
+                decision.id, False, 0.1, models=["a/x", "b/y"],
+                responses={"a/x": "patch_a", "b/y": "patch_b"})
             root = Path(directory) / "work"
             root.mkdir()
             source = root / "value.txt"

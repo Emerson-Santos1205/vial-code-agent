@@ -7,9 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-RESOURCE_TIERS = {"deterministic": 0, "light": 0.5, "advanced": 1.0}
+# Canonical tier multipliers (RFC-010 §2.4).
+# These define the relative cost multiplier for each tier.
+RESOURCE_TIERS = {"deterministic": 1.0, "light": 3.0, "advanced": 10.0}
 RESOURCE_ORDER = ["deterministic", "light", "advanced"]
-TIER_MODEL = {"deterministic": "", "light": "fast", "advanced": "reasoning"}
+TIER_MODEL = {"deterministic": None, "light": "fast", "advanced": "reasoning"}
 
 
 @dataclass

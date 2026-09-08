@@ -56,6 +56,7 @@ def _build_runtime(root: Path, config: AgentConfig, vial: VialCoreReference | No
         vial, root / ".vial-state",
         org_id=config.org_id, authority=config.authority, actor=config.actor,
         price_table=price_table, persist_state=config.persist_state,
+        dev_secret=config.dev_secret or None,
     )
 
 
@@ -398,7 +399,6 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             file=sys.stderr)
         return 2
     agent = _resolve_agent(args.agent, config.opencode_agent)
-    max_chars = args.max_context_chars if args.max_context_chars != 6_000 else config.max_context_chars
     test_timeout = args.test_timeout if args.test_timeout != 120 else config.test_timeout
     includes = args.include or ["*.py"]
     excludes = args.exclude or [".git", ".venv", "__pycache__"]
@@ -425,7 +425,7 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
         provider = OpenCodeProvider(
             route or "auto", executable, auto_approve, agent)
         generated = CodeAgent(provider, runtime=runtime).generate(
-            args.fix, root, files, max_chars, vial, runtime=runtime,
+            args.fix, root, files, vial, runtime=runtime,
             edit_format=args.edit_format)
     except RuntimeError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -575,13 +575,20 @@ def _verify(root, runtime, generated, args, test_timeout, telemetry) -> int:
     if result.stderr:
         print(result.stderr, end="")
     if not result.passed and not args.keep_on_failure:
-        try:
-            PatchApplier(root).reverse(generated.patch)
-            if runtime is not None:
-                runtime.record_rollback(generated.patch)
-            print("patch: rolled back")
-        except PatchError as error:
-            print(f"error: rollback failed: {error}", file=sys.stderr)
+        if runtime is not None:
+            rollback_result = runtime.compensate_rollback(
+                PatchApplier(root), generated.patch)
+            if rollback_result.ok():
+                print("patch: rolled back")
+            else:
+                print(f"error: rollback failed: {rollback_result.error}",
+                      file=sys.stderr)
+        else:
+            try:
+                PatchApplier(root).reverse(generated.patch)
+                print("patch: rolled back")
+            except PatchError as error:
+                print(f"error: rollback failed: {error}", file=sys.stderr)
         return 1
     return int(not result.passed)
 

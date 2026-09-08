@@ -37,8 +37,8 @@ class ModelRouter:
             return requested_model
         if deterministic_solvable(task):
             return "deterministic"
-        lowered = task.lower()
-        if any(word in lowered for word in ("explain", "document", "rename")):
+        # Use semantic complexity score instead of simple keyword matching
+        if _is_simple_task(task):
             return "fast"
         return "reasoning"
 
@@ -120,12 +120,15 @@ class RoutingGraph:
             if keyword in lowered:
                 return RouteDecision(
                     tier="deterministic", deterministic_keyword=keyword)
-        if any(word in lowered for word in self.LIGHT_WORDS):
+        # Use semantic complexity score instead of simple keyword matching
+        if _is_simple_task(task):
             return RouteDecision(tier="light")
+        # Check for explicitly advanced tasks
         if any(word in lowered for word in self.ADVANCED_WORDS):
             return RouteDecision(tier="advanced")
-        words = len(lowered.split())
-        if words <= 4:
+        # Default based on complexity score
+        score = _task_complexity_score(task)
+        if score < 0.4:
             return RouteDecision(tier="light")
         return RouteDecision(tier="advanced")
 
@@ -333,15 +336,23 @@ class RoutingGraph:
     ) -> tuple[ConsensusResult, RouteDecision]:
         """Dispatch to >=``quorum`` independent models and require agreement.
 
+        For 2 models: pairwise comparison (original behavior).
+        For N>2 models: cluster by similarity, require quorum-sized cluster.
+
         Returns a :class:`ConsensusResult` carrying every raw response (for
-        audit/human review) plus the pairwise agreement ratio, and a
+        audit/human review) plus the agreement ratio, and a
         :class:`RouteDecision` describing which models were consulted.
         """
         decision = self.analyze(task)
         candidates = list(models) if models else self.candidates(decision)
         if not candidates and self.default_model and self.default_model != "auto":
             candidates = [self.default_model]
-        chosen = candidates[:max(quorum, 2)] if len(candidates) >= 2 else candidates
+        # For N>2 candidates, consult all of them for proper clustering.
+        # For N=2, use quorum to cap (original behavior).
+        if len(candidates) > 2:
+            chosen = candidates
+        else:
+            chosen = candidates[:max(quorum, 2)] if len(candidates) >= 2 else candidates
 
         responses: dict[str, ModelResponse] = {}
         if chosen:
@@ -381,12 +392,43 @@ class RoutingGraph:
             return ConsensusResult(False, response, 0.0, responses), RouteDecision(
                 tier=decision.tier, candidates=chosen, model=ref, note=note)
 
-        (ref_a, resp_a), (ref_b, resp_b) = max(
-            combinations(valid.items(), 2),
-            key=lambda pair: _agreement_ratio(
-                pair[0][1], pair[1][1], root),
-        )
-        ratio = _agreement_ratio(resp_a, resp_b, root)
+        # --- clustering-based consensus for N > 2 models ---
+        clusters: list[list[str]] = []
+        winner_cluster: list[str] | None = None
+        if len(valid) > 2:
+            clusters = _cluster_responses(valid, root, min_agreement)
+            # Find the largest cluster that meets quorum
+            for cluster in clusters:
+                if len(cluster) >= quorum:
+                    winner_cluster = cluster
+                    break
+            if winner_cluster is None:
+                # No cluster meets quorum
+                ref = ""
+                response = next(iter(valid.values()))
+                note = f"no cluster meets quorum={quorum}"
+                return ConsensusResult(False, response, 0.0, responses, {},
+                                       True, clusters), RouteDecision(
+                    tier=decision.tier, candidates=chosen, model=ref, note=note)
+            # Compute average agreement within the winning cluster
+            cluster_ratios = [
+                _agreement_ratio(valid[a], valid[b], root)
+                for a, b in combinations(winner_cluster, 2)
+            ]
+            ratio = sum(cluster_ratios) / len(cluster_ratios) if cluster_ratios else 1.0
+            # Pick the first ref in the cluster as representative
+            winner_ref = winner_cluster[0]
+            winner_response = valid[winner_ref]
+        else:
+            # --- original pairwise comparison for exactly 2 models ---
+            (ref_a, resp_a), (ref_b, resp_b) = max(
+                combinations(valid.items(), 2),
+                key=lambda pair: _agreement_ratio(
+                    pair[0][1], pair[1][1], root),
+            )
+            ratio = _agreement_ratio(resp_a, resp_b, root)
+            winner_ref, winner_response = ref_a, resp_a
+
         evidence: dict[str, dict[str, object]] = {}
         evidence_passed = True
         if require_evidence:
@@ -400,16 +442,56 @@ class RoutingGraph:
                     "behavioral_passed": result.behavioral_passed if result else False,
                     "detail": result.detail if result else "no unified diff candidate",
                 }
+            # Check evidence for all responses in the winning cluster
+            cluster_refs = winner_cluster if len(valid) > 2 and winner_cluster is not None else [winner_ref]
             evidence_passed = all(
                 evidence.get(ref, {}).get("static_valid")
                 and evidence.get(ref, {}).get("behavioral_passed") is not False
-                for ref in (ref_a, ref_b))
+                for ref in cluster_refs)
         agreed = ratio >= min_agreement and evidence_passed
-        winner_ref, winner_response = (ref_a, resp_a)
+        cluster_result = clusters if len(valid) > 2 else []
         return ConsensusResult(agreed, winner_response, ratio, responses, evidence,
-                               evidence_passed), RouteDecision(
+                               evidence_passed, cluster_result), RouteDecision(
             tier=decision.tier, candidates=chosen, model=winner_ref,
             note=f"consensus={agreed} ratio={ratio:.2f}")
+
+
+def _cluster_responses(
+    valid: dict[str, ModelResponse],
+    root: Path | None = None,
+    min_similarity: float = 0.6,
+) -> list[list[str]]:
+    """Cluster model responses by pairwise similarity.
+
+    Returns a list of clusters, each cluster being a list of model refs.
+    Clusters are ordered by size (largest first). Uses single-linkage
+    clustering: two responses join the same cluster if any pair within
+    the cluster meets the similarity threshold.
+    """
+    if len(valid) <= 1:
+        return [[ref] for ref in valid]
+
+    refs = list(valid.keys())
+    # Build pairwise similarity matrix
+    similarity: dict[tuple[str, str], float] = {}
+    for ref_a, ref_b in combinations(refs, 2):
+        sim = _agreement_ratio(valid[ref_a], valid[ref_b], root)
+        similarity[(ref_a, ref_b)] = sim
+
+    # Single-linkage clustering
+    clusters: list[set[str]] = [{ref} for ref in refs]
+    for ref_a, ref_b in combinations(refs, 2):
+        sim = similarity.get((ref_a, ref_b), 0.0)
+        if sim >= min_similarity:
+            # Find clusters containing each ref
+            cluster_a = next(c for c in clusters if ref_a in c)
+            cluster_b = next(c for c in clusters if ref_b in c)
+            if cluster_a is not cluster_b:
+                cluster_a.update(cluster_b)
+                clusters.remove(cluster_b)
+
+    # Sort by size descending
+    return sorted([sorted(c) for c in clusters], key=len, reverse=True)
 
 
 def _agreement_ratio(a: ModelResponse, b: ModelResponse,
@@ -516,6 +598,9 @@ class ConsensusResult:
     ``responses`` keeps every raw, per-model answer (not just the winner) so
     a disagreement can be handed to a human with full context instead of
     only the router's pick.
+
+    ``clusters`` contains the clustering result for N>2 models (list of
+    lists of model refs, ordered by size). For N=2, this is empty.
     """
 
     agreed: bool
@@ -524,6 +609,7 @@ class ConsensusResult:
     responses: dict[str, ModelResponse] = field(default_factory=dict)
     evidence: dict[str, dict[str, object]] = field(default_factory=dict)
     evidence_passed: bool = True
+    clusters: list[list[str]] = field(default_factory=list)
 
 
 def _extract_candidate_patch(text: str) -> str | None:
@@ -540,6 +626,108 @@ def _tier_of(model_ref: str) -> str:
     if any(word in lowered for word in ("fast", "mini", "small", "flash")):
         return "light"
     return "advanced"
+
+
+# --------------------------------------------------------------------------- #
+# Semantic task complexity classifier (replaces keyword-only routing).
+#
+# Simple keywords like "explain", "document", "rename" can be preceded by
+# qualifiers that make tasks complex. This classifier scores tasks based on
+# multiple signals to provide more accurate routing decisions.
+# --------------------------------------------------------------------------- #
+
+# Qualifiers that indicate a task is more complex than the base keyword suggests
+COMPLEXITY_QUALIFIERS = {
+    # Coordination words (multiple actions or conditions)
+    "while", "and", "then", "also", "plus", "additionally", "furthermore",
+    # Scope expanders
+    "all", "every", "entire", "whole", "complete", "comprehensive", "full",
+    "thorough", "exhaustive",
+    # Quality/precision qualifiers
+    "correctly", "properly", "accurately", "exactly", "precisely",
+    "carefully", "thoroughly",
+    # Complexity indicators
+    "backwards", "compatibility", "migration", "breaking", "edge", "cases",
+    "exception", "error", "handling", "concurrent", "parallel", "async",
+    "performance", "optimize", "refactor",
+    # Scope modifiers
+    "update", "modify", "change", "replace", "redesign", "restructure",
+}
+
+# Simple task patterns (truly lightweight, single-action)
+SIMPLE_PATTERNS = {
+    "what is", "what does", "how to", "how do", "explain the",
+    "list the", "show me", "tell me", "describe the",
+}
+
+
+def _task_complexity_score(task: str) -> float:
+    """Score task complexity from 0.0 (simple) to 1.0 (complex).
+
+    Analyzes multiple signals beyond simple keyword matching:
+    - Word count (longer tasks tend to be more complex)
+    - Presence of complexity qualifiers
+    - Multiple action indicators
+    - Technical complexity signals
+    """
+    lowered = task.lower()
+    words = lowered.split()
+    word_count = len(words)
+
+    # Base score from length
+    if word_count <= 3:
+        score = 0.1
+    elif word_count <= 6:
+        score = 0.3
+    elif word_count <= 12:
+        score = 0.5
+    else:
+        score = 0.7
+
+    # Check for simple patterns (reduce score)
+    for pattern in SIMPLE_PATTERNS:
+        if lowered.startswith(pattern):
+            score = max(0.1, score - 0.3)
+            break
+
+    # Check for complexity qualifiers (increase score)
+    qualifier_count = sum(1 for q in COMPLEXITY_QUALIFIERS if q in lowered)
+    if qualifier_count >= 3:
+        score = min(1.0, score + 0.4)
+    elif qualifier_count >= 2:
+        score = min(1.0, score + 0.25)
+    elif qualifier_count >= 1:
+        score = min(1.0, score + 0.1)
+
+    # Advanced action verbs indicate complexity
+    advanced_verbs = (
+        "implement", "create", "write", "fix", "refactor", "debug",
+        "test", "migrate", "design", "optimize", "review", "generate",
+    )
+    advanced_verb_count = sum(1 for v in advanced_verbs if v in lowered)
+    if advanced_verb_count >= 2:
+        score = min(1.0, score + 0.3)
+    elif advanced_verb_count >= 1:
+        score = min(1.0, score + 0.3)
+
+    # Simple action verbs (less weight)
+    simple_verbs = ("explain", "document", "rename", "list", "show", "tell")
+    simple_verb_count = sum(1 for v in simple_verbs if v in lowered)
+    if simple_verb_count >= 1 and advanced_verb_count == 0:
+        score = max(0.1, score - 0.1)
+
+    return score
+
+
+def _is_simple_task(task: str) -> bool:
+    """Determine if a task is truly simple (safe for fast/light tier).
+
+    Returns True only if the task is both short AND lacks complexity qualifiers.
+    This prevents misrouting complex tasks that happen to contain simple keywords.
+    """
+    score = _task_complexity_score(task)
+    # Only consider tasks with very low complexity scores as simple
+    return score < 0.4
 
 
 # --------------------------------------------------------------------------- #

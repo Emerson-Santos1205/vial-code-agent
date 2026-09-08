@@ -94,6 +94,8 @@ class DispatchConsensusTests(unittest.TestCase):
             self.assertEqual(decision.note, "all consensus candidates failed")
 
     def test_quorum_caps_number_of_models_consulted(self) -> None:
+        """For N>2 models, all are consulted for clustering. Quorum only
+        affects the minimum cluster size required for consensus."""
         with tempfile.TemporaryDirectory() as directory:
             graph = _graph(
                 directory, pool=["a/reasoning", "b/reasoning", "c/reasoning"])
@@ -112,7 +114,104 @@ class DispatchConsensusTests(unittest.TestCase):
             with patch("vial_code_agent.router.OpenCodeProvider", Fake):
                 graph.dispatch_consensus("implement x", quorum=2)
 
-            self.assertEqual(len(calls), 2)
+            # All 3 models are consulted for proper clustering
+            self.assertEqual(len(calls), 3)
+
+    def test_three_models_majority_cluster(self) -> None:
+        """Three models: two agree, one diverges. Majority cluster wins."""
+        with tempfile.TemporaryDirectory() as directory:
+            graph = _graph(
+                directory,
+                pool=["a/reasoning", "b/reasoning", "c/reasoning"])
+            answers = iter([
+                "def add(a, b):\n    return a + b\n",
+                "def add(a, b):\n    return a + b\n",
+                "print('hello world')",
+            ])
+
+            class Fake:
+                def __init__(self, model_ref: str = "", *args: object,
+                             **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None,
+                         history: object = None) -> ModelResponse:
+                    return ModelResponse(next(answers), 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                # quorum=2: majority cluster (2 models) meets quorum
+                result, decision = graph.dispatch_consensus(
+                    "implement add()", quorum=2, min_agreement=0.6)
+
+            self.assertTrue(result.agreed)
+            self.assertGreaterEqual(result.agreement_ratio, 0.6)
+            self.assertEqual(len(result.responses), 3)
+            # Clusters should be present for N>2
+            self.assertEqual(len(result.clusters), 2)
+            # Largest cluster should have 2 members
+            self.assertEqual(len(result.clusters[0]), 2)
+
+    def test_three_models_no_quorum(self) -> None:
+        """Three models all disagree: no cluster meets quorum."""
+        with tempfile.TemporaryDirectory() as directory:
+            graph = _graph(
+                directory,
+                pool=["a/reasoning", "b/reasoning", "c/reasoning"])
+            answers = iter([
+                "def add(a, b):\n    return a + b\n",
+                "DROP TABLE users;",
+                "print('hello world')",
+            ])
+
+            class Fake:
+                def __init__(self, model_ref: str = "", *args: object,
+                             **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None,
+                         history: object = None) -> ModelResponse:
+                    return ModelResponse(next(answers), 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                result, decision = graph.dispatch_consensus(
+                    "implement add()", quorum=2, min_agreement=0.6)
+
+            self.assertFalse(result.agreed)
+            self.assertIn("no cluster meets quorum", decision.note)
+
+    def test_four_models_two_clusters(self) -> None:
+        """Four models: two clusters of two. Largest cluster wins."""
+        with tempfile.TemporaryDirectory() as directory:
+            graph = _graph(
+                directory,
+                pool=["a/reasoning", "b/reasoning",
+                       "c/reasoning", "d/reasoning"])
+            # Use more distinct responses to ensure separate clusters
+            answers = iter([
+                "def add(a, b):\n    return a + b\n",
+                "def add(a, b):\n    return a + b\n",
+                "DROP TABLE users; -- malicious",
+                "DROP TABLE users; -- malicious",
+            ])
+
+            class Fake:
+                def __init__(self, model_ref: str = "", *args: object,
+                             **kwargs: object) -> None:
+                    pass
+
+                def chat(self, prompt: str, root: Path | None = None,
+                         history: object = None) -> ModelResponse:
+                    return ModelResponse(next(answers), 0)
+
+            with patch("vial_code_agent.router.OpenCodeProvider", Fake):
+                result, decision = graph.dispatch_consensus(
+                    "implement add()", quorum=2, min_agreement=0.6)
+
+            self.assertTrue(result.agreed)
+            self.assertEqual(len(result.clusters), 2)
+            # Both clusters have size 2, first one wins
+            self.assertEqual(len(result.clusters[0]), 2)
+            self.assertEqual(len(result.clusters[1]), 2)
 
 
 if __name__ == "__main__":

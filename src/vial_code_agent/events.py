@@ -96,8 +96,8 @@ class EventStore:
         if not after_event_id:
             return [self.events[key] for key in self._order]
         positions = {
-            event.event_id: index
-            for index, event in enumerate(self.events.values())
+            self.events[key].event_id: index
+            for index, key in enumerate(self._order)
         }
         start = positions.get(after_event_id)
         if start is None:

@@ -25,6 +25,7 @@ class AgentConfig:
     actor: str = ACTOR
     persist_state: bool = True
     price_table_json: str = ""
+    dev_secret: str = ""
 
 
 def _as_bool(value: object, default: bool = False) -> bool:
@@ -69,4 +70,6 @@ def load_config(root: Path) -> AgentConfig:
             os.environ.get("VIAL_PERSIST_STATE"), bool(values.get("persist_state", True))),
         price_table_json=os.environ.get(
             "VIAL_PRICE_TABLE", str(values.get("price_table_json", ""))),
+        dev_secret=os.environ.get(
+            "VIAL_DEV_SECRET", str(values.get("dev_secret", ""))),
     )

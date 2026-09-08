@@ -6,11 +6,86 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 class PersistenceError(RuntimeError):
     """Persistence failed and the runtime cannot claim durable state."""
+
+
+@runtime_checkable
+class Repository(Protocol):
+    """Interface for state persistence backends.
+
+    Implementations must provide atomic record persistence with snapshot
+    support. The interface is designed to allow different backends:
+
+    - JsonRepository: filesystem-based, single-user (default)
+    - SQLiteRepository: single-process with concurrent reads
+    - PostgresRepository: multi-process, distributed CI
+
+    All methods must be idempotent where applicable and provide
+    durability guarantees for committed data.
+    """
+
+    def save(self, name: str, value: Any) -> Path:
+        """Persist a named record atomically.
+
+        Args:
+            name: Record identifier (must be a valid .json filename)
+            value: JSON-serializable data to persist
+
+        Returns:
+            Path to the persisted record
+
+        Raises:
+            PersistenceError: If the save fails
+        """
+        ...
+
+    def load(self, name: str) -> Any:
+        """Load a named record.
+
+        Args:
+            name: Record identifier
+
+        Returns:
+            The deserialized record data
+
+        Raises:
+            PersistenceError: If the record doesn't exist or is corrupt
+        """
+        ...
+
+    def save_snapshot(self, records: dict[str, Any]) -> Path:
+        """Persist an atomic snapshot of multiple records.
+
+        The snapshot must be atomic - either all records are persisted
+        or none. The implementation should use generation-based storage
+        with checksums for integrity verification.
+
+        Args:
+            records: Mapping of record names to their data
+
+        Returns:
+            Path to the snapshot generation
+
+        Raises:
+            PersistenceError: If the snapshot fails
+        """
+        ...
+
+    def load_snapshot(self) -> dict[str, Any] | None:
+        """Load the most recent atomic snapshot.
+
+        Returns:
+            Mapping of record names to their data, or None if no
+            snapshot exists
+
+        Raises:
+            PersistenceError: If the snapshot is corrupt or invalid
+        """
+        ...
 
 
 class TransactionalJsonRepository:

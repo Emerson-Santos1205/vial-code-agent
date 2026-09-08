@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import os
 import re
 import subprocess
 import sys
@@ -36,7 +37,7 @@ from typing import Any
 
 from .core import VialCoreReference
 from .events import EventStore, VialEvent
-from .persistence import PersistenceError, TransactionalJsonRepository
+from .persistence import PersistenceError, Repository, TransactionalJsonRepository
 from .project import ProjectDelta, ProjectSnapshot, ProjectStateStore
 from .records import ApprovalRecord, ConsensusRecord  # noqa: F401 (re-export)
 
@@ -98,6 +99,31 @@ CONSENSUS_MIN_AGREEMENT = 0.6
 _LOCAL_SECRET = "local-vial-dev-secret"
 
 
+def generate_operation_id(
+    patch: str,
+    workspace_root: Path | None = None,
+    base_commit: str = "",
+    policy: str = "",
+    context_id: str = "",
+    reverse: bool = False,
+) -> str:
+    """Generate a semantically strong operation ID.
+
+    Includes workspace identity, base commit, patch, policy, and context
+    to ensure different operations on different workspaces produce distinct
+    IDs, even with identical patches.
+    """
+    parts = [
+        ("ROLLBACK-" if reverse else ""),
+        str(workspace_root.resolve()) if workspace_root else "",
+        base_commit,
+        patch,
+        policy,
+        context_id,
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def file_field_key(relative: str) -> str:
     return f"file:{relative}"
 
@@ -110,6 +136,8 @@ class VialRuntime:
     auditable (RFC-003, RFC-008, RFC-009, SDK-005).
     """
 
+    repository: Repository
+
     def __init__(
         self,
         reference: VialCoreReference,
@@ -119,7 +147,8 @@ class VialRuntime:
         actor: str = ACTOR,
         price_table: dict[str, Any] | None = None,
         persist_state: bool = True,
-        dev_secret: str = _LOCAL_SECRET,
+        dev_secret: str | None = None,
+        unsafe: bool = False,
     ) -> None:
         self.reference = reference
         self.state_root = Path(state_root)
@@ -127,7 +156,8 @@ class VialRuntime:
         self.authority = authority
         self.actor = actor
         self.persist_state = persist_state
-        self.dev_secret = dev_secret
+        self.dev_secret = dev_secret or os.environ.get("VIAL_DEV_SECRET") or _LOCAL_SECRET
+        self.unsafe = unsafe
 
         # --- prototype modules (every surface is loaded and composed) ---
         self._state = reference.prototype("state")
@@ -176,6 +206,18 @@ class VialRuntime:
         self.selector = self._cost.ResourceSelector(RESOURCE_TIERS, RESOURCE_ORDER)
         self._costs = self._cost.CostComponents()
 
+        # --- resolved task metrics (cost per resolved task) ---
+        self._resolved_tasks: int = 0
+        self._resolved_cost_tokens: float = 0.0
+        self._resolved_cost_inference: float = 0.0
+        self._resolved_cost_latency: float = 0.0
+        self._resolved_cost_retrieval: float = 0.0
+        self._resolved_cost_construction: float = 0.0
+        self._resolved_cost_validation: float = 0.0
+        self._resolved_cost_total: float = 0.0
+        self._resolved_attempts: int = 0
+        self._resolved_duration_seconds: float = 0.0
+
         # --- deterministic executor (RFC-007 §2.2) ---
         self.deterministic_executor = self._executor.DeterministicExecutor()
         self.executions: list[dict[str, Any]] = []
@@ -185,6 +227,7 @@ class VialRuntime:
         self.contexts: dict[str, Any] = {}
         self.approvals: dict[str, ApprovalRecord] = {}
         self.consensus_records: dict[str, ConsensusRecord] = {}
+        self._context_fingerprints: dict[str, str] = {}
         self.workspace_root: Path | None = None
 
         # --- event/ΔState bus + materialized project state (agent coordination) ---
@@ -412,7 +455,8 @@ class VialRuntime:
             command = CommandRunner.parse(command)
         if not isinstance(command, list):
             command = []
-        runner = CommandRunner(root, unsafe=bool(value.get("unsafe", False)))
+        # unsafe is a runtime policy, never from tool arguments
+        runner = CommandRunner(root, unsafe=self.unsafe)
         result = runner.run(list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr}
@@ -432,13 +476,25 @@ class VialRuntime:
                 "duration": result.elapsed_seconds, "status": "SUCCESS" if result.passed else "FAILED"}
 
     def _invoke_run_git(self, value: dict[str, Any]) -> Any:
-        from .git_ops import GitError, GitWorkspace
+        from .git_ops import GitError, GitPolicy, GitWorkspace
         root = self.workspace_root or Path.cwd().resolve()
+        args = [str(a) for a in value.get("args", [])]
+
+        # Classify command by risk level
+        policy = GitPolicy().classify(args)
+
+        # Destructive commands require explicit approval
+        if policy.requires_approval:
+            raise self._errors.VIALExecutionError(
+                "GIT_DESTRUCTIVE",
+                f"destructive git command '{' '.join(args)}' requires explicit approval"
+            )
+
         try:
-            output = GitWorkspace(root).run(*[str(a) for a in value.get("args", [])])
+            output = GitWorkspace(root).run(*args)
         except GitError as exc:
             raise self._errors.VIALExecutionError("GIT_ERROR", str(exc)) from exc
-        return {"stdout": output}
+        return {"stdout": output, "git_policy": policy.category, "risk": policy.risk}
 
     def _invoke_run_audit(self, value: dict[str, Any]) -> Any:
         core_root = value.get("core_root")
@@ -528,14 +584,28 @@ class VialRuntime:
         )
 
     def build_context(self, task_text: str, root: Path,
-                      files: list[Path], full: bool = False) -> Any:
+                      files: list[Path], full: bool = False,
+                      base_commit: str = "", dependency_hash: str = "",
+                      toolchain_id: str = "") -> Any:
         """Build the official Context (selective or full) and register it."""
         self.add_workspace_fields(root, files)
         task = self.build_task(task_text, files, root)
         builder = self._context.ContextBuilder(self.organization)
         context = builder.build_full(task) if full else builder.build_selective(task)
+        ws_digest = self.workspace_digest(files) if files else ""
+        fingerprint = self._context.compute_context_fingerprint(
+            base_commit=base_commit,
+            dependency_hash=dependency_hash,
+            toolchain_id=toolchain_id,
+            workspace_digest=ws_digest,
+        )
+        self._context_fingerprints[context.context_id] = fingerprint
         self.contexts[context.context_id] = context
         return context
+
+    def get_context_fingerprint(self, context_id: str) -> str:
+        """Retrieve the context fingerprint stored for a given context_id."""
+        return self._context_fingerprints.get(context_id, "")
 
     def count_tokens(self, text: str) -> int:
         """Token counting for cognitive cost measurement (RFC-007)."""
@@ -551,7 +621,13 @@ class VialRuntime:
         counters (vendor behavior), so we account for observable hits here
         (RFC-008 §2.3) without modifying the vendored core.
         """
-        entry, outcome = self.reuse_engine.lookup(task)
+        # Compute workspace context for signature enrichment
+        base_commit = getattr(self, "base_commit", "")
+        workspace_digest = self._compute_workspace_digest(task)
+        dependency_hash = self._compute_dependency_hash()
+
+        entry, outcome = self.reuse_engine.lookup(
+            task, base_commit, workspace_digest, dependency_hash)
         if outcome == "hit":
             self.reuse_engine.reuse_hits += 1
         return entry, outcome
@@ -559,11 +635,54 @@ class VialRuntime:
     def store_reuse(self, task: Any, outcome: Any, quality: float,
                     context: Any) -> Any:
         """Store validated cognition keyed by a deterministic signature."""
+        base_commit = getattr(self, "base_commit", "")
+        workspace_digest = self._compute_workspace_digest(task)
+        dependency_hash = self._compute_dependency_hash()
+
         self.reuse_engine.recomputes += 1
         return self.reuse_engine.store(
             task, outcome, quality, context,
             provenance=f"org:{self.org_id}:runtime",
+            base_commit=base_commit,
+            workspace_digest=workspace_digest,
+            dependency_hash=dependency_hash,
         )
+
+    def _compute_workspace_digest(self, task: Any) -> str:
+        """Compute digest of relevant workspace files for signature."""
+        workspace_root = getattr(self, "workspace_root", None)
+        if workspace_root is None:
+            return ""
+        try:
+            files = getattr(task, "required", [])
+            if not files:
+                return ""
+            digest = hashlib.sha256()
+            for file_ref in sorted(files):
+                if file_ref.startswith("file:"):
+                    file_path = workspace_root / file_ref[5:]
+                    if file_path.is_file():
+                        digest.update(file_ref.encode())
+                        digest.update(file_path.read_bytes())
+            return digest.hexdigest()
+        except (OSError, ValueError):
+            return ""
+
+    def _compute_dependency_hash(self) -> str:
+        """Compute hash of dependency lock file for signature."""
+        workspace_root = getattr(self, "workspace_root", None)
+        if workspace_root is None:
+            return ""
+        for lock_file in ("requirements.txt.lock", "poetry.lock", "pdm.lock",
+                          "package-lock.json", "yarn.lock", "Cargo.lock"):
+            lock_path = workspace_root / lock_file
+            if lock_path.is_file():
+                try:
+                    lock_content = lock_path.read_bytes()
+                    return hashlib.sha256(lock_content).hexdigest()[:16]
+                except OSError:
+                    pass
+        return ""
 
     def reuse_stats(self) -> dict[str, Any]:
         return self.reuse_engine.stats()
@@ -628,6 +747,57 @@ class VialRuntime:
         return self._costs.to_dict()
 
     # ------------------------------------------------------------------ #
+    # Resolved task metrics (RFC-010 §2.5 - cost per resolved task)
+    # ------------------------------------------------------------------ #
+    def record_resolved_task(self, attempts: int = 1,
+                             duration_seconds: float = 0.0) -> None:
+        """Record a resolved task with its accumulated cost.
+
+        Call this after a task is successfully resolved (tests passed).
+        Captures the current cost state for cost-per-resolved-task metrics.
+        """
+        self._resolved_tasks += 1
+        self._resolved_attempts += attempts
+        self._resolved_duration_seconds += duration_seconds
+        # Snapshot current cost components
+        self._resolved_cost_tokens += self._costs.tokens
+        self._resolved_cost_inference += self._costs.inference
+        self._resolved_cost_latency += self._costs.latency
+        self._resolved_cost_retrieval += self._costs.retrieval
+        self._resolved_cost_construction += self._costs.construction
+        self._resolved_cost_validation += self._costs.validation
+        self._resolved_cost_total += self._costs.total()
+
+    def resolved_task_metrics(self) -> dict[str, Any]:
+        """Return cost-per-resolved-task metrics."""
+        resolved = self._resolved_tasks or 0
+        return {
+            "resolved_tasks": resolved,
+            "total_attempts": self._resolved_attempts,
+            "total_duration_seconds": round(self._resolved_duration_seconds, 4),
+            "avg_attempts_per_task": round(
+                self._resolved_attempts / resolved, 2) if resolved else 0,
+            "avg_seconds_per_task": round(
+                self._resolved_duration_seconds / resolved, 4) if resolved else 0,
+            "cost": {
+                "tokens_per_task": round(
+                    self._resolved_cost_tokens / resolved, 4) if resolved else 0,
+                "inference_per_task": round(
+                    self._resolved_cost_inference / resolved, 4) if resolved else 0,
+                "latency_per_task": round(
+                    self._resolved_cost_latency / resolved, 4) if resolved else 0,
+                "retrieval_per_task": round(
+                    self._resolved_cost_retrieval / resolved, 4) if resolved else 0,
+                "construction_per_task": round(
+                    self._resolved_cost_construction / resolved, 4) if resolved else 0,
+                "validation_per_task": round(
+                    self._resolved_cost_validation / resolved, 4) if resolved else 0,
+                "total_per_task": round(
+                    self._resolved_cost_total / resolved, 4) if resolved else 0,
+            },
+        }
+
+    # ------------------------------------------------------------------ #
     # Deterministic execution (RFC-007 §2.2, RFC-010 Deterministic First)
     # ------------------------------------------------------------------ #
     def run_deterministic_executor(self, task: Any, ctx: Any) -> Any:
@@ -673,13 +843,22 @@ class VialRuntime:
 
     def propose_decision(self, objective: str, type: str = "operation",
                          policy: str = POLICY_DEVELOPMENT,
-                         context_id: str = "", risk: str = RISK_MEDIUM,
+                         context_id: str = "", context_fingerprint: str = "",
+                         risk: str = RISK_MEDIUM,
                          rationale: str = "", evidence: list[str] | None = None,
                          confidence: float = 0.95,
                          expires_at: float | None = None,
                          ttl: float | None = None,
                          cost_tier: str | None = None) -> Any:
-        """propose -> approve -> authorize a Decision (SDK-005 §51, RUNTIME-006)."""
+        """propose -> approve -> authorize a Decision (SDK-005 §51, RUNTIME-006).
+
+        NOTE: This performs *system approval* (internal acceptance), NOT human
+        approval. Human approval is a separate step via approve_decision()
+        which stores an ApprovalRecord. For high/critical risks, an additional
+        ApprovalRecord is required before invocation (SDK-005 §67).
+        """
+        if not context_fingerprint and context_id:
+            context_fingerprint = self._context_fingerprints.get(context_id, "")
         if expires_at is None:
             effective_ttl = ttl if ttl is not None else self.compute_decision_ttl(risk, cost_tier)
             expires_at = time.time() + effective_ttl
@@ -693,6 +872,7 @@ class VialRuntime:
             authority=authority,
             type=type,
             context_id=context_id,
+            context_fingerprint=context_fingerprint,
             alternatives=[],
             rationale=rationale or "authorized operation for the current task context",
             evidence=evidence or [f"context:{context_id}"],
@@ -711,13 +891,19 @@ class VialRuntime:
         return decision
 
     def propose_patch_decision(self, context_id: str = "",
+                               context_fingerprint: str = "",
                                expires_at: float | None = None,
                                ttl: float | None = None) -> Any:
-        """propose -> approve -> authorize a patch-apply Decision (SDK-005)."""
+        """propose -> approve -> authorize a patch-apply Decision (SDK-005).
+
+        Patch decisions default to LOW risk because they include behavioral
+        evidence (tests). Higher risk requires explicit risk parameter.
+        """
         return self.propose_decision(
             objective="apply generated code patch", type="patch_apply",
             policy=POLICY_CODE_APPLY, context_id=context_id,
-            risk=RISK_MEDIUM,
+            context_fingerprint=context_fingerprint,
+            risk=RISK_LOW,
             rationale="authorized code change for the current task context",
             evidence=[f"context:{context_id}"],
             expires_at=expires_at,
@@ -728,8 +914,8 @@ class VialRuntime:
 
     def approve_decision(self, decision_id: str, approver: str,
                          note: str = "") -> ApprovalRecord:
-        """Record an explicit Approval distinct from Decision/Authorization
-        (SDK-005 §350, RUNTIME-006 §8)."""
+        """Record explicit human approval (distinct from system approval in
+        propose_decision). Required for high/critical risks (SDK-005 §67)."""
         if decision_id not in self.decision_engine.decisions:
             raise KeyError(decision_id)
         if approver != self.authority:
@@ -771,9 +957,55 @@ class VialRuntime:
     # approval gate high-risk Decisions already use, instead of opening a
     # second, parallel approval path.
     # ------------------------------------------------------------------ #
+    # Risk-based consensus policies (RFC-010 §2.6)
+    #
+    # LOW:     1 model + tests (deterministic or single-model with evidence)
+    # MEDIUM:  1 model + tests + review (single-model with evidence + approval)
+    # HIGH:    2 independent models + tests (consensus required)
+    # CRITICAL: 2+ models + tests + human (consensus + human approval)
+    # ------------------------------------------------------------------ #
+    CONSENSUS_POLICY = {
+        RISK_LOW: {
+            "min_models": 1,
+            "require_evidence": True,
+            "require_approval": False,
+        },
+        RISK_MEDIUM: {
+            "min_models": 1,
+            "require_evidence": True,
+            "require_approval": True,
+        },
+        RISK_HIGH: {
+            "min_models": 2,
+            "require_evidence": True,
+            "require_approval": False,
+        },
+        RISK_CRITICAL: {
+            "min_models": 2,
+            "require_evidence": True,
+            "require_approval": True,
+        },
+    }
+
+    def consensus_policy(self, risk: str) -> dict[str, Any]:
+        """Get the consensus policy for a given risk level."""
+        return self.CONSENSUS_POLICY.get(risk, self.CONSENSUS_POLICY[RISK_MEDIUM])
+
     def requires_consensus(self, tool: Any) -> bool:
         """Whether a Tool needs a cross-model consensus before invocation."""
         return getattr(tool, "side_effect_classification", "none") == "mutation"
+
+    def _consensus_depth(self, risk: str) -> int:
+        """Minimum number of independent models required for consensus."""
+        return self.consensus_policy(risk)["min_models"]
+
+    def _consensus_requires_evidence(self, risk: str) -> bool:
+        """Whether behavioral evidence is required for consensus."""
+        return self.consensus_policy(risk)["require_evidence"]
+
+    def _consensus_requires_approval(self, risk: str) -> bool:
+        """Whether human approval is required after consensus."""
+        return self.consensus_policy(risk)["require_approval"]
 
     def record_consensus(
         self,
@@ -805,43 +1037,90 @@ class VialRuntime:
         return record
 
     def _consensus_gate(self, tool: Any, decision: Any) -> Any | None:
-        """Enforce the cross-model consensus gate ahead of the approval gate.
+        """Enforce the risk-based cross-model consensus gate.
 
         Returns a rejected ``ToolResult`` when the gate blocks, or ``None``
         so the normal authorization/approval pipeline continues.
+
+        Risk-based policies:
+        - LOW: 1 model + tests (evidence required)
+        - MEDIUM: 1 model + tests + review (evidence + approval required)
+        - HIGH: 2 independent models + tests (consensus required)
+        - CRITICAL: 2+ models + tests + human (consensus + approval required)
         """
         if not self.requires_consensus(tool):
             return None
+
+        risk = getattr(decision, "risk", RISK_MEDIUM)
+        policy = self.consensus_policy(risk)
         record = self.consensus_records.get(decision.id)
+
+        # Approval already recorded -> skip consensus
         if decision.id in self.approvals:
             return None
+
+        # No consensus record yet -> require it
         if record is None:
             self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_REJECTED,
                 error=f"Decision '{decision.id}' requires cross-model consensus "
-                      "before invocation",
+                      f"before invocation (risk={risk}, min_models={policy['min_models']})",
                 metadata={"tool_id": tool.tool_id, "error_code": "CONSENSUS_REQUIRED",
-                          "decision_id": decision.id})
-        if record.agreed and self._verified_consensus(record):
-            return None
-        if record.agreed:
+                          "decision_id": decision.id, "risk": risk,
+                          "min_models": policy["min_models"]})
+
+        # Check model count meets risk requirement
+        model_count = len(record.models)
+        if model_count < policy["min_models"]:
             self.persist()
             return self._tool.ToolResult(
                 status=self._tool.STATUS_REJECTED,
-                error=f"consensus for Decision '{decision.id}' lacks independent validation evidence",
+                error=f"consensus for Decision '{decision.id}' requires "
+                      f"{policy['min_models']} models but only {model_count} provided "
+                      f"(risk={risk})",
                 metadata={"tool_id": tool.tool_id,
-                          "error_code": "CONSENSUS_EVIDENCE_REQUIRED",
-                          "decision_id": decision.id,
+                          "error_code": "CONSENSUS_INSUFFICIENT_MODELS",
+                          "decision_id": decision.id, "risk": risk,
+                          "required_models": policy["min_models"],
+                          "provided_models": model_count})
+
+        # Check behavioral evidence if required
+        if policy["require_evidence"] and not self._verified_consensus(record):
+            if record.agreed:
+                self.persist()
+                return self._tool.ToolResult(
+                    status=self._tool.STATUS_REJECTED,
+                    error=f"consensus for Decision '{decision.id}' lacks "
+                          f"independent validation evidence (risk={risk})",
+                    metadata={"tool_id": tool.tool_id,
+                              "error_code": "CONSENSUS_EVIDENCE_REQUIRED",
+                              "decision_id": decision.id, "risk": risk,
+                              "agreement_ratio": record.agreement_ratio})
+            # Models disagreed -> escalate to approval
+            self.persist()
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_REJECTED,
+                error=f"models disagreed on Decision '{decision.id}'; "
+                      f"human approval required (risk={risk})",
+                metadata={"tool_id": tool.tool_id, "error_code": "APPROVAL_REQUIRED",
+                          "decision_id": decision.id, "risk": risk,
                           "agreement_ratio": record.agreement_ratio})
-        self.persist()
-        return self._tool.ToolResult(
-            status=self._tool.STATUS_REJECTED,
-            error=f"models disagreed on Decision '{decision.id}'; "
-                  "human approval required",
-            metadata={"tool_id": tool.tool_id, "error_code": "APPROVAL_REQUIRED",
-                      "decision_id": decision.id,
-                      "agreement_ratio": record.agreement_ratio})
+
+        # Check if human approval is required after consensus
+        if policy["require_approval"] and decision.id not in self.approvals:
+            self.persist()
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_REJECTED,
+                error=f"consensus for Decision '{decision.id}' requires "
+                      f"human approval (risk={risk})",
+                metadata={"tool_id": tool.tool_id,
+                          "error_code": "APPROVAL_REQUIRED",
+                          "decision_id": decision.id, "risk": risk,
+                          "agreement_ratio": record.agreement_ratio})
+
+        # Consensus passed
+        return None
 
     def risk_rank(self, risk: str) -> int:
         return RISK_ORDER.get(risk, RISK_ORDER[RISK_MEDIUM])
@@ -966,9 +1245,13 @@ class VialRuntime:
         invocation -> atomic commit / abort -> file reconciliation ->
         persistence. Replayed operations are resolved before any mutation.
         """
-        op_id = operation_id or (
-            ("ROLLBACK-" if reverse else "") +
-            hashlib.sha256(patch.encode("utf-8")).hexdigest())
+        # Generate robust operation ID from workspace + patch + context
+        workspace_root = getattr(applier, "root", self.workspace_root)
+        policy = getattr(decision, "policy", "") if decision else ""
+        base_commit = getattr(applier, "base_commit", "")
+        op_id = operation_id or generate_operation_id(
+            patch, workspace_root, base_commit, policy, context_id, reverse
+        )
 
         resolved = self.coordinator.resolve(op_id)
         if resolved is not None and resolved.status == self._coordinator.COMMITTED:
@@ -1061,18 +1344,59 @@ class VialRuntime:
         """Resolve an operation's outcome from the intent log (RFC-009)."""
         return self.coordinator.resolve(operation_id)
 
-    def record_rollback(self, patch: str, operation_id: str | None = None) -> Any:
-        """Record an auditable compensation transition for a rolled-back patch."""
-        op_id = operation_id or hashlib.sha256(patch.encode("utf-8")).hexdigest()
+    def compensate_rollback(self, applier: Any, patch: str,
+                            operation_id: str | None = None,
+                            workspace_root: Path | None = None) -> Any:
+        """Perform a compensating rollback: reverse patch + record compensation.
+
+        This is a compensating action, NOT an ACID workspace transaction.
+        External side effects (hooks, processes, artifacts) are not undone.
+        The workspace state may differ from the pre-patch state if such
+        operations occurred between apply and rollback.
+        """
+        op_id = operation_id or generate_operation_id(
+            patch, workspace_root or self.workspace_root, reverse=True
+        )
         compensation_id = f"ROLLBACK-{op_id}"
         resolved = self.coordinator.resolve(compensation_id)
-        if resolved is not None:
-            return resolved
-        self.coordinator.begin(
-            compensation_id, WORKSPACE_FIELD, f"rollback:{op_id}", self.authority)
-        committed = self.coordinator.commit(compensation_id)
+        if resolved is not None and resolved.status == self._coordinator.COMMITTED:
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_SUCCESS,
+                output="rollback already committed (idempotent replay)",
+                metadata={"compensation_id": compensation_id,
+                           "operation_id": op_id, "recovered": True})
+
+        rollback_error = ""
+        try:
+            applier.reverse(patch)
+        except Exception as exc:
+            rollback_error = str(exc)
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_FAILED,
+                error=f"patch reversal failed: {rollback_error}",
+                metadata={"compensation_id": compensation_id,
+                           "operation_id": op_id,
+                           "rollback_completed": False,
+                           "rollback_error": rollback_error})
+
+        try:
+            self.coordinator.begin(
+                compensation_id, WORKSPACE_FIELD, f"rollback:{op_id}",
+                self.authority)
+            self.coordinator.commit(compensation_id)
+        except Exception as exc:
+            rollback_error = str(exc)
+
         self.persist()
-        return committed
+        return self._tool.ToolResult(
+            status=self._tool.STATUS_SUCCESS if not rollback_error
+            else self._tool.STATUS_FAILED,
+            output="compensating rollback completed" if not rollback_error
+            else f"patch reversed but compensation recording failed: {rollback_error}",
+            metadata={"compensation_id": compensation_id,
+                       "operation_id": op_id,
+                       "rollback_completed": not rollback_error,
+                       "rollback_error": rollback_error})
 
     def _reconcile_files(self, root: Path) -> None:
         """Refresh file fields from disk after an applied patch."""
@@ -1117,6 +1441,18 @@ class VialRuntime:
                 "approvals.json": [record.__dict__ for record in self.approvals.values()],
                 "consensus.json": [record.__dict__ for record in self.consensus_records.values()],
                 "cost.json": self._costs.to_dict(),
+                "resolved_tasks.json": {
+                    "resolved_tasks": self._resolved_tasks,
+                    "resolved_attempts": self._resolved_attempts,
+                    "resolved_duration_seconds": self._resolved_duration_seconds,
+                    "resolved_cost_tokens": self._resolved_cost_tokens,
+                    "resolved_cost_inference": self._resolved_cost_inference,
+                    "resolved_cost_latency": self._resolved_cost_latency,
+                    "resolved_cost_retrieval": self._resolved_cost_retrieval,
+                    "resolved_cost_construction": self._resolved_cost_construction,
+                    "resolved_cost_validation": self._resolved_cost_validation,
+                    "resolved_cost_total": self._resolved_cost_total,
+                },
                 "executions.json": self.executions,
                 "events.json": self.events.to_list(),
                 "contexts.json": {
@@ -1201,6 +1537,18 @@ class VialRuntime:
                     construction=data.get("construction", 0.0),
                     validation=data.get("validation", 0.0),
                 )
+            if has_record("resolved_tasks.json"):
+                data = load_record("resolved_tasks.json")
+                self._resolved_tasks = data.get("resolved_tasks", 0)
+                self._resolved_attempts = data.get("resolved_attempts", 0)
+                self._resolved_duration_seconds = data.get("resolved_duration_seconds", 0.0)
+                self._resolved_cost_tokens = data.get("resolved_cost_tokens", 0.0)
+                self._resolved_cost_inference = data.get("resolved_cost_inference", 0.0)
+                self._resolved_cost_latency = data.get("resolved_cost_latency", 0.0)
+                self._resolved_cost_retrieval = data.get("resolved_cost_retrieval", 0.0)
+                self._resolved_cost_construction = data.get("resolved_cost_construction", 0.0)
+                self._resolved_cost_validation = data.get("resolved_cost_validation", 0.0)
+                self._resolved_cost_total = data.get("resolved_cost_total", 0.0)
             if has_record("executions.json"):
                 self.executions = list(load_record("executions.json"))
             if has_record("events.json"):
@@ -1351,6 +1699,7 @@ class VialRuntime:
             "audit_records": len(self.patch_tool.audit_records),
             "contexts": len(self.contexts),
             "costs": self.costs(),
+            "resolved_task_metrics": self.resolved_task_metrics(),
             "memory": self.memory(),
             "events": self.events.stats(),
             "project": (self.project.snapshot.to_dict()

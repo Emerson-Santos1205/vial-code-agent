@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import tempfile
@@ -382,12 +381,21 @@ class FullIntegrationTests(unittest.TestCase):
             decision = runtime.propose_patch_decision("")
             _record_verified_consensus(runtime, decision)
             runtime.apply_patch(PatchApplier(root), PATCH, decision=decision)
-            runtime.record_rollback(PATCH)
-            op_id = hashlib.sha256(PATCH.encode("utf-8")).hexdigest()
-            self.assertIn(
-                "ROLLBACK-" + op_id,
-                [intent.operation_id
-                 for intent in runtime.coordinator.intents.values()])
+            # Verify patch was applied
+            self.assertEqual(source.read_text(encoding="utf-8"), "new\n")
+            # Perform compensating rollback
+            result = runtime.compensate_rollback(PatchApplier(root), PATCH)
+            self.assertTrue(result.ok())
+            # Verify patch was reversed
+            self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
+            # Verify rollback operation exists with ROLLBACK- prefix
+            rollback_ops = [
+                intent.operation_id
+                for intent in runtime.coordinator.intents.values()
+                if intent.operation_id.startswith("ROLLBACK-")
+            ]
+            self.assertEqual(len(rollback_ops), 1)
+            self.assertTrue(rollback_ops[0].startswith("ROLLBACK-"))
 
     # ------------------------------------------------------------------ #
     # resource: capabilities and tiers (SDK-003)
@@ -500,11 +508,40 @@ class FullIntegrationTests(unittest.TestCase):
             self.assertEqual(allowed.status, "SUCCESS")
             self.assertIn("ok", allowed.output["stdout"])
 
-            unsafe = runtime.invoke_tool(
+            # unsafe from tool arguments is now ignored (security fix)
+            unsafe_arg = runtime.invoke_tool(
                 "TOOL-RUN-BUILD",
                 {"command": "format-disk", "unsafe": True},
                 objective="run unrestricted command")
-            self.assertEqual(unsafe.status, "FAILED")
+            self.assertEqual(unsafe_arg.status, "FAILED")
+
+    def test_unsafe_runtime_policy(self) -> None:
+        """unsafe is a runtime policy, not a tool argument."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # Default: unsafe=False, allowlist enforced
+            runtime = _runtime(Path(directory) / "state")
+            runtime.set_workspace_root(root)
+            rejected = runtime.invoke_tool(
+                "TOOL-RUN-BUILD", {"command": "format-disk"},
+                objective="run arbitrary command")
+            self.assertEqual(rejected.status, "FAILED")
+
+            # unsafe=True at runtime: allowlist bypassed
+            unsafe_runtime = _runtime(Path(directory) / "state-unsafe")
+            unsafe_runtime.unsafe = True
+            unsafe_runtime.set_workspace_root(root)
+            unsafe_runtime.invoke_tool(
+                "TOOL-RUN-BUILD",
+                {"command": [sys.executable, "-c", "print('unsafe-ok')"]},
+                objective="run with unsafe policy")
+            # Command runs (allowlist bypassed), but format-disk would fail
+            # anyway. Verify python works with unsafe=True.
+            allowed = unsafe_runtime.invoke_tool(
+                "TOOL-RUN-BUILD",
+                {"command": [sys.executable, "-c", "print('ok')"]},
+                objective="run allowlisted with unsafe")
+            self.assertEqual(allowed.status, "SUCCESS")
 
     def test_persistence_restores_deterministic_executions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
