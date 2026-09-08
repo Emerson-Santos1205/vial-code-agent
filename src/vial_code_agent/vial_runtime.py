@@ -227,6 +227,7 @@ class VialRuntime:
         self.contexts: dict[str, Any] = {}
         self.approvals: dict[str, ApprovalRecord] = {}
         self.consensus_records: dict[str, ConsensusRecord] = {}
+        self._context_fingerprints: dict[str, str] = {}
         self.workspace_root: Path | None = None
 
         # --- event/ΔState bus + materialized project state (agent coordination) ---
@@ -592,14 +593,19 @@ class VialRuntime:
         builder = self._context.ContextBuilder(self.organization)
         context = builder.build_full(task) if full else builder.build_selective(task)
         ws_digest = self.workspace_digest(files) if files else ""
-        context.context_fingerprint = self._context.compute_context_fingerprint(
+        fingerprint = self._context.compute_context_fingerprint(
             base_commit=base_commit,
             dependency_hash=dependency_hash,
             toolchain_id=toolchain_id,
             workspace_digest=ws_digest,
         )
+        self._context_fingerprints[context.context_id] = fingerprint
         self.contexts[context.context_id] = context
         return context
+
+    def get_context_fingerprint(self, context_id: str) -> str:
+        """Retrieve the context fingerprint stored for a given context_id."""
+        return self._context_fingerprints.get(context_id, "")
 
     def count_tokens(self, text: str) -> int:
         """Token counting for cognitive cost measurement (RFC-007)."""
@@ -851,6 +857,8 @@ class VialRuntime:
         which stores an ApprovalRecord. For high/critical risks, an additional
         ApprovalRecord is required before invocation (SDK-005 §67).
         """
+        if not context_fingerprint and context_id:
+            context_fingerprint = self._context_fingerprints.get(context_id, "")
         if expires_at is None:
             effective_ttl = ttl if ttl is not None else self.compute_decision_ttl(risk, cost_tier)
             expires_at = time.time() + effective_ttl
