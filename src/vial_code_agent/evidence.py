@@ -4,12 +4,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .patches import PatchApplier, PatchError
 from .processes import process_group_kwargs, terminate_process_tree
+from .test_runner import TestResult
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,37 @@ class EvidenceRunner:
                 error.stderr or b"").decode("utf-8", errors="replace")
             return 124, stdout, stderr
         return process.returncode, stdout, stderr
+
+
+class TestRunnerAdapter:
+    """Adapter that wraps EvidenceRunner with TestRunner-compatible interface.
+
+    Provides the same ``run_tests(root, command, timeout)`` interface as
+    ``test_runner.run_tests`` but routes execution through EvidenceRunner
+    to enforce security controls (allowlist, network isolation, process
+    tree shutdown).
+    """
+
+    def __init__(self, runner: EvidenceRunner | None = None) -> None:
+        self.runner = runner or EvidenceRunner()
+
+    def run_tests(
+        self,
+        root: Path,
+        command: list[str],
+        timeout_seconds: int = 120,
+    ) -> TestResult:
+        started = time.monotonic()
+        try:
+            returncode, stdout, stderr = self.runner.run(
+                command, root, timeout_seconds)
+        except PermissionError as error:
+            return TestResult(
+                tuple(command), 126, "", str(error),
+                time.monotonic() - started)
+        return TestResult(
+            tuple(command), returncode, stdout, stderr,
+            time.monotonic() - started)
 
 
 def validate_candidate(root: Path, patch: str,

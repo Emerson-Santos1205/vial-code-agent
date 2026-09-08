@@ -462,7 +462,7 @@ class VialRuntime:
                 "stdout": result.stdout, "stderr": result.stderr}
 
     def _invoke_run_test(self, value: dict[str, Any]) -> Any:
-        from .test_runner import run_tests
+        from .evidence import EvidenceRunner, TestRunnerAdapter
         root = self.workspace_root or Path.cwd().resolve()
         command = value.get("command")
         if isinstance(command, str):
@@ -470,7 +470,8 @@ class VialRuntime:
             command = CommandRunner.parse(command)
         if not isinstance(command, list):
             command = []
-        result = run_tests(root, list(command), int(value.get("timeout", 120)))
+        runner = TestRunnerAdapter(EvidenceRunner(network_enabled=self.unsafe))
+        result = runner.run_tests(root, list(command), int(value.get("timeout", 120)))
         return {"command": list(result.command), "returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr,
                 "duration": result.elapsed_seconds, "status": "SUCCESS" if result.passed else "FAILED"}
