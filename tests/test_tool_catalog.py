@@ -101,12 +101,14 @@ class ToolCatalogTests(unittest.TestCase):
             import subprocess
             subprocess.run(["git", "init", "-q"], cwd=root, check=False)
 
-            no_consensus = runtime.invoke_tool(
+            # TOOL-RUN-GIT is now RISK_LOW/none, so git status passes
+            # without consensus or approval at the tool level.
+            result = runtime.invoke_tool(
                 "TOOL-RUN-GIT", {"args": ["status"]}, objective="git status")
-            self.assertEqual(no_consensus.status, "REJECTED")
-            self.assertIn("CONSENSUS_REQUIRED",
-                          no_consensus.metadata.get("error_code", ""))
+            self.assertEqual(result.status, "SUCCESS")
 
+            # When a high-risk decision is explicitly provided, approval
+            # is still required.
             decision = runtime.propose_decision(
                 "git status", "run_git", policy="development",
                 risk=RISK_HIGH)
