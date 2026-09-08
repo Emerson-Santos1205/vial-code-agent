@@ -443,7 +443,7 @@ class RoutingGraph:
                     "detail": result.detail if result else "no unified diff candidate",
                 }
             # Check evidence for all responses in the winning cluster
-            cluster_refs = winner_cluster if len(valid) > 2 else [winner_ref]
+            cluster_refs = winner_cluster if len(valid) > 2 and winner_cluster is not None else [winner_ref]
             evidence_passed = all(
                 evidence.get(ref, {}).get("static_valid")
                 and evidence.get(ref, {}).get("behavioral_passed") is not False
