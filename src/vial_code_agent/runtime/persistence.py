@@ -4,13 +4,15 @@ from __future__ import annotations
 from typing import Any
 
 from ..events import EventStore
-from ..persistence import PersistenceError
+from ..persistence import PersistenceError, Repository
 from ..project import ProjectSnapshot
 from ..records import ApprovalRecord, ConsensusRecord
 
 
 class PersistenceMixin:
     """Persistence and serialization methods for VialRuntime state."""
+
+    repository: Repository
 
     def persist(self) -> None:
         if not self.persist_state:  # type: ignore[attr-defined]

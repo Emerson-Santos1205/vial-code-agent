@@ -20,6 +20,7 @@ from benchmark.run_benchmark import classify_failure, summarize
 from benchmark.run_swebench import (
     ASTROPY_BUILD_COMMAND,
     _adjudicated_candidate_consensus,
+    _assess_governance_risk,
     _candidate_consensus,
     _candidate_outcome,
     _candidate_set_consensus,
@@ -31,6 +32,7 @@ from benchmark.run_swebench import (
     _normalize_astropy_test_id,
     _reverse_fixture,
     _run_test_groups,
+    _single_candidate_validation,
     baseline_is_valid,
     build_swebench_prompt,
     is_prepared_test_image,
@@ -166,6 +168,265 @@ class BenchmarkMetricTests(unittest.TestCase):
         self.assertEqual(metrics["both_valid_rate"], 1.0)
         self.assertEqual(metrics["consensus_success"], 0)
         self.assertEqual(metrics["consensus_success_rate"], 0.0)
+
+    def test_governance_metrics_measure_efficiency_and_loss(self) -> None:
+        results = [
+            {
+                "passed": True,
+                "consensus": {"agreed": True},
+                "candidate_outcomes": {
+                    "candidate-a": {"patch_valid": True, "tests_passed": True},
+                    "candidate-b": {"patch_valid": True, "tests_passed": True},
+                },
+            },
+            {
+                "passed": False,
+                "consensus": {"agreed": False},
+                "candidate_outcomes": {
+                    "candidate-a": {"patch_valid": True, "tests_passed": True},
+                    "candidate-b": {"patch_valid": True, "tests_passed": True},
+                },
+            },
+            {
+                "passed": False,
+                "candidate_outcomes": {
+                    "candidate-a": {"patch_valid": True, "tests_passed": False},
+                    "candidate-b": {"patch_valid": False, "tests_passed": None},
+                },
+            },
+        ]
+
+        metrics = candidate_metrics(results)
+
+        self.assertEqual(metrics["valid_candidate_tasks"], 2)
+        self.assertEqual(metrics["valid_accepted"], 1)
+        self.assertEqual(metrics["governance_blocked"], 1)
+        self.assertEqual(metrics["governance_efficiency"], 0.5)
+        self.assertEqual(metrics["governance_loss"], 0.5)
+
+    def test_governance_metrics_zero_when_no_valid_candidates(self) -> None:
+        results = [
+            {
+                "passed": False,
+                "candidate_outcomes": {
+                    "candidate-a": {"patch_valid": False, "tests_passed": None},
+                    "candidate-b": {"patch_valid": False, "tests_passed": None},
+                },
+            },
+        ]
+
+        metrics = candidate_metrics(results)
+
+        self.assertEqual(metrics["valid_candidate_tasks"], 0)
+        self.assertEqual(metrics["governance_efficiency"], 0.0)
+        self.assertEqual(metrics["governance_loss"], 0.0)
+
+    def test_assess_governance_risk_returns_low_for_two_valid(self) -> None:
+        candidates = [
+            CandidateResult(
+                model="a/model", patch="patch-a",
+                outcome=_candidate_outcome(
+                    "A", "a/model", returned_patch=True, patch_valid=True,
+                    tests_passed=True),
+            ),
+            CandidateResult(
+                model="b/model", patch="patch-b",
+                outcome=_candidate_outcome(
+                    "B", "b/model", returned_patch=True, patch_valid=True,
+                    tests_passed=True),
+            ),
+        ]
+        risk, eligible = _assess_governance_risk(candidates)
+        self.assertEqual(risk, "low")
+        self.assertFalse(eligible)
+
+    def test_assess_governance_risk_returns_medium_for_one_valid_one_invalid(self) -> None:
+        candidates = [
+            CandidateResult(
+                model="a/model", patch="patch-a",
+                outcome=_candidate_outcome(
+                    "A", "a/model", returned_patch=True, patch_valid=True,
+                    tests_passed=True),
+            ),
+            CandidateResult(
+                model="b/model", patch="patch-b",
+                outcome=_candidate_outcome(
+                    "B", "b/model", returned_patch=True, patch_valid=True,
+                    tests_passed=False),
+            ),
+        ]
+        risk, eligible = _assess_governance_risk(candidates)
+        self.assertEqual(risk, "medium")
+        self.assertTrue(eligible)
+
+    def test_assess_governance_risk_returns_high_for_no_valid(self) -> None:
+        candidates = [
+            CandidateResult(
+                model="a/model", patch="patch-a",
+                outcome=_candidate_outcome(
+                    "A", "a/model", returned_patch=True, patch_valid=True,
+                    tests_passed=False),
+            ),
+            CandidateResult(
+                model="b/model", patch="patch-b",
+                outcome=_candidate_outcome(
+                    "B", "b/model", returned_patch=True, patch_valid=True,
+                    tests_passed=False),
+            ),
+        ]
+        risk, eligible = _assess_governance_risk(candidates)
+        self.assertEqual(risk, "high")
+        self.assertFalse(eligible)
+
+    def test_single_candidate_validation_succeeds_when_adjudicator_passes(self) -> None:
+        passing = CandidateResult(
+            model="a/model", patch="patch-a",
+            behavior={"behavioral_passed": True},
+            outcome=_candidate_outcome(
+                "A", "a/model", returned_patch=True, patch_valid=True,
+                tests_passed=True),
+        )
+        adjudicator = CandidateResult(
+            model="c/model", patch="patch-a",
+            behavior={"behavioral_passed": True},
+            outcome=_candidate_outcome(
+                "ADJUDICATOR", "c/model", returned_patch=True,
+                patch_valid=True, tests_passed=True),
+        )
+        candidates = [
+            passing,
+            CandidateResult(
+                model="b/model", patch="patch-b",
+                outcome=_candidate_outcome(
+                    "B", "b/model", returned_patch=True, patch_valid=True,
+                    tests_passed=False),
+            ),
+        ]
+
+        consensus = _single_candidate_validation(
+            Path("."), passing, adjudicator, candidates, set())
+
+        self.assertTrue(consensus.agreed)
+        self.assertEqual(consensus.status, "SINGLE_CANDIDATE_VALIDATED")
+        self.assertEqual(consensus.result_code, "CONSENSUS_SUCCEEDED")
+        self.assertTrue(consensus.single_candidate_validation)
+        self.assertEqual(consensus.risk_level, "medium")
+        self.assertTrue(consensus.recovery_eligible)
+
+    def test_single_candidate_validation_fails_when_adjudicator_fails(self) -> None:
+        passing = CandidateResult(
+            model="a/model", patch="patch-a",
+            behavior={"behavioral_passed": True},
+            outcome=_candidate_outcome(
+                "A", "a/model", returned_patch=True, patch_valid=True,
+                tests_passed=True),
+        )
+        adjudicator = CandidateResult(
+            model="c/model", patch=None,
+            behavior={"behavioral_passed": False},
+            outcome=_candidate_outcome(
+                "ADJUDICATOR", "c/model", returned_patch=False,
+                patch_valid=False, tests_passed=False),
+        )
+        candidates = [
+            passing,
+            CandidateResult(
+                model="b/model", patch="patch-b",
+                outcome=_candidate_outcome(
+                    "B", "b/model", returned_patch=True, patch_valid=True,
+                    tests_passed=False),
+            ),
+        ]
+
+        consensus = _single_candidate_validation(
+            Path("."), passing, adjudicator, candidates, set())
+
+        self.assertFalse(consensus.agreed)
+        self.assertEqual(consensus.status, "SINGLE_CANDIDATE_REJECTED")
+        self.assertTrue(consensus.single_candidate_validation)
+        self.assertEqual(consensus.risk_level, "medium")
+
+    def test_context_fingerprint_is_deterministic(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        context = reference.prototype("context")
+        fp1 = context.compute_context_fingerprint(
+            base_commit="abc123",
+            dependency_hash="deps456",
+            toolchain_id="python3.11-linux",
+            workspace_digest="ws789",
+        )
+        fp2 = context.compute_context_fingerprint(
+            base_commit="abc123",
+            dependency_hash="deps456",
+            toolchain_id="python3.11-linux",
+            workspace_digest="ws789",
+        )
+        self.assertEqual(fp1, fp2)
+        self.assertEqual(len(fp1), 64)
+
+    def test_context_fingerprint_changes_with_different_inputs(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        context = reference.prototype("context")
+        fp1 = context.compute_context_fingerprint(base_commit="abc123")
+        fp2 = context.compute_context_fingerprint(base_commit="def456")
+        self.assertNotEqual(fp1, fp2)
+
+    def test_context_fingerprint_empty_when_no_inputs(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        context = reference.prototype("context")
+        fp = context.compute_context_fingerprint()
+        self.assertEqual(fp, "")
+
+    def test_context_fingerprint_included_in_context_to_row(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        context = reference.prototype("context")
+        ctx = context.Context(
+            task_id="task-1",
+            organization_id="ORG-TEST",
+            body="test body",
+            mode="selective",
+            state_version=1,
+            tokens=10,
+            context_fingerprint="abc123",
+        )
+        row = ctx.to_row()
+        self.assertEqual(row["context_fingerprint"], "abc123")
+
+    def test_decision_includes_context_fingerprint(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        decision_mod = reference.prototype("decision")
+        authority = decision_mod.Authority(actor="test", role="admin")
+        decision = decision_mod.Decision(
+            id="DEC-123",
+            organization_id="ORG-TEST",
+            type="operation",
+            objective="test",
+            actor="test",
+            authority=authority,
+            context_id="CTX-123",
+            context_fingerprint="fingerprint123",
+        )
+        d = decision.to_dict()
+        self.assertEqual(d["context_fingerprint"], "fingerprint123")
+
+    def test_reuse_signature_includes_context_fingerprint(self) -> None:
+        from vial_code_agent.core import VialCoreReference
+        reference = VialCoreReference(Path("vendor/vial-core"))
+        context = reference.prototype("context")
+        reuse = reference.prototype("reuse")
+        task = context.Task(id="t1", prompt="test", required=[], expected=None,
+                           op="patch_apply", args=None)
+        sig1 = reuse.reuse_signature(task, context_fingerprint="fp123")
+        sig2 = reuse.reuse_signature(task, context_fingerprint="fp456")
+        sig3 = reuse.reuse_signature(task)
+        self.assertNotEqual(sig1, sig2)
+        self.assertNotEqual(sig1, sig3)
+        self.assertIn("context_fingerprint", sig1)
 
     def test_candidate_failure_breakdown_separates_contract_and_behavior(self) -> None:
         results = [{

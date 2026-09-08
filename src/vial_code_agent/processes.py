@@ -26,7 +26,8 @@ def terminate_process_tree(
         )
     else:
         try:
-            os.killpg(process.pid, termination_signal)  # type: ignore[attr-defined]
+            # type: ignore[attr-defined]
+            os.killpg(process.pid, termination_signal)
         except (ProcessLookupError, OSError):
             process.kill()
     try:

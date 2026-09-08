@@ -1431,6 +1431,102 @@ def _adjudicated_candidate_consensus(
     return consensus
 
 
+def _assess_governance_risk(
+        candidates: list[CandidateResult]) -> tuple[str, bool]:
+    """Assess governance risk level based on candidate evidence.
+
+    Returns (risk_level, recovery_eligible) where risk_level is one of:
+    - "low": both candidates valid and equivalent
+    - "medium": one valid, one failed behavioral (recovery eligible)
+    - "high": both invalid or no evidence
+    - "critical": environment or infrastructure failure
+    """
+    valid = [c for c in candidates
+             if c.outcome.patch_valid and c.outcome.tests_passed is True]
+    invalid_behavioral = [c for c in candidates
+                          if c.outcome.patch_valid and c.outcome.tests_passed is False]
+    invalid_static = [c for c in candidates
+                      if not c.outcome.patch_valid]
+
+    if len(valid) >= 2:
+        return "low", False
+    if len(valid) == 1 and len(invalid_behavioral) >= 1:
+        return "medium", True
+    if len(valid) == 1 and len(invalid_static) >= 1:
+        return "medium", True
+    if len(valid) == 0 and len(invalid_behavioral) >= 1:
+        return "high", False
+    return "high", False
+
+
+def _single_candidate_validation(
+        root: Path, passing: CandidateResult, adjudicator: CandidateResult,
+        original_candidates: list[CandidateResult],
+        allowed_paths: set[str]) -> CandidateConsensus:
+    """Validate a single passing candidate using an adjudicator.
+
+    Unlike _adjudicated_candidate_consensus which requires the adjudicator to
+    generate an equivalent patch, this function validates the passing candidate's
+    evidence directly. The adjudicator reviews the candidate's patch and test
+    results to confirm the solution is correct.
+    """
+    outcomes = {
+        str(candidate.model): candidate.outcome
+        for candidate in original_candidates
+    }
+    outcomes[str(adjudicator.model)] = adjudicator.outcome
+
+    risk_level, _ = _assess_governance_risk(original_candidates)
+
+    adjudicator_passed = (
+        adjudicator.outcome.patch_valid and adjudicator.outcome.tests_passed is True)
+
+    if adjudicator_passed:
+        return CandidateConsensus(
+            agreed=True,
+            agreement_ratio=1.0,
+            models=[str(passing.model), str(adjudicator.model)],
+            responses={},
+            evidence={
+                "validation_type": "single_candidate",
+                "passing_candidate": str(passing.model),
+                "adjudicator": str(adjudicator.model),
+                "adjudicator_confirms": True,
+                "risk_level": risk_level,
+            },
+            candidate_outcomes=outcomes,
+            status="SINGLE_CANDIDATE_VALIDATED",
+            result_code="CONSENSUS_SUCCEEDED",
+            note=("single valid candidate confirmed by adjudicator; "
+                  f"risk={risk_level}"),
+            risk_level=risk_level,
+            recovery_eligible=True,
+            single_candidate_validation=True,
+        )
+
+    return CandidateConsensus(
+        agreed=False,
+        agreement_ratio=0.0,
+        models=[str(passing.model), str(adjudicator.model)],
+        responses={},
+        evidence={
+            "validation_type": "single_candidate",
+            "passing_candidate": str(passing.model),
+            "adjudicator": str(adjudicator.model),
+            "adjudicator_confirms": False,
+            "risk_level": risk_level,
+        },
+        candidate_outcomes=outcomes,
+        status="SINGLE_CANDIDATE_REJECTED",
+        result_code="CANDIDATE_SET_INSUFFICIENT",
+        note=("adjudicator did not confirm single candidate; "
+              f"risk={risk_level}"),
+        risk_level=risk_level,
+        recovery_eligible=False,
+        single_candidate_validation=True,
+    )
+
+
 def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
     """Add durable classification fields before a checkpoint is written."""
     result_code = result.get("result_code", "")
@@ -1690,19 +1786,37 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "patch": candidate.patch,
                     } for candidate in candidates
                 }
-                adjudicator_prompt = build_swebench_prompt(
-                    instance, root, files, allowed_paths,
-                    environment or EnvironmentSpec(
-                        python_version="declared-by-image",
-                        image=docker_image or "host"),
-                    feedback=("Choose between the provided candidate patches. "
-                              "Do not generate a new implementation. Return "
-                              "exactly one of the candidate unified diffs, "
-                              "unchanged, selecting the one that best solves "
-                              "the task and passes the reported tests. Candidate "
-                              "patches and diagnostic evidence:\n" +
-                              json.dumps(diagnostics, sort_keys=True)),
-                    edit_format=edit_format)
+                risk_level, recovery_eligible = _assess_governance_risk(candidates)
+                single_valid = (
+                    len(passing) == 1
+                    and len(candidates) == 2
+                    and recovery_eligible)
+                if single_valid:
+                    adjudicator_prompt = build_swebench_prompt(
+                        instance, root, files, allowed_paths,
+                        environment or EnvironmentSpec(
+                            python_version="declared-by-image",
+                            image=docker_image or "host"),
+                        feedback=("Validate the following candidate patch that "
+                                  "passed behavioral tests. The other candidate "
+                                  "failed. Confirm this solution is correct by "
+                                  "generating the same patch. Candidate evidence:\n"
+                                  + json.dumps(diagnostics, sort_keys=True)),
+                        edit_format=edit_format)
+                else:
+                    adjudicator_prompt = build_swebench_prompt(
+                        instance, root, files, allowed_paths,
+                        environment or EnvironmentSpec(
+                            python_version="declared-by-image",
+                            image=docker_image or "host"),
+                        feedback=("Choose between the provided candidate patches. "
+                                  "Do not generate a new implementation. Return "
+                                  "exactly one of the candidate unified diffs, "
+                                  "unchanged, selecting the one that best solves "
+                                  "the task and passes the reported tests. Candidate "
+                                  "patches and diagnostic evidence:\n" +
+                                  json.dumps(diagnostics, sort_keys=True)),
+                        edit_format=edit_format)
                 adjudicator = _generate_validated_candidate(
                     "ADJUDICATOR", adjudicator_model, adjudicator_prompt, root,
                     files, allowed_paths, adjudicator_runtime)
@@ -1722,17 +1836,21 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                             "CANDIDATE_ADJUDICATOR_FAILED")
                         adjudicator.outcome.failure_detail = str(
                             adjudicator.behavior.get("detail", ""))
-                adjudications = [
-                    _adjudicated_candidate_consensus(
-                        root, candidate, adjudicator, candidates, allowed_paths)
-                    for candidate in passing
-                ]
-                adjudicated = next(
-                    (result for result in adjudications if result.agreed),
-                    adjudications[-1])
-                consensus = adjudicated
-                if adjudicated.agreed:
-                    matched_model = adjudicated.models[0]
+                if single_valid and adjudicator.patch is not None:
+                    consensus = _single_candidate_validation(
+                        root, passing[0], adjudicator, candidates, allowed_paths)
+                else:
+                    adjudications = [
+                        _adjudicated_candidate_consensus(
+                            root, candidate, adjudicator, candidates, allowed_paths)
+                        for candidate in passing
+                    ]
+                    adjudicated = next(
+                        (result for result in adjudications if result.agreed),
+                        adjudications[-1])
+                    consensus = adjudicated
+                if consensus.agreed:
+                    matched_model = consensus.models[0]
                     matched = next(candidate for candidate in passing
                                    if candidate.model == matched_model)
                     passing = [matched, adjudicator]

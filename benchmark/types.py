@@ -130,6 +130,9 @@ class CandidateConsensus:
     status: str = ""
     result_code: str = ""
     note: str = ""
+    risk_level: str = ""
+    recovery_eligible: bool = False
+    single_candidate_validation: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,6 +145,9 @@ class CandidateConsensus:
             "status": self.status,
             "result_code": self.result_code,
             "note": self.note,
+            "risk_level": self.risk_level,
+            "recovery_eligible": self.recovery_eligible,
+            "single_candidate_validation": self.single_candidate_validation,
         }
 
     @classmethod
@@ -156,6 +162,9 @@ class CandidateConsensus:
             status=str(data.get("status", "")),
             result_code=str(data.get("result_code", "")),
             note=str(data.get("note", "")),
+            risk_level=str(data.get("risk_level", "")),
+            recovery_eligible=bool(data.get("recovery_eligible", False)),
+            single_candidate_validation=bool(data.get("single_candidate_validation", False)),
         )
 
 

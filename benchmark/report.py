@@ -104,6 +104,34 @@ def candidate_metrics(results: list[dict]) -> dict[str, object]:
             if prompt_equal or protocol_equal or workspace_equal:
                 hash_comparison_tasks += 1
 
+    valid_candidate_tasks = 0
+    valid_accepted = 0
+    governance_blocked = 0
+    for row in results:
+        raw = row.get("candidates", row.get("candidate_outcomes"))
+        if raw is None:
+            raw = (row.get("consensus") or {}).get("candidate_outcomes", ())
+        raw = raw or ()
+        if isinstance(raw, dict):
+            raw = list(raw.values())
+        row_candidates = [item for item in raw if isinstance(item, dict)]
+        has_valid = any(
+            item.get("patch_valid") is True and item.get("tests_passed") is True
+            for item in row_candidates
+        )
+        if not has_valid:
+            continue
+        valid_candidate_tasks += 1
+        consensus = row.get("consensus") or {}
+        accepted = (
+            consensus.get("agreed")
+            or row.get("result_code") == "CONSENSUS_SUCCEEDED"
+        )
+        if accepted:
+            valid_accepted += 1
+        else:
+            governance_blocked += 1
+
     attempts = sum(int(item.get("attempts", 1) or 1) for item in candidates)
     retries = sum(int(item.get("retries", 0) or 0) for item in candidates)
     returned = sum(int(item.get("patch_returns", bool(
@@ -177,6 +205,13 @@ def candidate_metrics(results: list[dict]) -> dict[str, object]:
         "candidate_reliability_rate": (
             reliable_candidates / attempts if attempts else 0.0),
         "candidate_agreement": agreement / both_valid if both_valid else 0.0,
+        "valid_candidate_tasks": valid_candidate_tasks,
+        "valid_accepted": valid_accepted,
+        "governance_blocked": governance_blocked,
+        "governance_efficiency": (
+            valid_accepted / valid_candidate_tasks if valid_candidate_tasks else 0.0),
+        "governance_loss": (
+            governance_blocked / valid_candidate_tasks if valid_candidate_tasks else 0.0),
         "candidate_a_success_rate": candidate_a_valid / len(results) if results else 0.0,
         "candidate_b_success_rate": candidate_b_valid / len(results) if results else 0.0,
         "candidate_a_patch_validity_rate": (

@@ -103,8 +103,8 @@ class CodeAgent:
             return patch
 
     def generate(
-        self, task: str, root: Path, files: list[Path], max_chars: int = 6_000,
-        vial: VialCoreReference | None = None, runtime=None, max_tokens: int | None = None,
+        self, task: str, root: Path, files: list[Path],
+        vial: VialCoreReference | None = None, runtime=None,
         edit_format: str = "unified-diff",
     ) -> GenerationResult:
         before = {path: path.read_bytes() for path in files if path.is_file()}

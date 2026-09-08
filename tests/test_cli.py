@@ -96,8 +96,8 @@ class _FakeRuntime:
     def apply_patch(self, *args, **kwargs):
         return self.apply_patch_result
 
-    def record_rollback(self, patch: str) -> None:
-        return None
+    def compensate_rollback(self, applier, patch: str, **kwargs):
+        return _FakeToolResult(status="SUCCESS", output="rollback completed")
 
     def select_route(self, task: str, mode: str, deterministic: bool = False) -> str:
         return "advanced"
@@ -189,11 +189,12 @@ class CliIntegrationTests(unittest.TestCase):
             self.assertEqual(result, 1)
             self.assertEqual(source.read_text(encoding="utf-8"), "old\n")
             runtime = _runtime(root)
-            op_id = hashlib.sha256(PATCH.encode("utf-8")).hexdigest()
-            self.assertIn(
-                "ROLLBACK-" + op_id,
-                [intent.operation_id for intent in runtime.coordinator.intents.values()],
-            )
+            rollback_ops = [
+                intent.operation_id
+                for intent in runtime.coordinator.intents.values()
+                if intent.operation_id.startswith("ROLLBACK-")
+            ]
+            self.assertEqual(len(rollback_ops), 1)
 
     def test_keep_on_failure_preserves_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
