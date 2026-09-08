@@ -8,8 +8,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ..persistence import Repository
-
 
 def _enhanced_signature(task: Any, base_commit: str = "",
                         workspace_root: Path | None = None,

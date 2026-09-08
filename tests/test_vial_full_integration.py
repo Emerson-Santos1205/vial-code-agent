@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import tempfile
@@ -532,7 +531,7 @@ class FullIntegrationTests(unittest.TestCase):
             unsafe_runtime = _runtime(Path(directory) / "state-unsafe")
             unsafe_runtime.unsafe = True
             unsafe_runtime.set_workspace_root(root)
-            result = unsafe_runtime.invoke_tool(
+            unsafe_runtime.invoke_tool(
                 "TOOL-RUN-BUILD",
                 {"command": [sys.executable, "-c", "print('unsafe-ok')"]},
                 objective="run with unsafe policy")

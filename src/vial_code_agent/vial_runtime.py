@@ -475,20 +475,20 @@ class VialRuntime:
                 "duration": result.elapsed_seconds, "status": "SUCCESS" if result.passed else "FAILED"}
 
     def _invoke_run_git(self, value: dict[str, Any]) -> Any:
-        from .git_ops import GitError, GitWorkspace, GitPolicy
+        from .git_ops import GitError, GitPolicy, GitWorkspace
         root = self.workspace_root or Path.cwd().resolve()
         args = [str(a) for a in value.get("args", [])]
-        
+
         # Classify command by risk level
         policy = GitPolicy().classify(args)
-        
+
         # Destructive commands require explicit approval
         if policy.requires_approval:
             raise self._errors.VIALExecutionError(
                 "GIT_DESTRUCTIVE",
                 f"destructive git command '{' '.join(args)}' requires explicit approval"
             )
-        
+
         try:
             output = GitWorkspace(root).run(*args)
         except GitError as exc:

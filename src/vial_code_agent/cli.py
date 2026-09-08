@@ -399,7 +399,6 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             file=sys.stderr)
         return 2
     agent = _resolve_agent(args.agent, config.opencode_agent)
-    max_chars = args.max_context_chars if args.max_context_chars != 6_000 else config.max_context_chars
     test_timeout = args.test_timeout if args.test_timeout != 120 else config.test_timeout
     includes = args.include or ["*.py"]
     excludes = args.exclude or [".git", ".venv", "__pycache__"]

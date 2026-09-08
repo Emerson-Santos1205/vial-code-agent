@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 
 from vial_code_agent.git_ops import (
-    GitPolicy,
+    RISK_CRITICAL,
+    RISK_HIGH,
     RISK_LOW,
     RISK_MEDIUM,
-    RISK_HIGH,
-    RISK_CRITICAL,
+    GitPolicy,
 )
 
 
