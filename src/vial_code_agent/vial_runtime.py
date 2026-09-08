@@ -493,13 +493,12 @@ class VialRuntime:
 
         # Mutation/remote/configuration commands require consensus
         if policy.requires_consensus:
-            decision = self.propose_decision(
+            self.propose_decision(
                 objective=f"git {' '.join(args)}",
                 type="git_operation",
                 context_id="",
                 risk=policy.risk,
             )
-            # Consensus is recorded by the calling pipeline (invoke_tool)
 
         try:
             output = GitWorkspace(root).run(*args)
