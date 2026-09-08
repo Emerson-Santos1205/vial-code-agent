@@ -14,6 +14,7 @@ from .command_runner import CommandRunner
 from .config import AgentConfig, load_config
 from .core import VialCoreReference
 from .errors import ERR_INVALID_CONFIG, wrap
+from .evidence import TestRunnerAdapter
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .risk import RiskPolicy, classify_task
@@ -27,7 +28,6 @@ from .servers import ServerRegistry
 from .session import SessionStore
 from .telemetry import Telemetry
 from .test_runner import TestResult
-from .evidence import TestRunnerAdapter
 from .vial_runtime import VialRuntime
 from .workspace import select_files
 
