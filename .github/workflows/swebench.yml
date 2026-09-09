@@ -82,6 +82,8 @@ jobs:
         run: |
           echo "SWE-bench evaluation requires the OPENCODE_AUTH_JSON secret." >&2
           exit 1
+      - name: Use default Docker context
+        run: docker context use default
       - name: Build provider image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.30 .
