@@ -47,7 +47,7 @@ on:
 jobs:
   swebench:
     runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -eo pipefail "{0}"
@@ -167,7 +167,7 @@ jobs:
           else
             args="$args --official-images"
           fi
-          args="$args --run-tests --out benchmark/results/shard-${{ matrix.shard_index }}"
+          args="$args --run-tests --repeat 1 --out benchmark/results/shard-${{ matrix.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
         if: ${{ always() && env.HAS_OPENCODE_AUTH == 'true' }}
