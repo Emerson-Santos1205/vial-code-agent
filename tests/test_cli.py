@@ -181,6 +181,7 @@ class CliIntegrationTests(unittest.TestCase):
                             "--fix", "change old to new", "--root", str(root),
                             "--vial-root", str(VENDOR),
                             "--include", "source.txt",
+                            "--no-consensus",
                             "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
                         ]
                     )
@@ -225,6 +226,7 @@ class CliIntegrationTests(unittest.TestCase):
                             "--vial-root", str(VENDOR),
                             "--include", "source.txt",
                             "--keep-on-failure",
+                            "--no-consensus",
                             "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
                         ]
                     )

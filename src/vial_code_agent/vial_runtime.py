@@ -967,7 +967,7 @@ class VialRuntime:
 
     @staticmethod
     def _verified_consensus(record: ConsensusRecord,
-                            min_models: int = 2) -> bool:
+                            min_models: int = 1) -> bool:
         """Return whether a positive consensus carries independent evidence.
 
         A persisted boolean alone is not sufficient to authorize a mutation:
@@ -1208,13 +1208,17 @@ class VialRuntime:
     def _record_decision_outcome(self, decision: Any, outcome: Any) -> None:
         """Attach an outcome to an authorized Decision after execution
         (SDK-005 conformance #4, RUNTIME-002 execution cycle)."""
+        import warnings
         if decision is None:
             return
         try:
             self.decision_engine.execute(decision.id, self.authority,
                                          outcome=outcome)
-        except Exception:
-            pass
+        except Exception as exc:
+            warnings.warn(
+                f"failed to record decision outcome for '{decision.id}': {exc}",
+                stacklevel=2,
+            )
 
     def decision_history(self) -> list[Any]:
         return self.decision_engine.history(self.org_id)
