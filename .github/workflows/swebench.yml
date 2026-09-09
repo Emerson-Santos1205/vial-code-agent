@@ -91,7 +91,7 @@ jobs:
           exit 1
       - name: Build provider image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
-        run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+        run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.30 .
       - name: Stagger provider health-checks
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
@@ -104,7 +104,7 @@ jobs:
           mkdir -p "benchmark/results/shard-${{ matrix.shard_index }}"
           python benchmark/check_provider.py \
             --model "${{ inputs.model || 'openai/gpt-5.6-terra' }}" \
-            --image vial-code-agent-opencode:1.18.18 \
+            --image vial-code-agent-opencode:1.18.30 \
             --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-primary.json"
           cat "benchmark/results/shard-${{ matrix.shard_index }}/provider-primary.json"
       - name: Check consensus provider
@@ -112,7 +112,7 @@ jobs:
         run: |
           python benchmark/check_provider.py \
             --model "${{ inputs.consensus_model || 'openai/gpt-5.6-sol' }}" \
-            --image vial-code-agent-opencode:1.18.18 \
+            --image vial-code-agent-opencode:1.18.30 \
             --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-consensus.json"
           cat "benchmark/results/shard-${{ matrix.shard_index }}/provider-consensus.json"
       - name: Resolve workload
