@@ -428,8 +428,13 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                       "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
                       # Candidate workspaces intentionally omit .git; give
-                      # setuptools-scm a stable fallback for source builds.
-                      "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
+                       # setuptools-scm a stable fallback for source builds.
+                       "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
+        official_image = docker_image.startswith("swebench/")
+        invocation = (["--entrypoint", "/bin/bash", docker_image, "-lc",
+                       "source /opt/miniconda3/bin/activate testbed && " +
+                       shlex.join(command)] if official_image else
+                      [docker_image, *command])
         try:
             return subprocess.run(
                 ["docker", "run", "--rm", "--network", "none",
@@ -440,10 +445,10 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                  "/tmp:rw,nosuid,nodev,noexec,size=1g",
                  "--workdir", "/workspace",
                  "--mount", mount,
-                 "--mount", "type=volume,source=vial-swebench-pip-cache," \
-                             "destination=/root/.cache/pip",
-                 *docker_env,
-                 docker_image, *command], cwd=root, capture_output=True, text=True,
+                  "--mount", "type=volume,source=vial-swebench-pip-cache," \
+                              "destination=/root/.cache/pip",
+                  *docker_env,
+                  *invocation], cwd=root, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=timeout, check=False)
         finally:
             _restore_docker_mount_owner(root, docker_image)

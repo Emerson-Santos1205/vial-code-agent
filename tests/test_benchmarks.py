@@ -31,6 +31,7 @@ from benchmark.run_swebench import (
     _governed_apply,
     _normalize_astropy_test_id,
     _reverse_fixture,
+    _run_command,
     _run_test_groups,
     _single_candidate_validation,
     baseline_is_valid,
@@ -50,6 +51,21 @@ from vial_code_agent.patches import PatchError
 
 
 class BenchmarkMetricTests(unittest.TestCase):
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_official_image_activates_testbed_environment(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess([], 0, "", "")
+
+        _run_command(["python", "-m", "pytest", "tests/test_example.py"],
+                     Path("."), {}, "swebench/example:latest")
+
+        command = run.call_args_list[0].args[0]
+        self.assertIn("--entrypoint", command)
+        self.assertIn("/bin/bash", command)
+        self.assertEqual(command[-2:], [
+            "-lc",
+            "source /opt/miniconda3/bin/activate testbed && python -m pytest tests/test_example.py",
+        ])
+
     @patch("benchmark.run_swebench.subprocess.run")
     def test_environment_image_validation_reports_all_missing_images(self, run) -> None:
         run.return_value.returncode = 1
