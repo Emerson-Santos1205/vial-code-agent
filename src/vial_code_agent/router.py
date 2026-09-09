@@ -474,17 +474,19 @@ def _cluster_responses(
         return [[ref] for ref in valid]
 
     refs = list(valid.keys())
-    # Build pairwise similarity matrix
+    # Build pairwise similarity matrix (sorted keys for consistent lookup)
     similarity: dict[tuple[str, str], float] = {}
     for ref_a, ref_b in combinations(refs, 2):
         sim = _agreement_ratio(valid[ref_a], valid[ref_b], root)
-        similarity[(ref_a, ref_b)] = sim
+        key = (min(ref_a, ref_b), max(ref_a, ref_b))
+        similarity[key] = sim
 
     # Complete-linkage clustering: merge only if ALL pairs in the
     # merged cluster meet the threshold.
     clusters: list[set[str]] = [{ref} for ref in refs]
     for ref_a, ref_b in combinations(refs, 2):
-        sim = similarity.get((ref_a, ref_b), 0.0)
+        key = (min(ref_a, ref_b), max(ref_a, ref_b))
+        sim = similarity.get(key, 0.0)
         if sim >= min_similarity:
             cluster_a = next(c for c in clusters if ref_a in c)
             cluster_b = next(c for c in clusters if ref_b in c)
@@ -494,8 +496,7 @@ def _cluster_responses(
             merged = cluster_a | cluster_b
             all_pairs_match = all(
                 similarity.get(
-                    (min(x, y), max(x, y)),
-                    similarity.get((y, x), 0.0 if x != y else 1.0),
+                    (min(x, y), max(x, y)), 0.0 if x != y else 1.0,
                 ) >= min_similarity
                 for x, y in combinations(merged, 2)
             )

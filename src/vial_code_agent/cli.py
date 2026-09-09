@@ -473,7 +473,8 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                 "provider changed the workspace outside VIAL Runtime; "
                 "discard the change and retry")
         if runtime is not None:
-            decision = runtime.propose_patch_decision(generated.context_id)
+            decision = runtime.propose_patch_decision(
+                generated.context_id, risk="low")
             consensus = None
             if args.no_consensus:
                 runtime.approve_decision(
