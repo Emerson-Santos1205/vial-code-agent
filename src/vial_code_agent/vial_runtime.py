@@ -514,19 +514,36 @@ class VialRuntime:
                 f"destructive git command '{' '.join(args)}' requires explicit approval"
             )
 
-        # Mutation/remote/configuration commands require consensus
+        # Mutation/remote/configuration commands require consensus gate
+        decision = None
         if policy.requires_consensus:
-            self.propose_decision(
+            decision = self.propose_decision(
                 objective=f"git {' '.join(args)}",
                 type="git_operation",
                 context_id="",
                 risk=policy.risk,
             )
+            gate_tool = self._tool.Tool(
+                "TOOL-RUN-GIT-GATE", "run_git_gate",
+                "synthetic gate tool for git mutation consensus",
+                "1.0", "run_git", self.org_id,
+                risk_classification=policy.risk,
+                side_effect_classification="mutation",
+            )
+            gate = self._enforce_gate(gate_tool, decision)
+            if gate is not None:
+                return gate
 
         try:
             output = GitWorkspace(root).run(*args)
         except GitError as exc:
             raise self._errors.VIALExecutionError("GIT_ERROR", str(exc)) from exc
+
+        if decision is not None:
+            self._record_decision_outcome(decision, {
+                "tool_id": "TOOL-RUN-GIT", "status": "SUCCESS",
+                "risk": policy.risk, "git_policy": policy.category})
+
         return {"stdout": output, "git_policy": policy.category,
                 "risk": policy.risk, "requires_consensus": policy.requires_consensus}
 
@@ -1171,6 +1188,26 @@ class VialRuntime:
         (RUNTIME-006 §20, §46)."""
         return self.risk_rank(getattr(decision, "risk", RISK_MEDIUM)) >= RISK_ORDER[RISK_HIGH]
 
+    def _enforce_gate(self, tool: Any, decision: Any,
+                      require_approval: bool = False) -> Any | None:
+        """Enforce consensus gate and optional approval gate.
+
+        Returns a rejected ``ToolResult`` when a gate blocks, or ``None``
+        so the caller may proceed with execution.
+        """
+        consensus = self._consensus_gate(tool, decision)
+        if consensus is not None:
+            return consensus
+        if (require_approval or self.decision_requires_approval(decision)) \
+                and decision.id not in self.approvals:
+            self.persist()
+            return self._tool.ToolResult(
+                status=self._tool.STATUS_REJECTED,
+                error=f"Decision '{decision.id}' requires approval before invocation",
+                metadata={"tool_id": tool.tool_id, "error_code": "APPROVAL_REQUIRED",
+                          "decision_id": decision.id})
+        return None
+
     def invoke_tool(self, tool_id: str, arguments: dict[str, Any],
                     objective: str = "operate", context_id: str = "",
                     decision: Any = None, require_approval: bool = False) -> Any:
@@ -1185,17 +1222,9 @@ class VialRuntime:
         policy = tool.security_policy.get("required_policy", POLICY_DEVELOPMENT)
         decision = decision or self.propose_decision(
             objective, capability, policy, context_id, risk=tool.risk_classification)
-        consensus = self._consensus_gate(tool, decision)
-        if consensus is not None:
-            return consensus
-        if (require_approval or self.decision_requires_approval(decision)) \
-                and decision.id not in self.approvals:
-            self.persist()
-            return self._tool.ToolResult(
-                status=self._tool.STATUS_REJECTED,
-                error=f"Decision '{decision.id}' requires approval before invocation",
-                metadata={"tool_id": tool_id, "error_code": "APPROVAL_REQUIRED",
-                          "decision_id": decision.id})
+        gate = self._enforce_gate(tool, decision, require_approval=require_approval)
+        if gate is not None:
+            return gate
         result = tool.invoke(
             arguments, actor=self.authority, organization_id=self.org_id,
             context_id=context_id, decision=decision)
@@ -1330,9 +1359,9 @@ class VialRuntime:
         patch_digest = op_id
 
         tool = self.tools.get(PATCH_TOOL_ID)
-        consensus = self._consensus_gate(tool, decision)
-        if consensus is not None:
-            return consensus
+        gate = self._enforce_gate(tool, decision)
+        if gate is not None:
+            return gate
 
         if intent is None:
             try:
