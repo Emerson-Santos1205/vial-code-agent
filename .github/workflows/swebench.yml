@@ -1,13 +1,6 @@
 name: SWE-bench Real Evaluation
 
 on:
-  push:
-    branches: [development, main]
-    paths:
-      - 'benchmark/**'
-      - 'src/**'
-      - 'vendor/**'
-      - '.github/workflows/swebench.yml'
   workflow_dispatch:
     inputs:
       offset:
@@ -53,13 +46,16 @@ on:
 
 jobs:
   swebench:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        shard_index: ${{ (github.event_name == 'push') && fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]') || fromJSON(format('["{0}"]', inputs.shard_index)) }}
+        shard_index: ${{ fromJSON(format('["{0}"]', inputs.shard_index)) }}
     concurrency:
       group: swebench-${{ github.event_name }}-${{ matrix.shard_index }}-${{ inputs.model || 'default' }}
       cancel-in-progress: false
@@ -118,16 +114,11 @@ jobs:
       - name: Resolve workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "Using pre-created shard benchmark/swebench-500-shard-${{ matrix.shard_index }}.json"
-            cp "benchmark/swebench-500-shard-${{ matrix.shard_index }}.json" benchmark/swebench-ci-workload.json
-          else
-            echo "Fetching workload from Hugging Face"
-            python benchmark/fetch_swebench.py \
-              --dataset "${{ inputs.dataset }}" --split test \
-              --offset "${{ inputs.offset }}" --length "${{ inputs.length }}" \
-              --out benchmark/swebench-ci-workload.json
-          fi
+          echo "Fetching workload from Hugging Face"
+          python benchmark/fetch_swebench.py \
+            --dataset "${{ inputs.dataset }}" --split test \
+            --offset "${{ inputs.offset }}" --length "${{ inputs.length }}" \
+            --out benchmark/swebench-ci-workload.json
       - name: Pull official SWE-bench environments
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image == '' }}
         run: |
