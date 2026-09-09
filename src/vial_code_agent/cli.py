@@ -14,6 +14,7 @@ from .command_runner import CommandRunner
 from .config import AgentConfig, load_config
 from .core import VialCoreReference
 from .errors import ERR_INVALID_CONFIG, wrap
+from .evidence import TestRunnerAdapter
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
 from .risk import RiskPolicy, classify_task
@@ -26,7 +27,7 @@ from .router import (
 from .servers import ServerRegistry
 from .session import SessionStore
 from .telemetry import Telemetry
-from .test_runner import TestResult, run_tests
+from .test_runner import TestResult
 from .vial_runtime import VialRuntime
 from .workspace import select_files
 
@@ -472,7 +473,8 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                 "provider changed the workspace outside VIAL Runtime; "
                 "discard the change and retry")
         if runtime is not None:
-            decision = runtime.propose_patch_decision(generated.context_id)
+            decision = runtime.propose_patch_decision(
+                generated.context_id, risk=risk)
             consensus = None
             if args.no_consensus:
                 runtime.approve_decision(
@@ -562,7 +564,7 @@ def _verify(root, runtime, generated, args, test_timeout, telemetry) -> int:
             float(result.output.get("duration", 0.0)),
         )
     else:
-        result = run_tests(root, args.test_command, test_timeout)
+        result = TestRunnerAdapter().run_tests(root, args.test_command, test_timeout)
     print(f"tests: {'passed' if result.passed else 'failed'}")
     telemetry.record(
         "tests",

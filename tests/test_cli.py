@@ -66,7 +66,7 @@ class _FakeRuntime:
             raise KeyError(decision_id)
         return self._trace
 
-    def propose_patch_decision(self, context_id: str = ""):
+    def propose_patch_decision(self, context_id: str = "", risk: str = "low"):
         decision_id = f"DEC-FAKE-{len(self.decision_ids) + 1}"
         self.decision_ids.append(decision_id)
         return type("_FakeDecision", (), {"id": decision_id})()
@@ -181,6 +181,7 @@ class CliIntegrationTests(unittest.TestCase):
                             "--fix", "change old to new", "--root", str(root),
                             "--vial-root", str(VENDOR),
                             "--include", "source.txt",
+                            "--no-consensus",
                             "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
                         ]
                     )
@@ -225,6 +226,7 @@ class CliIntegrationTests(unittest.TestCase):
                             "--vial-root", str(VENDOR),
                             "--include", "source.txt",
                             "--keep-on-failure",
+                            "--no-consensus",
                             "--test-command", sys.executable, "-c", "import sys; sys.exit(1)",
                         ]
                     )
