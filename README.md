@@ -93,8 +93,8 @@ writable.
 OpenCode provider image:
 
 ```text
-docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
-docker run --rm vial-code-agent-opencode:1.18.18 --version
+docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.30 .
+docker run --rm vial-code-agent-opencode:1.18.30 --version
 ```
 
 Credentials must be mounted only at runtime, never copied into the image:
@@ -102,7 +102,7 @@ Credentials must be mounted only at runtime, never copied into the image:
 ```text
 docker run --rm --network none \
   --mount type=bind,src=%USERPROFILE%\.local\share\opencode\auth.json,dst=/root/.local/share/opencode/auth.json,readonly \
-  vial-code-agent-opencode:1.18.18 providers list
+  vial-code-agent-opencode:1.18.30 providers list
 ```
 
 Consensus for mutations may require evidence: each candidate is applied to a

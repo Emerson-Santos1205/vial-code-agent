@@ -23,7 +23,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
 
 
 class DockerOpenCodeProvider(ModelProvider):
-    def __init__(self, model: str, image: str = "vial-code-agent-opencode:1.18.18",
+    def __init__(self, model: str, image: str = "vial-code-agent-opencode:1.18.30",
                  docker: str = "docker", timeout_seconds: int = 300) -> None:
         self.model = OpenCodeProvider.MODEL_ALIASES.get(model, model)
         self.image = image

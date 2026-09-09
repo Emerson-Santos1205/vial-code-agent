@@ -1036,6 +1036,7 @@ class BenchmarkMetricTests(unittest.TestCase):
 
         _governed_apply(runtime, Path("."), "patch", "ctx", set(), consensus)
 
+        runtime.propose_patch_decision.assert_called_once_with("ctx", risk="medium")
         evidence = runtime.record_consensus.call_args.kwargs["evidence"]
         self.assertEqual(evidence["candidate_outcomes"],
                          consensus["candidate_outcomes"])

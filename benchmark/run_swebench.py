@@ -16,15 +16,16 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+BASE = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BASE))
+sys.path.insert(0, str(BASE / "src"))
+
 from benchmark.types import (
     CandidateConsensus,
     CandidateOutcome,
     CandidateResult,
     PipelineStages,
 )
-
-BASE = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(BASE / "src"))
 
 from vial_code_agent.agent import CodeAgent  # noqa: E402
 from vial_code_agent.core import VialCoreReference  # noqa: E402
@@ -779,7 +780,8 @@ def baseline_is_valid(fail_to_pass: bool, pass_to_pass: bool,
 def success_metrics(results: list[dict]) -> dict[str, float | int]:
     """Separate agent performance from failures caused by the environment."""
     total = len(results)
-    passed = sum(bool(row.get("passed")) for row in results)
+    passed = sum(bool(row.get("passed")) and row.get("agent_attempted", True)
+                 for row in results)
     environment_valid = sum(
         row.get("failure_class") != "environment" for row in results)
     metrics = {
@@ -827,13 +829,14 @@ def select_shard(tasks: list[dict], offset: int, limit: int,
 def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
                     context_id: str, allowed_paths: set[str],
                     consensus: dict | CandidateConsensus | None = None,
+                    risk: str = "medium",
                     reverse: bool = False) -> tuple[bool, str, dict]:
     """Apply or reverse an agent patch only through VialRuntime.
 
     Consensus evidence must be supplied by an external, independent review;
     this helper never fabricates it for a benchmark run.
     """
-    decision = runtime.propose_patch_decision(context_id)
+    decision = runtime.propose_patch_decision(context_id, risk=risk)
     if consensus is not None:
         if isinstance(consensus, CandidateConsensus):
             consensus = consensus.to_dict()
@@ -1408,6 +1411,8 @@ def _candidate_set_consensus(root: Path, candidates: list[CandidateResult],
             for candidate in (first, second)
         }, run_tests=run_tests)
     consensus.candidate_outcomes = outcomes
+    consensus.risk_level, consensus.recovery_eligible = _assess_governance_risk(
+        candidates)
     return consensus
 
 
@@ -1548,7 +1553,8 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
     result["environment_valid"] = result.get("stage") not in environment_invalid_stages
     result["environment_status"] = (
         "VALID" if result["environment_valid"] else "INVALID")
-    result["agent_attempted"] = result.get("stage") not in environment_invalid_stages
+    result["agent_attempted"] = result.get("stage") not in (
+        *environment_invalid_stages, "preflight")
     if not result["environment_valid"]:
         result["infrastructure_note"] = (
             "infrastructure failure — not counted against agent budget")
@@ -1560,7 +1566,8 @@ def _annotate_result(result: dict, environment: EnvironmentSpec) -> dict:
         result["candidate_outcomes"] = consensus_result["candidate_outcomes"]
     result["result_code"] = result.get(
         "result_code", consensus_result.get(
-            "result_code", "TASK_SUCCEEDED" if result.get("passed")
+            "result_code", "PREFLIGHT_SUCCEEDED" if result.get("stage") == "preflight"
+            else "TASK_SUCCEEDED" if result.get("passed")
             else "TASK_FAILED"))
     result["patch_valid"] = result.get("stage") == "tests"
     result["tests_passed"] = bool(
@@ -1896,7 +1903,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
         if adapter == "vial":
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, generated_patch, generated.context_id,
-                allowed_paths, consensus=consensus)
+                allowed_paths, consensus=consensus,
+                risk=consensus.risk_level or "medium")
         else:
             try:
                 PatchApplier(root).apply(generated_patch)

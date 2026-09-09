@@ -1,1 +1,1 @@
-docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.30 .

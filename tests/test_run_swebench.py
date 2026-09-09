@@ -464,6 +464,7 @@ class GovernedApplyTests(unittest.TestCase):
         ok, err, meta = _governed_apply(
             runtime, Path("."), "patch", "ctx", set(), consensus=None)
         self.assertTrue(ok)
+        runtime.propose_patch_decision.assert_called_once_with("ctx", risk="medium")
         runtime.record_consensus.assert_not_called()
 
 
@@ -496,6 +497,12 @@ class AnnotateResultTests(unittest.TestCase):
         annotated = _annotate_result(result, self._mock_env())
         self.assertFalse(annotated["environment_valid"])
         self.assertFalse(annotated["agent_attempted"])
+
+    def test_preflight_does_not_count_as_an_agent_attempt(self) -> None:
+        result = {"passed": True, "stage": "preflight"}
+        annotated = _annotate_result(result, self._mock_env())
+        self.assertFalse(annotated["agent_attempted"])
+        self.assertEqual(annotated["result_code"], "PREFLIGHT_SUCCEEDED")
 
     def test_consensus_approved(self) -> None:
         result = {"passed": True, "stage": "tests",

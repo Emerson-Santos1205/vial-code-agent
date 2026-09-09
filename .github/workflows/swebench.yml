@@ -1,13 +1,6 @@
 name: SWE-bench Real Evaluation
 
 on:
-  push:
-    branches: [development, main]
-    paths:
-      - 'benchmark/**'
-      - 'src/**'
-      - 'vendor/**'
-      - '.github/workflows/swebench.yml'
   workflow_dispatch:
     inputs:
       offset:
@@ -53,13 +46,16 @@ on:
 
 jobs:
   swebench:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -eo pipefail "{0}"
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        shard_index: ${{ (github.event_name == 'push') && fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]') || fromJSON(format('["{0}"]', inputs.shard_index)) }}
+        shard_index: ${{ fromJSON(format('["{0}"]', inputs.shard_index)) }}
     concurrency:
       group: swebench-${{ github.event_name }}-${{ matrix.shard_index }}-${{ inputs.model || 'default' }}
       cancel-in-progress: false
@@ -69,9 +65,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - name: Install project packages
         run: |
           python -m pip install --upgrade pip
@@ -89,9 +82,11 @@ jobs:
         run: |
           echo "SWE-bench evaluation requires the OPENCODE_AUTH_JSON secret." >&2
           exit 1
+      - name: Use default Docker context
+        run: docker context use default
       - name: Build provider image
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
-        run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.18 .
+        run: docker build -f docker/opencode.Dockerfile -t vial-code-agent-opencode:1.18.30 .
       - name: Stagger provider health-checks
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
@@ -101,71 +96,41 @@ jobs:
       - name: Check primary provider
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
+          mkdir -p "benchmark/results/shard-${{ matrix.shard_index }}"
           python benchmark/check_provider.py \
             --model "${{ inputs.model || 'openai/gpt-5.6-terra' }}" \
-            --image vial-code-agent-opencode:1.18.18 \
+            --image vial-code-agent-opencode:1.18.30 \
             --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-primary.json"
+          cat "benchmark/results/shard-${{ matrix.shard_index }}/provider-primary.json"
       - name: Check consensus provider
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
           python benchmark/check_provider.py \
             --model "${{ inputs.consensus_model || 'openai/gpt-5.6-sol' }}" \
-            --image vial-code-agent-opencode:1.18.18 \
+            --image vial-code-agent-opencode:1.18.30 \
             --out "benchmark/results/shard-${{ matrix.shard_index }}/provider-consensus.json"
+          cat "benchmark/results/shard-${{ matrix.shard_index }}/provider-consensus.json"
       - name: Resolve workload
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "Using pre-created shard benchmark/swebench-500-shard-${{ matrix.shard_index }}.json"
-            cp "benchmark/swebench-500-shard-${{ matrix.shard_index }}.json" benchmark/swebench-ci-workload.json
-          else
-            echo "Fetching workload from Hugging Face"
-            python benchmark/fetch_swebench.py \
-              --dataset "${{ inputs.dataset }}" --split test \
-              --offset "${{ inputs.offset }}" --length "${{ inputs.length }}" \
-              --out benchmark/swebench-ci-workload.json
-          fi
+          echo "Fetching workload from Hugging Face"
+          python benchmark/fetch_swebench.py \
+            --dataset "${{ inputs.dataset }}" --split test \
+            --offset "${{ inputs.offset }}" --length "${{ inputs.length }}" \
+            --out benchmark/swebench-ci-workload.json
       - name: Pull official SWE-bench environments
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image == '' }}
         run: |
           python - <<'PY'
           import json
+          import subprocess
           from benchmark.swebench_environment import EnvironmentResolver
           workload = json.load(open("benchmark/swebench-ci-workload.json", encoding="utf-8"))
           resolver = EnvironmentResolver()
-          repos = sorted(set(task.get("repo", "") for task in workload["tasks"]))
           images = sorted({resolver.resolve(task, official_images=True).image for task in workload["tasks"]})
-          with open("/tmp/swebench-images.txt", "w", encoding="utf-8") as stream:
-              stream.write("\n".join(images) + "\n")
-          with open("/tmp/swebench-repos.txt", "w", encoding="utf-8") as stream:
-              stream.write("\n".join(repos) + "\n")
+          for image in images:
+              subprocess.run(["docker", "pull", image], check=True)
           PY
-          while IFS= read -r image; do
-            test -n "$image"
-            docker pull "$image"
-          done < /tmp/swebench-images.txt
-      - name: Build prebuilt images with cached dependencies
-        if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image == '' }}
-        run: |
-          while IFS= read -r repo; do
-            test -n "$repo" || continue
-            tag="vial-swebench-prebuilt-$(echo "$repo" | tr '/' '-'):latest"
-            docker image inspect "$tag" >/dev/null 2>&1 && continue
-            python_version=$(python -c "
-          import json
-          from benchmark.swebench_environment import EnvironmentResolver
-          r = EnvironmentResolver()
-          tasks = json.load(open('benchmark/swebench-ci-workload.json'))['tasks']
-          for t in tasks:
-              if t.get('repo') == '$repo':
-                  print(r.resolve(t).python_version)
-                  break
-          ")
-            docker build \
-              --build-arg REPO="$repo" \
-              -f docker/swebench-django-test.Dockerfile \
-              -t "$tag" . || true
-          done < /tmp/swebench-repos.txt
       - name: Build test image override
         if: ${{ env.HAS_OPENCODE_AUTH == 'true' && inputs.test_image != '' }}
         env:

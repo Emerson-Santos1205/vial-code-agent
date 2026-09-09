@@ -41,10 +41,11 @@ def _event_summary(stdout: str) -> tuple[str, list[dict[str, str]]]:
 
 
 def check_provider(model: str, image: str, auth: Path, docker: str = "docker",
-                   timeout_seconds: int = 120) -> dict[str, Any]:
+                   timeout_seconds: int = 180) -> dict[str, Any]:
     """Return a sanitized health result and never expose credentials."""
     command = [
         docker, "run", "--rm",
+        "--network", "host",
         "--mount", f"type=bind,src={auth.resolve().as_posix()},"
                     "dst=/root/.local/share/opencode/auth.json,readonly",
         "--entrypoint", "opencode", image, "run", "--pure",
@@ -74,10 +75,19 @@ def check_provider(model: str, image: str, auth: Path, docker: str = "docker",
     result["error_events"] = errors
     if process.returncode != 0:
         result["error"] = "process_failed"
+        stderr = process.stderr.strip()
+        if stderr:
+            result["stderr"] = stderr[-1500:]
+        stdout_tail = process.stdout.strip()
+        if stdout_tail:
+            result["stdout_tail"] = stdout_tail[-1500:]
     elif errors:
         result["error"] = "provider_error"
     elif not text.strip():
         result["error"] = "empty_response"
+        stderr = process.stderr.strip()
+        if stderr:
+            result["stderr"] = stderr[-1000:]
     else:
         result["status"] = "healthy"
         return result
