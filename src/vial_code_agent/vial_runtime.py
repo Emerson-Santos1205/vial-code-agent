@@ -124,6 +124,29 @@ def generate_operation_id(
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
+def compute_execution_fingerprint(
+    workspace_root: Path | None = None,
+    base_commit: str = "",
+    patch: str = "",
+    policy: str = "",
+    context_id: str = "",
+) -> str:
+    """Compute an execution fingerprint for a Decision.
+
+    This is a separate extension field from the Core ``operation_id``.
+    It captures the concrete execution context (workspace, base commit,
+    patch, policy, context) as a SHA-256 hash for audit and comparison.
+    """
+    parts = [
+        str(workspace_root.resolve()) if workspace_root else "",
+        base_commit,
+        patch,
+        policy,
+        context_id,
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def file_field_key(relative: str) -> str:
     return f"file:{relative}"
 
@@ -855,6 +878,7 @@ class VialRuntime:
     def propose_decision(self, objective: str, type: str = "operation",
                          policy: str = POLICY_DEVELOPMENT,
                          context_id: str = "", context_fingerprint: str = "",
+                         execution_fingerprint: str = "",
                          risk: str = RISK_MEDIUM,
                          rationale: str = "", evidence: list[str] | None = None,
                          confidence: float = 0.95,
@@ -884,6 +908,7 @@ class VialRuntime:
             type=type,
             context_id=context_id,
             context_fingerprint=context_fingerprint,
+            execution_fingerprint=execution_fingerprint,
             alternatives=[],
             rationale=rationale or "authorized operation for the current task context",
             evidence=evidence or [f"context:{context_id}"],
@@ -903,18 +928,20 @@ class VialRuntime:
 
     def propose_patch_decision(self, context_id: str = "",
                                context_fingerprint: str = "",
+                               risk: str = RISK_MEDIUM,
                                expires_at: float | None = None,
                                ttl: float | None = None) -> Any:
         """propose -> approve -> authorize a patch-apply Decision (SDK-005).
 
-        Patch decisions default to LOW risk because they include behavioral
-        evidence (tests). Higher risk requires explicit risk parameter.
+        Patch decisions default to MEDIUM risk because they are mutation
+        operations. Callers can override with classify_task() or explicit
+        risk assessment based on the actual scope of changes.
         """
         return self.propose_decision(
             objective="apply generated code patch", type="patch_apply",
             policy=POLICY_CODE_APPLY, context_id=context_id,
             context_fingerprint=context_fingerprint,
-            risk=RISK_LOW,
+            risk=risk,
             rationale="authorized code change for the current task context",
             evidence=[f"context:{context_id}"],
             expires_at=expires_at,
@@ -939,15 +966,17 @@ class VialRuntime:
         return record
 
     @staticmethod
-    def _verified_consensus(record: ConsensusRecord) -> bool:
+    def _verified_consensus(record: ConsensusRecord,
+                            min_models: int = 2) -> bool:
         """Return whether a positive consensus carries independent evidence.
 
         A persisted boolean alone is not sufficient to authorize a mutation:
-        the gate requires two distinct model responses, a qualifying agreement
-        ratio, and static validation evidence for each reviewed response.
+        the gate requires at least ``min_models`` distinct model responses,
+        a qualifying agreement ratio, and static validation evidence for
+        each reviewed response.
         """
         models = list(dict.fromkeys(record.models))
-        if len(models) < 2 or not (CONSENSUS_MIN_AGREEMENT <= record.agreement_ratio <= 1.0):
+        if len(models) < min_models or not (CONSENSUS_MIN_AGREEMENT <= record.agreement_ratio <= 1.0):
             return False
         if any(not str(record.responses.get(model, "")).strip() for model in models):
             return False
@@ -1097,7 +1126,8 @@ class VialRuntime:
                           "provided_models": model_count})
 
         # Check behavioral evidence if required
-        if policy["require_evidence"] and not self._verified_consensus(record):
+        if policy["require_evidence"] and not self._verified_consensus(
+                record, policy["min_models"]):
             if record.agreed:
                 self.persist()
                 return self._tool.ToolResult(

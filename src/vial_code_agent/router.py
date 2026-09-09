@@ -464,9 +464,11 @@ def _cluster_responses(
     """Cluster model responses by pairwise similarity.
 
     Returns a list of clusters, each cluster being a list of model refs.
-    Clusters are ordered by size (largest first). Uses single-linkage
-    clustering: two responses join the same cluster if any pair within
-    the cluster meets the similarity threshold.
+    Clusters are ordered by size (largest first). Uses complete-linkage
+    clustering: two responses join the same cluster only if ALL pairs
+    within the merged cluster meet the similarity threshold. This is
+    safer than single-linkage for code consensus because it prevents
+    chaining A≈B, B≈C into a cluster where A≉C.
     """
     if len(valid) <= 1:
         return [[ref] for ref in valid]
@@ -478,15 +480,26 @@ def _cluster_responses(
         sim = _agreement_ratio(valid[ref_a], valid[ref_b], root)
         similarity[(ref_a, ref_b)] = sim
 
-    # Single-linkage clustering
+    # Complete-linkage clustering: merge only if ALL pairs in the
+    # merged cluster meet the threshold.
     clusters: list[set[str]] = [{ref} for ref in refs]
     for ref_a, ref_b in combinations(refs, 2):
         sim = similarity.get((ref_a, ref_b), 0.0)
         if sim >= min_similarity:
-            # Find clusters containing each ref
             cluster_a = next(c for c in clusters if ref_a in c)
             cluster_b = next(c for c in clusters if ref_b in c)
-            if cluster_a is not cluster_b:
+            if cluster_a is cluster_b:
+                continue
+            # Check complete-linkage: all cross-pairs must meet threshold
+            merged = cluster_a | cluster_b
+            all_pairs_match = all(
+                similarity.get(
+                    (min(x, y), max(x, y)),
+                    similarity.get((y, x), 0.0 if x != y else 1.0),
+                ) >= min_similarity
+                for x, y in combinations(merged, 2)
+            )
+            if all_pairs_match:
                 cluster_a.update(cluster_b)
                 clusters.remove(cluster_b)
 

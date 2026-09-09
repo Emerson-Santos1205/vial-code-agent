@@ -302,7 +302,7 @@ class FullIntegrationTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("CTX-AUDIT")
+            decision = runtime.propose_patch_decision("CTX-AUDIT", risk="low")
             _record_verified_consensus(runtime, decision)
             result = runtime.apply_patch(
                 PatchApplier(root), PATCH, context_id="CTX-AUDIT",
@@ -322,7 +322,7 @@ class FullIntegrationTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             _record_verified_consensus(runtime, decision)
             first = runtime.apply_patch(
                 PatchApplier(root), PATCH, decision=decision)
@@ -340,7 +340,7 @@ class FullIntegrationTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             _record_verified_consensus(runtime, decision)
             runtime.coordinator.commit = Mock(side_effect=RuntimeError("state unavailable"))
 
@@ -363,7 +363,7 @@ class FullIntegrationTests(unittest.TestCase):
             resolved = runtime.resolve_operation(op_id)
             self.assertIsNotNone(resolved)
             self.assertEqual(resolved.status, "pending")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             _record_verified_consensus(runtime, decision)
             result = runtime.apply_patch(PatchApplier(root), PATCH,
                                          operation_id=op_id,
@@ -378,7 +378,7 @@ class FullIntegrationTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             _record_verified_consensus(runtime, decision)
             runtime.apply_patch(PatchApplier(root), PATCH, decision=decision)
             # Verify patch was applied
@@ -444,7 +444,7 @@ class FullIntegrationTests(unittest.TestCase):
             context = runtime.build_context(
                 "trim trailing whitespace", root, [source])
             runtime.store_reuse(task, "PATCH-PERSISTED", 1.0, context)
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             _record_verified_consensus(runtime, decision)
             runtime.apply_patch(PatchApplier(root), PATCH, decision=decision)
             runtime.persist()

@@ -135,7 +135,7 @@ class ToolCatalogTests(unittest.TestCase):
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
             context = runtime.build_context("update value", root, [source])
-            decision = runtime.propose_patch_decision(context.context_id)
+            decision = runtime.propose_patch_decision(context.context_id, risk="low")
             _record_verified_consensus(runtime, decision)
             runtime.apply_patch(PatchApplier(root), PATCH,
                                 context_id=context.context_id,

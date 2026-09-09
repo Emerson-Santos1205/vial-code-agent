@@ -95,7 +95,7 @@ class ConsensusGateTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             runtime.record_consensus(
                 decision.id, True, 0.9, models=["a/x", "b/y"],
                 responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
@@ -127,7 +127,7 @@ class ConsensusGateTests(unittest.TestCase):
             source = root / "value.txt"
             source.write_text("old\n", encoding="utf-8")
             runtime = _runtime(Path(directory) / "state")
-            decision = runtime.propose_patch_decision("")
+            decision = runtime.propose_patch_decision("", risk="low")
             runtime.record_consensus(
                 decision.id, True, 0.9, models=["a/x", "b/y"],
                 responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
@@ -135,7 +135,7 @@ class ConsensusGateTests(unittest.TestCase):
                 PatchApplier(root), PATCH, decision=decision)
             self.assertTrue(applied.ok())
 
-            rollback_decision = runtime.propose_patch_decision("")
+            rollback_decision = runtime.propose_patch_decision("", risk="low")
             runtime.record_consensus(
                 rollback_decision.id, True, 0.9, models=["a/x", "b/y"],
                 responses={"a/x": "same", "b/y": "same"}, evidence=_evidence())
