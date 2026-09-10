@@ -1607,6 +1607,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
     if environment is not None:
         docker_image = environment.image
     prepared_image = is_prepared_test_image(docker_image)
+    official_image = bool(docker_image and docker_image.startswith("swebench/"))
     # Docker test containers run as root and can leave root-owned files in the
     # bind mount. GitHub-hosted runners cannot remove those files during the
     # context-manager cleanup, but the ephemeral workspace is safe to discard.
@@ -1923,7 +1924,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "governance": apply_metadata,
                     "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
                     "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter}
-        if (root / "astropy").is_dir() and not prepared_image:
+        if (root / "astropy").is_dir() and not (prepared_image or official_image):
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
                   "extension-helpers<1.0", "setuptools_scm<7", "wheel",
@@ -1937,7 +1938,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             return {"id": instance["id"], "passed": False,
                     "stage": "test_fixture", "detail": fixture_error}
         test_env = os.environ.copy()
-        if prepared_image:
+        if prepared_image or official_image:
             test_env["PYTHONPATH"] = "/workspace"
         else:
             install = _run_command(
@@ -1953,7 +1954,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             root / "tests" / "requirements" / "py3.txt",
             root / "requirements" / "test.txt",
         ]
-        for requirements in ([] if prepared_image else requirement_files):
+        for requirements in ([] if prepared_image or official_image
+                             else requirement_files):
             if not requirements.is_file():
                 continue
             requirement_path = (f"/workspace/{requirements.relative_to(root).as_posix()}"
@@ -1965,7 +1967,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
                         "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
-        if docker_image and not prepared_image and not (root / "tests" / "runtests.py").is_file():
+        if (docker_image and not (prepared_image or official_image)
+                and not (root / "tests" / "runtests.py").is_file()):
             test_runner = _run_command(
                 ["python", "-m", "pip", "install", "pytest<8",
                  "--disable-pip-version-check"], root, test_env, docker_image)

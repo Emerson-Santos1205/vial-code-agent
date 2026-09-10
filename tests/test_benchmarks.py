@@ -737,6 +737,24 @@ class BenchmarkMetricTests(unittest.TestCase):
             self.assertIn("python -m pip install pytest==7.4.4", captured["script"])
             self.assertNotIn("pip install -e", captured["script"])
 
+    def test_official_image_does_not_install_dependencies_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout="__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n"
+                               "__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:0\n",
+                        stderr="",
+                    )
+                run_command.side_effect = capture
+                _run_test_groups(root, [], [], {}, "swebench/example:latest",
+                                 ("pytest==7.4.4",), (), 30)
+            self.assertNotIn("python -m pip install", captured["script"])
+
     def test_configured_pytest_command_is_scoped_to_each_test_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
