@@ -2080,6 +2080,8 @@ def main() -> int:
     parser.add_argument("--adapters",
                         help="comma-separated generation protocols to compare")
     parser.add_argument("--run-tests", action="store_true")
+    parser.add_argument("--task-timeout-seconds", type=int, default=None,
+                        help="cap test execution time for each benchmark task")
     parser.add_argument("--preflight-only", action="store_true",
                         help="validate base environments without invoking a model")
     parser.add_argument("--test-image", default=None,
@@ -2109,6 +2111,8 @@ def main() -> int:
             setattr(args, optional_model, None)
     if not args.run_tests:
         parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
+    if args.task_timeout_seconds is not None and args.task_timeout_seconds < 1:
+        parser.error("--task-timeout-seconds must be at least 1")
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     if args.limit is None:
         args.limit = max(0, len(workload["tasks"]) - args.offset)
@@ -2162,6 +2166,11 @@ def main() -> int:
                 break
             environment = resolver.resolve(instance, args.test_image,
                                             args.official_images)
+            if args.task_timeout_seconds is not None:
+                environment = replace(
+                    environment,
+                    timeout_seconds=min(environment.timeout_seconds,
+                                        args.task_timeout_seconds))
             environment = replace(environment, image=image_refs[environment.image])
             run_results = []
             for _repeat_idx in range(args.repeat):
