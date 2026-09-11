@@ -188,22 +188,28 @@ The manual workflow publishes each shard's report and checkpoint as a GitHub
 Actions artifact. Download all artifacts, extract the reports, and run the
 aggregator locally to produce the consolidated result.
 
-The real executor also compares the three protocols on the same instance
-selection. `baseline` makes a direct provider call, `opencode` uses the
-`CodeAgent` without runtime, and `vial` uses the governed runtime. The report
-creates `by_adapter` with success and savings for each path, and maintains
-checkpoints by `adapter:index` so an interruption does not mix results.
+The default runtime is VIAL-MIN: one agent, selective context, mechanical patch
+validation, tests, and governance. It does not retry with an LLM or require a
+second candidate. Independent verification is reserved for high-risk tasks
+(configurable with `consensus_risk_threshold`) or `--independent-verification`.
+
+The real executor compares P0/P1/P2 on the same instance selection and model:
+P0 (`direct`) makes one direct provider call, P1 (`vial-min`) uses the governed
+single-agent path, and P2 (`vial-full`) enables the independent candidate
+protocol. The report creates `by_adapter` with success and economics for each
+path, and maintains checkpoints by `adapter:index` so an interruption does not
+mix results.
 
 ```text
 python benchmark/run_swebench.py --workload benchmark/swebench-verified-50.json \
   --model openai/gpt-4o --run-tests --limit 50 \
-  --adapters baseline,opencode,vial --shard-index 0 --shard-count 10 \
+  --protocols p0 p1 p2 --consensus-model openai/gpt-4o-mini \
+  --shard-index 0 --shard-count 10 \
   --out benchmark/results/comparison-00
 ```
 
-When `vial` receives `--consensus-model`, only that adapter uses the second
-model and consensus validation; `baseline` and `opencode` remain single-
-candidate measurements on the same primary model.
+P2 requires `--consensus-model`; an adjudicator is disabled unless explicitly
+provided with `--adjudicator-model`. Use a distinct independent model for P2.
 
 Build pilots with distinct repositories to avoid measuring only one base
 history's infrastructure:

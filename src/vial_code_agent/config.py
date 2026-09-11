@@ -26,6 +26,7 @@ class AgentConfig:
     persist_state: bool = True
     price_table_json: str = ""
     dev_secret: str = ""
+    consensus_risk_threshold: str = "high"
 
 
 def _as_bool(value: object, default: bool = False) -> bool:
@@ -72,4 +73,7 @@ def load_config(root: Path) -> AgentConfig:
             "VIAL_PRICE_TABLE", str(values.get("price_table_json", ""))),
         dev_secret=os.environ.get(
             "VIAL_DEV_SECRET", str(values.get("dev_secret", ""))),
+        consensus_risk_threshold=os.environ.get(
+            "VIAL_CONSENSUS_RISK_THRESHOLD",
+            str(values.get("consensus_risk_threshold", "high"))),
     )

@@ -106,6 +106,7 @@ class CodeAgent:
         self, task: str, root: Path, files: list[Path],
         vial: VialCoreReference | None = None, runtime=None,
         edit_format: str = "unified-diff",
+        max_attempts: int = 1,
     ) -> GenerationResult:
         before = {path: path.read_bytes() for path in files if path.is_file()}
         context_id = ""
@@ -249,9 +250,9 @@ class CodeAgent:
                                 patch = None
                         else:
                             patch = None
-            if patch is None:
-                # One bounded contract-recovery attempt. It uses the same
-                # staging and provider path; it never authorizes a fallback.
+            if patch is None and max_attempts > 1:
+                # Contract recovery is opt-in: the default VIAL-MIN protocol
+                # records a malformed patch instead of spending more LLM calls.
                 attempts = 2
                 format_hint = (
                     "a unified diff" if edit_format == "unified-diff"
@@ -287,7 +288,7 @@ class CodeAgent:
                                     patch = None
                             else:
                                 patch = None
-                if patch is None:
+                if patch is None and max_attempts > 2:
                     attempts = 3
                     format_hint = (
                         "a valid unified diff starting with --- and +++"

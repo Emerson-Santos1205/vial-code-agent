@@ -835,6 +835,7 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
                     context_id: str, allowed_paths: set[str],
                     consensus: dict | CandidateConsensus | None = None,
                     risk: str = "medium",
+                    single_agent_approved: bool = False,
                     reverse: bool = False) -> tuple[bool, str, dict]:
     """Apply or reverse an agent patch only through VialRuntime.
 
@@ -842,6 +843,10 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
     this helper never fabricates it for a benchmark run.
     """
     decision = runtime.propose_patch_decision(context_id, risk=risk)
+    if single_agent_approved:
+        runtime.approve_decision(
+            decision.id, runtime.authority,
+            note="VIAL-MIN: single agent with mechanical validation and tests")
     if consensus is not None:
         if isinstance(consensus, CandidateConsensus):
             consensus = consensus.to_dict()
@@ -1083,11 +1088,29 @@ def _rate_limit_failure(instance: dict, adapter: str, model: str,
     }
 
 
+def _stateful_recovery_prompt(prompt: str, root: Path, stage: str,
+                              diagnostic: str, attempts: int) -> str:
+    """Attach bounded, deterministic retry state instead of prior model text."""
+    state = {
+        "attempts_consumed": attempts,
+        "failure_signature": _normalize_failure_signature(diagnostic),
+        "stage": stage,
+        "workspace_sha256": _workspace_sha256(root),
+    }
+    if diagnostic:
+        state["diagnostic"] = diagnostic[-1500:]
+    return prompt + (
+        "\n\nSTATEFUL_RECOVERY_STATE:\n" +
+        json.dumps(state, sort_keys=True, separators=(",", ":")) +
+        "\nRe-read the current workspace. Return only one complete minimal patch.")
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
                                    runtime: VialRuntime,
-                                   edit_format: str = "unified-diff") -> CandidateResult:
+                                   edit_format: str = "unified-diff",
+                                   stateful_recovery: bool = False) -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
     global _rate_limit_hit
     if _rate_limit_hit:
@@ -1211,7 +1234,10 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
             candidate_prompt = (
-                prompt +
+                _stateful_recovery_prompt(
+                    prompt, root, "patch_validation", str(error),
+                    total_attempts_this_task)
+                if stateful_recovery else prompt +
                 "\n\nThe previous patch failed static validation against the "
                 "exact workspace. Re-read every target file and verify each "
                 "removed line character-for-character before regenerating. "
@@ -1597,12 +1623,15 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                   consensus: dict | None = None,
                   consensus_model: str | None = None,
                   adjudicator_model: str | None = None,
-                  adapter: str = "vial", preflight_only: bool = False,
-                  edit_format: str = "unified-diff") -> dict:
-    if adapter not in {"baseline", "opencode", "vial"}:
+                   adapter: str = "vial", preflight_only: bool = False,
+                   edit_format: str = "unified-diff") -> dict:
+    aliases = {"p0": "baseline", "direct": "baseline", "p1": "vial",
+               "vial-min": "vial", "p2": "vial", "vial-full": "vial"}
+    adapter = aliases.get(adapter, adapter)
+    if adapter not in {"baseline", "opencode", "vial", "vial-stateful-recovery"}:
         raise ValueError(f"unknown adapter: {adapter}")
-    if adapter != "vial" and (consensus_model is not None or consensus is not None
-                               or adjudicator_model is not None):
+    if adapter not in {"vial", "vial-stateful-recovery"} and (consensus_model is not None or consensus is not None
+                                or adjudicator_model is not None):
         raise ValueError("consensus options are only supported by the vial adapter")
     if environment is not None:
         docker_image = environment.image
@@ -1719,7 +1748,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "stage": "governance",
                     "detail": "adjudicator model requires a consensus model"}
         runtime = None
-        if adapter == "vial":
+        if adapter in {"vial", "vial-stateful-recovery"}:
             runtime = VialRuntime(
                 VialCoreReference(BASE / "vendor" / "vial-core"),
                 root / ".vial-state", persist_state=False)
@@ -1736,12 +1765,16 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 VialCoreReference(BASE / "vendor" / "vial-core"),
                 root / ".vial-consensus-state", persist_state=False)
             review_runtime.set_workspace_root(root)
-            candidates = _generate_candidate_set([
+            candidate_requests = [
                 ("A", model, prompt, root, files, allowed_paths, runtime,
                  edit_format),
                 ("B", consensus_model, prompt, root, files, allowed_paths,
                  review_runtime, edit_format),
-            ])
+            ]
+            candidates = _generate_candidate_set(
+                candidate_requests,
+                generate=lambda *request: _generate_validated_candidate(
+                    *request, stateful_recovery=adapter == "vial-stateful-recovery"))
             primary, secondary = candidates
             candidate_runtimes = {model: runtime, consensus_model: review_runtime}
             for candidate in candidates:
@@ -1752,7 +1785,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         root, str(candidate.patch), instance, environment,
                         docker_image)
                     candidate.behavior = behavior
-                    if behavior.get("behavioral_passed") is False:
+                    if (behavior.get("behavioral_passed") is False
+                            and adapter == "vial-stateful-recovery"):
                         corrected, behavior, retry_attempts, patch_returns = (
                             _retry_behavioral_candidate(
                                 root, str(candidate.patch), instance,
@@ -1906,11 +1940,12 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "tokens": generated.tokens,
                     "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
                     "adapter": adapter}
-        if adapter == "vial":
+        if adapter in {"vial", "vial-stateful-recovery"}:
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, generated_patch, generated.context_id,
                 allowed_paths, consensus=consensus,
-                risk=consensus.risk_level or "medium")
+                risk=consensus.risk_level or "medium",
+                single_agent_approved=consensus is None)
         else:
             try:
                 PatchApplier(root).apply(generated_patch)
@@ -1944,7 +1979,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             install = _run_command(
                 ["python", "-m", "pip", "install", "-e", ".", "--no-deps",
                  "--no-build-isolation"], root, {}, docker_image)
-        if not prepared_image and install.returncode:
+        if not (prepared_image or official_image) and install.returncode:
             # Some historical projects require native compilers unavailable on
             # the host. Source-tree tests can still run without installing the
             # package, provided the checkout is first on PYTHONPATH.
@@ -1998,9 +2033,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                         "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
                         "detail": evidence[-7000:]}
-            if adapter != "vial" or consensus_model is not None:
-                # A replacement patch would no longer have two-candidate
-                # approval. Keep the approved patch and block on new evidence.
+            if adapter != "vial-stateful-recovery":
+                # VIAL-MIN and VIAL-full stop at the first behavioral result.
+                # Stateful recovery is retained only as an explicit experiment.
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts,
                         "tokens": tokens, "fail_to_pass": fail_ok,
@@ -2020,6 +2055,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 runtime, root, generated_patch, generated.context_id,
                 allowed_paths,
                 consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                single_agent_approved=consensus is None,
                 reverse=True)
             if not reverted:
                 return {"id": instance["id"], "passed": False,
@@ -2043,7 +2079,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, retry_patch, retry.context_id,
                 allowed_paths,
-                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus)
+                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                single_agent_approved=consensus is None)
             if not applied:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_patch", "detail": apply_error or
@@ -2075,10 +2112,12 @@ def main() -> int:
     parser.add_argument("--shard-count", type=int, default=1,
                         help="number of balanced shards for the selected range")
     parser.add_argument("--model", default="openai/gpt-5.6-luna")
-    parser.add_argument("--adapter", choices=["baseline", "opencode", "vial"],
-                        default="vial", help="generation protocol to evaluate")
+    parser.add_argument("--adapter", choices=["baseline", "opencode", "vial", "vial-min", "vial-full", "direct", "p0", "p1", "p2", "vial-stateful-recovery"],
+                        default="vial-min", help="generation protocol to evaluate")
     parser.add_argument("--adapters",
                         help="comma-separated generation protocols to compare")
+    parser.add_argument("--protocols", choices=["p0", "p1", "p2"], nargs="+",
+                        help="comparable protocols: P0=direct, P1=VIAL-min, P2=VIAL-full")
     parser.add_argument("--run-tests", action="store_true")
     parser.add_argument("--task-timeout-seconds", type=int, default=None,
                         help="cap test execution time for each benchmark task")
@@ -2093,11 +2132,11 @@ def main() -> int:
                         help="directory for the reproducible JSON report")
     parser.add_argument("--consensus-file", type=Path, default=None,
                         help="JSON map of task id to independent consensus evidence")
-    parser.add_argument("--consensus-model", default="openai/gpt-5.5",
+    parser.add_argument("--consensus-model", default=None,
                         help="independent second model used to validate each patch")
-    parser.add_argument("--adjudicator-model", default="opencode/mimo-v2.5-free",
+    parser.add_argument("--adjudicator-model", default=None,
                         help="optional independent adjudicator for divergent candidates")
-    parser.add_argument("--repeat", type=int, default=3,
+    parser.add_argument("--repeat", type=int, default=1,
                         help="run each task N times to measure variance (default: 1)")
     parser.add_argument("--edit-format",
                         choices=["unified-diff", "search-replace"],
@@ -2116,13 +2155,21 @@ def main() -> int:
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     if args.limit is None:
         args.limit = max(0, len(workload["tasks"]) - args.offset)
+    if args.protocols and args.adapters:
+        parser.error("--protocols cannot be combined with --adapters")
+    protocol_adapters = {"p0": "direct", "p1": "vial-min", "p2": "vial-full"}
     adapters = (["preflight"] if args.preflight_only else
+                [protocol_adapters[protocol] for protocol in args.protocols] if args.protocols else
                 args.adapters.split(",") if args.adapters else [args.adapter])
-    invalid_adapters = set(adapters) - {"baseline", "opencode", "vial", "preflight"}
+    adapters = [protocol_adapters.get(adapter, adapter) for adapter in adapters]
+    valid_adapters = {"baseline", "opencode", "vial", "vial-min", "vial-full", "direct", "p0", "p1", "p2", "vial-stateful-recovery", "preflight"}
+    invalid_adapters = set(adapters) - valid_adapters
     if invalid_adapters or not adapters:
-        parser.error("--adapters must contain baseline, opencode and/or vial")
+        parser.error("--adapters must contain valid generation protocols")
     if len(adapters) != len(set(adapters)):
         parser.error("--adapters must not contain duplicates")
+    if "vial-full" in adapters and args.consensus_model is None:
+        parser.error("VIAL-full requires --consensus-model; VIAL-min is the default")
     consensus_by_id = {}
     if args.consensus_file is not None:
         consensus_by_id = json.loads(
@@ -2178,10 +2225,10 @@ def main() -> int:
                 try:
                     result = run_instance(instance, args.model, args.run_tests,
                                       environment.image, environment,
-                                      (consensus_by_id.get(instance.get("id"))
-                                       if adapter == "vial" else None),
-                                      args.consensus_model if adapter == "vial" else None,
-                                      args.adjudicator_model if adapter == "vial" else None,
+                                        (consensus_by_id.get(instance.get("id"))
+                                         if adapter == "vial-full" else None),
+                                        args.consensus_model if adapter == "vial-full" else None,
+                                        args.adjudicator_model if adapter == "vial-full" else None,
                                       "vial" if adapter == "preflight" else adapter,
                                        args.preflight_only,
                                        edit_format=args.edit_format)
