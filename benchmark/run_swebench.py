@@ -1944,7 +1944,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, generated_patch, generated.context_id,
                 allowed_paths, consensus=consensus,
-                risk=consensus.risk_level or "medium",
+                risk=(consensus.risk_level if isinstance(
+                    consensus, CandidateConsensus) else "medium"),
                 single_agent_approved=consensus is None)
         else:
             try:
