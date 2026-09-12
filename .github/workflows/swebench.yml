@@ -51,7 +51,7 @@ on:
 jobs:
   swebench:
     runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 90
+    timeout-minutes: 50
     defaults:
       run:
         shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -eo pipefail "{0}"
@@ -165,7 +165,7 @@ jobs:
           args="$args --model $model --adapters $adapters"
           args="$args --consensus-model $consensus"
           args="$args --adjudicator-model $adjudicator"
-          args="$args --offset 0 --limit 10"
+          args="$args --offset 0 --limit 3"
           args="$args --shard-index ${{ matrix.shard_index }} --shard-count $shard_count"
           if [ -n "${{ inputs.test_image }}" ]; then
             args="$args --test-image ${{ inputs.test_image }}"

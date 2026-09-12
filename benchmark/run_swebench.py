@@ -1628,6 +1628,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
     aliases = {"p0": "baseline", "direct": "baseline", "p1": "vial",
                "vial-min": "vial", "p2": "vial", "vial-full": "vial"}
     adapter = aliases.get(adapter, adapter)
+    candidate_outcomes = {}
     if adapter not in {"baseline", "opencode", "vial", "vial-stateful-recovery"}:
         raise ValueError(f"unknown adapter: {adapter}")
     if adapter not in {"vial", "vial-stateful-recovery"} and (consensus_model is not None or consensus is not None
@@ -1666,7 +1667,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 break
         if clone.returncode:
             return {"id": instance["id"], "passed": False,
-                    "stage": "clone", "detail": clone_detail}
+                    "stage": "clone", "detail": clone_detail,
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         try:
             checkout = subprocess.run(
                 ["git", "checkout", instance["base_commit"]], cwd=root,
@@ -1674,10 +1677,14 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 check=False, timeout=120)
         except subprocess.TimeoutExpired:
             return {"id": instance["id"], "passed": False,
-                    "stage": "checkout", "detail": "checkout timed out after 120s"}
+                    "stage": "checkout", "detail": "checkout timed out after 120s",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if checkout.returncode:
             return {"id": instance["id"], "passed": False,
-                    "stage": "checkout", "detail": checkout.stderr[-1000:]}
+                    "stage": "checkout", "detail": checkout.stderr[-1000:],
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         solution_paths = changed_paths(instance["patch"])
         solution_files = [root / path for path in solution_paths
                           if (root / path).is_file()]
@@ -1697,7 +1704,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             baseline_applied, baseline_error = _apply_fixture(root, baseline_patch)
             if not baseline_applied:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "baseline_tests", "detail": baseline_error}
+                        "stage": "baseline_tests", "detail": baseline_error,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             try:
                 baseline_fail, baseline_fail_detail, baseline_pass, baseline_pass_detail = (
                     _run_test_groups(root, baseline_fail_tests, baseline_pass_tests,
@@ -1715,7 +1724,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if not restored:
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests",
-                        "detail": "baseline fixture rollback failed: " + restore_error}
+                        "detail": "baseline fixture rollback failed: " + restore_error,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             baseline = {
                 "fail_to_pass": baseline_fail,
                 "pass_to_pass": baseline_pass,
@@ -1728,24 +1739,33 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if not baseline["expected"]:
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests", "baseline": baseline,
-                        "detail": baseline["detail"]}
+                        "detail": baseline["detail"],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             if preflight_only:
                 return {"id": instance["id"], "passed": True,
                         "stage": "preflight", "baseline": baseline,
-                        "adapter": "preflight"}
+                        "adapter": "preflight",
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes)}
         if consensus_model is not None and consensus_model == model:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
-                    "detail": "consensus model must be independent from primary model"}
+                    "detail": "consensus model must be independent from primary model",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if adjudicator_model is not None and adjudicator_model in {
                 model, consensus_model}:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
                     "detail": ("adjudicator model must be independent from "
-                               "primary and consensus models")}
+                               "primary and consensus models"),
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if adjudicator_model is not None and consensus_model is None:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter,
                     "detail": "adjudicator model requires a consensus model"}
         runtime = None
         if adapter in {"vial", "vial-stateful-recovery"}:
@@ -1968,11 +1988,15 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if legacy_build.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (legacy_build.stdout + legacy_build.stderr)[-4000:]}
+                        "detail": (legacy_build.stdout + legacy_build.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
         fixture_ok, fixture_error = _apply_fixture(root, instance.get("test_patch", ""))
         if not fixture_ok:
             return {"id": instance["id"], "passed": False,
-                    "stage": "test_fixture", "detail": fixture_error}
+                    "stage": "test_fixture", "detail": fixture_error,
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         test_env = os.environ.copy()
         if prepared_image or official_image:
             test_env["PYTHONPATH"] = "/workspace"
@@ -2002,7 +2026,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if dependencies.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
+                        "detail": (dependencies.stdout + dependencies.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
         if (docker_image and not (prepared_image or official_image)
                 and not (root / "tests" / "runtests.py").is_file()):
             test_runner = _run_command(
@@ -2011,18 +2037,27 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if test_runner.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (test_runner.stdout + test_runner.stderr)[-4000:]}
+                        "detail": (test_runner.stdout + test_runner.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
         fail_tests = _as_tests(instance.get("fail_to_pass"))
         pass_tests = _as_tests(instance.get("pass_to_pass"))
         if not fail_tests and not pass_tests:
             return {"id": instance["id"], "passed": False,
-                    "stage": "test_selection", "detail": "no benchmark tests"}
+                    "stage": "test_selection", "detail": "no benchmark tests",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         dependencies = environment.dependencies if environment else ()
         test_command = environment.test_command if environment else ()
         fail_ok, fail_detail, pass_ok, pass_detail = _run_test_groups(
             root, fail_tests, pass_tests, test_env, docker_image,
             dependencies, test_command,
             environment.timeout_seconds if environment else 900)
+        # Update candidate outcome with behavioral test results (direct/vial-min)
+        if consensus_model is None and primary is not None:
+            primary.outcome.tests_passed = fail_ok and pass_ok
+            primary.outcome.pipeline.behavioral = (
+                "PASS" if primary.outcome.tests_passed is True else "FAIL")
         attempts = generated.attempts
         tokens = generated.tokens or 0
         if not (fail_ok and pass_ok):
@@ -2033,6 +2068,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "stage": "tests", "attempts": attempts, "tokens": tokens,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                         "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter,
                         "detail": evidence[-7000:]}
             if adapter != "vial-stateful-recovery":
                 # VIAL-MIN and VIAL-full stop at the first behavioral result.
@@ -2062,21 +2099,27 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_revert", "detail": revert_error or
                         "patch rollback rejected by VialRuntime",
-                        "governance": revert_metadata}
+                        "governance": revert_metadata,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             retry = CodeAgent(provider, runtime=runtime).generate(
                 feedback, root, files, runtime=runtime)
             attempts += retry.attempts
             tokens += retry.tokens or 0
             if retry.patch is None:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "test_retry_contract", "detail": retry.failure_type}
+                        "stage": "test_retry_contract", "detail": retry.failure_type,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             retry_patch = retry.patch
             try:
                 retry_patch = _validate_candidate(root, retry_patch,
                                                   allowed_paths)
             except PatchError as error:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "test_retry_patch", "detail": str(error)}
+                        "stage": "test_retry_patch", "detail": str(error),
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, retry_patch, retry.context_id,
                 allowed_paths,
@@ -2086,11 +2129,18 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_patch", "detail": apply_error or
                         "retry patch rejected by VialRuntime",
-                        "governance": apply_metadata}
+                        "governance": apply_metadata,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             fail_ok, fail_detail, pass_ok, pass_detail = _run_test_groups(
                 root, fail_tests, pass_tests, test_env, docker_image,
                 dependencies, test_command,
                 environment.timeout_seconds if environment else 900)
+            # Update candidate outcome with behavioral test results after retry
+            if consensus_model is None and primary is not None:
+                primary.outcome.tests_passed = fail_ok and pass_ok
+                primary.outcome.pipeline.behavioral = (
+                    "PASS" if primary.outcome.tests_passed is True else "FAIL")
         return {"id": instance["id"], "passed": fail_ok and pass_ok,
                 "stage": "tests", "attempts": attempts, "tokens": tokens,
                 "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
