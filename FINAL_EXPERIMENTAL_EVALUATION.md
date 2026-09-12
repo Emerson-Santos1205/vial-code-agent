@@ -10,7 +10,7 @@
 
 The VIAL Code Agent was a research project investigating whether a governed, multi-candidate software engineering agent could outperform a single-pass baseline on real-world bug fixes.
 
-**After 18 months of development and multiple experimental iterations, the answer is clear: no measurable advantage was found.**
+**After 33 days of intensive development (August 10 – September 12, 2026) and multiple experimental iterations, the answer is clear: no measurable advantage was found.**
 
 The project was terminated not because it failed to run, but because it failed to demonstrate value sufficient to justify its complexity.
 
@@ -169,6 +169,20 @@ LLM Response → Static Validation → Behavioral Validation → Final Score
 2. Baseline: 1/3 resolved, 75k tokens, 609s
 3. VIAL (vial-min): 1/3 resolved, 26k tokens, 618s
 
+### 7.3 Evidence (Verifiable)
+
+Kill Test artifacts are committed to the repository:
+
+| File | Path |
+|------|------|
+| Baseline report | `benchmark/results/kill-test-baseline/report-20260912-090529.json` |
+| Baseline checkpoint | `benchmark/results/kill-test-baseline/checkpoint-ecb2d751460e703d.jsonl` |
+| VIAL report | `benchmark/results/kill-test-vial/report-20260912-091601.json` |
+| VIAL checkpoint | `benchmark/results/kill-test-vial/checkpoint-2c621f665cb05c37.jsonl` |
+| Preflight report | `benchmark/results/preflight-kill-test/report-20260912-085508.json` |
+
+**Note**: Kill Test ran locally (not via CI). All JSONs are committed for independent verification.
+
 ### 7.3 Task-by-Task Comparison
 
 | Task | Baseline | VIAL | Match |
@@ -196,6 +210,10 @@ LLM Response → Static Validation → Behavioral Validation → Final Score
 2. **Quality advantage**: VIAL does not produce higher-quality patches
 3. **Reliability advantage**: VIAL is not more reliable than baseline
 
+### 8.3 What Was NOT Tested
+
+**Search/Replace Edit Format**: External evidence suggested that edit format is the highest-leverage factor in agent harnesses. The `--edit-format` flag exists, the parser has 97% coverage, but **no report-*.json with `"output": "search-replace"` was ever generated**. The project ended without testing the one change for which there was reasonable external evidence that it could move the number. This is explicitly recorded as "not tested" rather than implying "everything that could help was tried."
+
 ### 8.3 Final Verdict
 
 **The VIAL Code Agent hypothesis is false for the configuration tested.**
@@ -208,7 +226,7 @@ A governed, multi-candidate agent does not outperform a single-pass baseline on 
 
 | # | Reason |
 |---|--------|
-| 1 | No measurable resolution improvement after 18 months |
+| 1 | No measurable resolution improvement after 33 days of focused development |
 | 2 | Governance blocks valid patches more often than it filters bad ones |
 | 3 | Token savings from VIAL Core don't translate to better outcomes |
 | 4 | Consensus mechanism adds complexity without value |
@@ -219,12 +237,19 @@ A governed, multi-candidate agent does not outperform a single-pass baseline on 
 
 ## 10. What Remains Valid in the VIAL Concept
 
-Despite the negative result, several components have standalone value:
+Despite the negative result, one component has standalone value with the strongest evidence of anything in the project:
 
-### 10.1 VIAL Core (Context Selection)
-- **Valid**: Intelligent context selection reduces token costs
+### 10.1 VIAL Core (Context Selection) — PRIMARY SURVIVOR
+
+**This is the real takeaway of the project.**
+
+- **Valid**: Intelligent context selection reduces token costs by 65%
+- **Evidence**: Consistent across multiple experiments (Kill Test: 26k vs 75k tokens)
 - **Use case**: Cost optimization for LLM-powered coding assistants
-- **Value**: 65% token reduction without quality loss
+- **Value**: Same quality, 65% lower cost
+- **Status**: Requires extraction into standalone library for production use
+
+The irony: VIAL Core is the least "ambitious" part of the original project, yet it has the strongest evidence base. The project set out to prove governance adds value; instead, it proved that context optimization saves money.
 
 ### 10.2 Static Validation Pipeline
 - **Valid**: Patch validation catches obviously broken solutions
@@ -265,12 +290,12 @@ ARCHIVE: Complete codebase at v1.0-research-complete
 
 | Metric | Value |
 |--------|-------|
-| Duration | 18 months |
-| Commits | 286+ |
-| Files | 50+ |
-| Lines of code | ~15,000 |
+| Duration | 33 days (Aug 10 – Sep 12, 2026) |
+| Commits | 261 |
+| Files | 479 |
+| Lines of code | ~232k (including configs/docs) |
 | Experiments | 12+ |
-| Total tasks evaluated | 600+ |
+| Total tasks evaluated | ~223 unique tasks |
 | Final resolution | 33% (1/3) |
 | Token efficiency (VIAL Core) | -65% |
 | Resolution advantage | 0% |
