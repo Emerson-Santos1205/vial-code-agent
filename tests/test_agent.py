@@ -31,7 +31,7 @@ class AgentTests(unittest.TestCase):
             result = CodeAgent(provider).generate("change it", root, [source])
             self.assertIsNotNone(result.patch)
 
-    def test_patch_contract_retries_once_with_strict_instruction(self) -> None:
+    def test_patch_contract_recovery_is_opt_in(self) -> None:
         provider = Mock()
         diff = "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-old\n+new\n"
         provider.generate.side_effect = [
@@ -42,10 +42,23 @@ class AgentTests(unittest.TestCase):
             root = Path(directory)
             source = root / "source.py"
             source.write_text("old\n", encoding="utf-8")
-            result = CodeAgent(provider).generate("change it", root, [source])
+            result = CodeAgent(provider).generate(
+                "change it", root, [source], max_attempts=2)
             self.assertEqual(result.attempts, 2)
             self.assertIsNotNone(result.patch)
             self.assertEqual(provider.generate.call_count, 2)
+
+    def test_patch_contract_does_not_retry_by_default(self) -> None:
+        provider = Mock()
+        provider.generate.return_value = ModelResponse("not a patch", 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.py"
+            source.write_text("old\n", encoding="utf-8")
+            result = CodeAgent(provider).generate("change it", root, [source])
+        self.assertEqual(result.attempts, 1)
+        self.assertIsNone(result.patch)
+        self.assertEqual(provider.generate.call_count, 1)
 
     def test_deterministic_first_without_runtime_never_calls_model(self) -> None:
         provider = Mock()
@@ -116,7 +129,8 @@ class AgentTests(unittest.TestCase):
             source = root / "source.py"
             source.write_text("old\n", encoding="utf-8")
             result = CodeAgent(provider).generate(
-                "change it", root, [source], edit_format="search-replace")
+                "change it", root, [source], edit_format="search-replace",
+                max_attempts=2)
             self.assertIsNotNone(result.patch)
             self.assertIn("diff --git", result.patch)
             self.assertIn("+++ b/source.py", result.patch)
@@ -140,7 +154,8 @@ class AgentTests(unittest.TestCase):
             source = root / "source.py"
             source.write_text("old\n", encoding="utf-8")
             result = CodeAgent(provider).generate(
-                "change it", root, [source], edit_format="search-replace")
+                "change it", root, [source], edit_format="search-replace",
+                max_attempts=2)
             self.assertEqual(result.attempts, 2)
             self.assertIsNotNone(result.patch)
 

@@ -428,8 +428,13 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                       "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
                       "-e", "CFLAGS=-Wno-error=incompatible-pointer-types",
                       # Candidate workspaces intentionally omit .git; give
-                      # setuptools-scm a stable fallback for source builds.
-                      "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
+                       # setuptools-scm a stable fallback for source builds.
+                       "-e", "SETUPTOOLS_SCM_PRETEND_VERSION=0+vial"]
+        official_image = docker_image.startswith("swebench/")
+        invocation = (["--entrypoint", "/bin/bash", docker_image, "-lc",
+                       "source /opt/miniconda3/bin/activate testbed && " +
+                       shlex.join(command)] if official_image else
+                      [docker_image, *command])
         try:
             return subprocess.run(
                 ["docker", "run", "--rm", "--network", "none",
@@ -440,10 +445,10 @@ def _run_command(command: list[str], root: Path, env: dict[str, str],
                  "/tmp:rw,nosuid,nodev,noexec,size=1g",
                  "--workdir", "/workspace",
                  "--mount", mount,
-                 "--mount", "type=volume,source=vial-swebench-pip-cache," \
-                             "destination=/root/.cache/pip",
-                 *docker_env,
-                 docker_image, *command], cwd=root, capture_output=True, text=True,
+                  "--mount", "type=volume,source=vial-swebench-pip-cache," \
+                              "destination=/root/.cache/pip",
+                  *docker_env,
+                  *invocation], cwd=root, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=timeout, check=False)
         finally:
             _restore_docker_mount_owner(root, docker_image)
@@ -830,6 +835,7 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
                     context_id: str, allowed_paths: set[str],
                     consensus: dict | CandidateConsensus | None = None,
                     risk: str = "medium",
+                    single_agent_approved: bool = False,
                     reverse: bool = False) -> tuple[bool, str, dict]:
     """Apply or reverse an agent patch only through VialRuntime.
 
@@ -837,6 +843,10 @@ def _governed_apply(runtime: VialRuntime, root: Path, patch: str,
     this helper never fabricates it for a benchmark run.
     """
     decision = runtime.propose_patch_decision(context_id, risk=risk)
+    if single_agent_approved:
+        runtime.approve_decision(
+            decision.id, runtime.authority,
+            note="VIAL-MIN: single agent with mechanical validation and tests")
     if consensus is not None:
         if isinstance(consensus, CandidateConsensus):
             consensus = consensus.to_dict()
@@ -1078,11 +1088,29 @@ def _rate_limit_failure(instance: dict, adapter: str, model: str,
     }
 
 
+def _stateful_recovery_prompt(prompt: str, root: Path, stage: str,
+                              diagnostic: str, attempts: int) -> str:
+    """Attach bounded, deterministic retry state instead of prior model text."""
+    state = {
+        "attempts_consumed": attempts,
+        "failure_signature": _normalize_failure_signature(diagnostic),
+        "stage": stage,
+        "workspace_sha256": _workspace_sha256(root),
+    }
+    if diagnostic:
+        state["diagnostic"] = diagnostic[-1500:]
+    return prompt + (
+        "\n\nSTATEFUL_RECOVERY_STATE:\n" +
+        json.dumps(state, sort_keys=True, separators=(",", ":")) +
+        "\nRe-read the current workspace. Return only one complete minimal patch.")
+
+
 def _generate_validated_candidate(label: str, model: str, prompt: str,
                                    root: Path, files: list[Path],
                                    allowed_paths: set[str],
                                    runtime: VialRuntime,
-                                   edit_format: str = "unified-diff") -> CandidateResult:
+                                   edit_format: str = "unified-diff",
+                                   stateful_recovery: bool = False) -> CandidateResult:
     """Generate and statically validate one candidate without peer evidence."""
     global _rate_limit_hit
     if _rate_limit_hit:
@@ -1206,7 +1234,10 @@ def _generate_validated_candidate(label: str, model: str, prompt: str,
                 diagnostics.append(f"circuit-breaker: {consecutive_same} consecutive failures with signature '{sig}'")
                 break
             candidate_prompt = (
-                prompt +
+                _stateful_recovery_prompt(
+                    prompt, root, "patch_validation", str(error),
+                    total_attempts_this_task)
+                if stateful_recovery else prompt +
                 "\n\nThe previous patch failed static validation against the "
                 "exact workspace. Re-read every target file and verify each "
                 "removed line character-for-character before regenerating. "
@@ -1592,16 +1623,21 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                   consensus: dict | None = None,
                   consensus_model: str | None = None,
                   adjudicator_model: str | None = None,
-                  adapter: str = "vial", preflight_only: bool = False,
-                  edit_format: str = "unified-diff") -> dict:
-    if adapter not in {"baseline", "opencode", "vial"}:
+                   adapter: str = "vial", preflight_only: bool = False,
+                   edit_format: str = "unified-diff") -> dict:
+    aliases = {"p0": "baseline", "direct": "baseline", "p1": "vial",
+               "vial-min": "vial", "p2": "vial", "vial-full": "vial"}
+    adapter = aliases.get(adapter, adapter)
+    candidate_outcomes = {}
+    if adapter not in {"baseline", "opencode", "vial", "vial-stateful-recovery"}:
         raise ValueError(f"unknown adapter: {adapter}")
-    if adapter != "vial" and (consensus_model is not None or consensus is not None
-                               or adjudicator_model is not None):
+    if adapter not in {"vial", "vial-stateful-recovery"} and (consensus_model is not None or consensus is not None
+                                or adjudicator_model is not None):
         raise ValueError("consensus options are only supported by the vial adapter")
     if environment is not None:
         docker_image = environment.image
     prepared_image = is_prepared_test_image(docker_image)
+    official_image = bool(docker_image and docker_image.startswith("swebench/"))
     # Docker test containers run as root and can leave root-owned files in the
     # bind mount. GitHub-hosted runners cannot remove those files during the
     # context-manager cleanup, but the ephemeral workspace is safe to discard.
@@ -1631,7 +1667,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 break
         if clone.returncode:
             return {"id": instance["id"], "passed": False,
-                    "stage": "clone", "detail": clone_detail}
+                    "stage": "clone", "detail": clone_detail,
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         try:
             checkout = subprocess.run(
                 ["git", "checkout", instance["base_commit"]], cwd=root,
@@ -1639,10 +1677,14 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 check=False, timeout=120)
         except subprocess.TimeoutExpired:
             return {"id": instance["id"], "passed": False,
-                    "stage": "checkout", "detail": "checkout timed out after 120s"}
+                    "stage": "checkout", "detail": "checkout timed out after 120s",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if checkout.returncode:
             return {"id": instance["id"], "passed": False,
-                    "stage": "checkout", "detail": checkout.stderr[-1000:]}
+                    "stage": "checkout", "detail": checkout.stderr[-1000:],
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         solution_paths = changed_paths(instance["patch"])
         solution_files = [root / path for path in solution_paths
                           if (root / path).is_file()]
@@ -1662,7 +1704,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             baseline_applied, baseline_error = _apply_fixture(root, baseline_patch)
             if not baseline_applied:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "baseline_tests", "detail": baseline_error}
+                        "stage": "baseline_tests", "detail": baseline_error,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             try:
                 baseline_fail, baseline_fail_detail, baseline_pass, baseline_pass_detail = (
                     _run_test_groups(root, baseline_fail_tests, baseline_pass_tests,
@@ -1680,7 +1724,9 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if not restored:
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests",
-                        "detail": "baseline fixture rollback failed: " + restore_error}
+                        "detail": "baseline fixture rollback failed: " + restore_error,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             baseline = {
                 "fail_to_pass": baseline_fail,
                 "pass_to_pass": baseline_pass,
@@ -1693,27 +1739,36 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if not baseline["expected"]:
                 return {"id": instance["id"], "passed": False,
                         "stage": "baseline_tests", "baseline": baseline,
-                        "detail": baseline["detail"]}
+                        "detail": baseline["detail"],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             if preflight_only:
                 return {"id": instance["id"], "passed": True,
                         "stage": "preflight", "baseline": baseline,
-                        "adapter": "preflight"}
+                        "adapter": "preflight",
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes)}
         if consensus_model is not None and consensus_model == model:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
-                    "detail": "consensus model must be independent from primary model"}
+                    "detail": "consensus model must be independent from primary model",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if adjudicator_model is not None and adjudicator_model in {
                 model, consensus_model}:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
                     "detail": ("adjudicator model must be independent from "
-                               "primary and consensus models")}
+                               "primary and consensus models"),
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         if adjudicator_model is not None and consensus_model is None:
             return {"id": instance["id"], "passed": False,
                     "stage": "governance",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter,
                     "detail": "adjudicator model requires a consensus model"}
         runtime = None
-        if adapter == "vial":
+        if adapter in {"vial", "vial-stateful-recovery"}:
             runtime = VialRuntime(
                 VialCoreReference(BASE / "vendor" / "vial-core"),
                 root / ".vial-state", persist_state=False)
@@ -1730,12 +1785,16 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 VialCoreReference(BASE / "vendor" / "vial-core"),
                 root / ".vial-consensus-state", persist_state=False)
             review_runtime.set_workspace_root(root)
-            candidates = _generate_candidate_set([
+            candidate_requests = [
                 ("A", model, prompt, root, files, allowed_paths, runtime,
                  edit_format),
                 ("B", consensus_model, prompt, root, files, allowed_paths,
                  review_runtime, edit_format),
-            ])
+            ]
+            candidates = _generate_candidate_set(
+                candidate_requests,
+                generate=lambda *request: _generate_validated_candidate(
+                    *request, stateful_recovery=adapter == "vial-stateful-recovery"))
             primary, secondary = candidates
             candidate_runtimes = {model: runtime, consensus_model: review_runtime}
             for candidate in candidates:
@@ -1746,7 +1805,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         root, str(candidate.patch), instance, environment,
                         docker_image)
                     candidate.behavior = behavior
-                    if behavior.get("behavioral_passed") is False:
+                    if (behavior.get("behavioral_passed") is False
+                            and adapter == "vial-stateful-recovery"):
                         corrected, behavior, retry_attempts, patch_returns = (
                             _retry_behavioral_candidate(
                                 root, str(candidate.patch), instance,
@@ -1900,11 +1960,13 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "tokens": generated.tokens,
                     "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
                     "adapter": adapter}
-        if adapter == "vial":
+        if adapter in {"vial", "vial-stateful-recovery"}:
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, generated_patch, generated.context_id,
                 allowed_paths, consensus=consensus,
-                risk=consensus.risk_level or "medium")
+                risk=(consensus.risk_level if isinstance(
+                    consensus, CandidateConsensus) else "medium"),
+                single_agent_approved=consensus is None)
         else:
             try:
                 PatchApplier(root).apply(generated_patch)
@@ -1918,7 +1980,7 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                     "governance": apply_metadata,
                     "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
                     "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes), "adapter": adapter}
-        if (root / "astropy").is_dir() and not prepared_image:
+        if (root / "astropy").is_dir() and not (prepared_image or official_image):
             legacy_build = _run_command(
                  ["python", "-m", "pip", "install", "setuptools<60",
                   "extension-helpers<1.0", "setuptools_scm<7", "wheel",
@@ -1926,19 +1988,23 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if legacy_build.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (legacy_build.stdout + legacy_build.stderr)[-4000:]}
+                        "detail": (legacy_build.stdout + legacy_build.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
         fixture_ok, fixture_error = _apply_fixture(root, instance.get("test_patch", ""))
         if not fixture_ok:
             return {"id": instance["id"], "passed": False,
-                    "stage": "test_fixture", "detail": fixture_error}
+                    "stage": "test_fixture", "detail": fixture_error,
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         test_env = os.environ.copy()
-        if prepared_image:
+        if prepared_image or official_image:
             test_env["PYTHONPATH"] = "/workspace"
         else:
             install = _run_command(
                 ["python", "-m", "pip", "install", "-e", ".", "--no-deps",
                  "--no-build-isolation"], root, {}, docker_image)
-        if not prepared_image and install.returncode:
+        if not (prepared_image or official_image) and install.returncode:
             # Some historical projects require native compilers unavailable on
             # the host. Source-tree tests can still run without installing the
             # package, provided the checkout is first on PYTHONPATH.
@@ -1948,7 +2014,8 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             root / "tests" / "requirements" / "py3.txt",
             root / "requirements" / "test.txt",
         ]
-        for requirements in ([] if prepared_image else requirement_files):
+        for requirements in ([] if prepared_image or official_image
+                             else requirement_files):
             if not requirements.is_file():
                 continue
             requirement_path = (f"/workspace/{requirements.relative_to(root).as_posix()}"
@@ -1959,26 +2026,38 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
             if dependencies.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (dependencies.stdout + dependencies.stderr)[-4000:]}
-        if docker_image and not prepared_image and not (root / "tests" / "runtests.py").is_file():
+                        "detail": (dependencies.stdout + dependencies.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
+        if (docker_image and not (prepared_image or official_image)
+                and not (root / "tests" / "runtests.py").is_file()):
             test_runner = _run_command(
                 ["python", "-m", "pip", "install", "pytest<8",
                  "--disable-pip-version-check"], root, test_env, docker_image)
             if test_runner.returncode:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_environment",
-                        "detail": (test_runner.stdout + test_runner.stderr)[-4000:]}
+                        "detail": (test_runner.stdout + test_runner.stderr)[-4000:],
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
         fail_tests = _as_tests(instance.get("fail_to_pass"))
         pass_tests = _as_tests(instance.get("pass_to_pass"))
         if not fail_tests and not pass_tests:
             return {"id": instance["id"], "passed": False,
-                    "stage": "test_selection", "detail": "no benchmark tests"}
+                    "stage": "test_selection", "detail": "no benchmark tests",
+                    "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                    "adapter": adapter}
         dependencies = environment.dependencies if environment else ()
         test_command = environment.test_command if environment else ()
         fail_ok, fail_detail, pass_ok, pass_detail = _run_test_groups(
             root, fail_tests, pass_tests, test_env, docker_image,
             dependencies, test_command,
             environment.timeout_seconds if environment else 900)
+        # Update candidate outcome with behavioral test results (direct/vial-min)
+        if consensus_model is None and primary is not None:
+            primary.outcome.tests_passed = fail_ok and pass_ok
+            primary.outcome.pipeline.behavioral = (
+                "PASS" if primary.outcome.tests_passed is True else "FAIL")
         attempts = generated.attempts
         tokens = generated.tokens or 0
         if not (fail_ok and pass_ok):
@@ -1989,10 +2068,12 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                         "stage": "tests", "attempts": attempts, "tokens": tokens,
                         "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
                         "consensus": consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter,
                         "detail": evidence[-7000:]}
-            if adapter != "vial" or consensus_model is not None:
-                # A replacement patch would no longer have two-candidate
-                # approval. Keep the approved patch and block on new evidence.
+            if adapter != "vial-stateful-recovery":
+                # VIAL-MIN and VIAL-full stop at the first behavioral result.
+                # Stateful recovery is retained only as an explicit experiment.
                 return {"id": instance["id"], "passed": False,
                         "stage": "tests", "attempts": attempts,
                         "tokens": tokens, "fail_to_pass": fail_ok,
@@ -2012,39 +2093,54 @@ def run_instance(instance: dict, model: str, run_tests: bool = False,
                 runtime, root, generated_patch, generated.context_id,
                 allowed_paths,
                 consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                single_agent_approved=consensus is None,
                 reverse=True)
             if not reverted:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_revert", "detail": revert_error or
                         "patch rollback rejected by VialRuntime",
-                        "governance": revert_metadata}
+                        "governance": revert_metadata,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             retry = CodeAgent(provider, runtime=runtime).generate(
                 feedback, root, files, runtime=runtime)
             attempts += retry.attempts
             tokens += retry.tokens or 0
             if retry.patch is None:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "test_retry_contract", "detail": retry.failure_type}
+                        "stage": "test_retry_contract", "detail": retry.failure_type,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             retry_patch = retry.patch
             try:
                 retry_patch = _validate_candidate(root, retry_patch,
                                                   allowed_paths)
             except PatchError as error:
                 return {"id": instance["id"], "passed": False,
-                        "stage": "test_retry_patch", "detail": str(error)}
+                        "stage": "test_retry_patch", "detail": str(error),
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             applied, apply_error, apply_metadata = _governed_apply(
                 runtime, root, retry_patch, retry.context_id,
                 allowed_paths,
-                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus)
+                consensus=consensus.to_dict() if isinstance(consensus, CandidateConsensus) else consensus,
+                single_agent_approved=consensus is None)
             if not applied:
                 return {"id": instance["id"], "passed": False,
                         "stage": "test_retry_patch", "detail": apply_error or
                         "retry patch rejected by VialRuntime",
-                        "governance": apply_metadata}
+                        "governance": apply_metadata,
+                        "candidate_outcomes": _serialize_candidate_outcomes(candidate_outcomes),
+                        "adapter": adapter}
             fail_ok, fail_detail, pass_ok, pass_detail = _run_test_groups(
                 root, fail_tests, pass_tests, test_env, docker_image,
                 dependencies, test_command,
                 environment.timeout_seconds if environment else 900)
+            # Update candidate outcome with behavioral test results after retry
+            if consensus_model is None and primary is not None:
+                primary.outcome.tests_passed = fail_ok and pass_ok
+                primary.outcome.pipeline.behavioral = (
+                    "PASS" if primary.outcome.tests_passed is True else "FAIL")
         return {"id": instance["id"], "passed": fail_ok and pass_ok,
                 "stage": "tests", "attempts": attempts, "tokens": tokens,
                 "fail_to_pass": fail_ok, "pass_to_pass": pass_ok,
@@ -2067,11 +2163,15 @@ def main() -> int:
     parser.add_argument("--shard-count", type=int, default=1,
                         help="number of balanced shards for the selected range")
     parser.add_argument("--model", default="openai/gpt-5.6-luna")
-    parser.add_argument("--adapter", choices=["baseline", "opencode", "vial"],
-                        default="vial", help="generation protocol to evaluate")
+    parser.add_argument("--adapter", choices=["baseline", "opencode", "vial", "vial-min", "vial-full", "direct", "p0", "p1", "p2", "vial-stateful-recovery"],
+                        default="vial-min", help="generation protocol to evaluate")
     parser.add_argument("--adapters",
                         help="comma-separated generation protocols to compare")
+    parser.add_argument("--protocols", choices=["p0", "p1", "p2"], nargs="+",
+                        help="comparable protocols: P0=direct, P1=VIAL-min, P2=VIAL-full")
     parser.add_argument("--run-tests", action="store_true")
+    parser.add_argument("--task-timeout-seconds", type=int, default=None,
+                        help="cap test execution time for each benchmark task")
     parser.add_argument("--preflight-only", action="store_true",
                         help="validate base environments without invoking a model")
     parser.add_argument("--test-image", default=None,
@@ -2083,11 +2183,11 @@ def main() -> int:
                         help="directory for the reproducible JSON report")
     parser.add_argument("--consensus-file", type=Path, default=None,
                         help="JSON map of task id to independent consensus evidence")
-    parser.add_argument("--consensus-model", default="openai/gpt-5.5",
+    parser.add_argument("--consensus-model", default=None,
                         help="independent second model used to validate each patch")
-    parser.add_argument("--adjudicator-model", default="opencode/mimo-v2.5-free",
+    parser.add_argument("--adjudicator-model", default=None,
                         help="optional independent adjudicator for divergent candidates")
-    parser.add_argument("--repeat", type=int, default=3,
+    parser.add_argument("--repeat", type=int, default=1,
                         help="run each task N times to measure variance (default: 1)")
     parser.add_argument("--edit-format",
                         choices=["unified-diff", "search-replace"],
@@ -2101,16 +2201,26 @@ def main() -> int:
             setattr(args, optional_model, None)
     if not args.run_tests:
         parser.error("--run-tests is required: SWE-bench needs environment and baseline validation before the agent")
+    if args.task_timeout_seconds is not None and args.task_timeout_seconds < 1:
+        parser.error("--task-timeout-seconds must be at least 1")
     workload = json.loads(args.workload.read_text(encoding="utf-8"))
     if args.limit is None:
         args.limit = max(0, len(workload["tasks"]) - args.offset)
+    if args.protocols and args.adapters:
+        parser.error("--protocols cannot be combined with --adapters")
+    protocol_adapters = {"p0": "direct", "p1": "vial-min", "p2": "vial-full"}
     adapters = (["preflight"] if args.preflight_only else
+                [protocol_adapters[protocol] for protocol in args.protocols] if args.protocols else
                 args.adapters.split(",") if args.adapters else [args.adapter])
-    invalid_adapters = set(adapters) - {"baseline", "opencode", "vial", "preflight"}
+    adapters = [protocol_adapters.get(adapter, adapter) for adapter in adapters]
+    valid_adapters = {"baseline", "opencode", "vial", "vial-min", "vial-full", "direct", "p0", "p1", "p2", "vial-stateful-recovery", "preflight"}
+    invalid_adapters = set(adapters) - valid_adapters
     if invalid_adapters or not adapters:
-        parser.error("--adapters must contain baseline, opencode and/or vial")
+        parser.error("--adapters must contain valid generation protocols")
     if len(adapters) != len(set(adapters)):
         parser.error("--adapters must not contain duplicates")
+    if "vial-full" in adapters and args.consensus_model is None:
+        parser.error("VIAL-full requires --consensus-model; VIAL-min is the default")
     consensus_by_id = {}
     if args.consensus_file is not None:
         consensus_by_id = json.loads(
@@ -2154,6 +2264,11 @@ def main() -> int:
                 break
             environment = resolver.resolve(instance, args.test_image,
                                             args.official_images)
+            if args.task_timeout_seconds is not None:
+                environment = replace(
+                    environment,
+                    timeout_seconds=min(environment.timeout_seconds,
+                                        args.task_timeout_seconds))
             environment = replace(environment, image=image_refs[environment.image])
             run_results = []
             for _repeat_idx in range(args.repeat):
@@ -2161,10 +2276,10 @@ def main() -> int:
                 try:
                     result = run_instance(instance, args.model, args.run_tests,
                                       environment.image, environment,
-                                      (consensus_by_id.get(instance.get("id"))
-                                       if adapter == "vial" else None),
-                                      args.consensus_model if adapter == "vial" else None,
-                                      args.adjudicator_model if adapter == "vial" else None,
+                                        (consensus_by_id.get(instance.get("id"))
+                                         if adapter == "vial-full" else None),
+                                        args.consensus_model if adapter == "vial-full" else None,
+                                        args.adjudicator_model if adapter == "vial-full" else None,
                                       "vial" if adapter == "preflight" else adapter,
                                        args.preflight_only,
                                        edit_format=args.edit_format)

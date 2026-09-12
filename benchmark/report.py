@@ -152,6 +152,7 @@ def candidate_metrics(results: list[dict]) -> dict[str, object]:
         for item in candidates)
     return {
         "candidate_attempts": attempts,
+        "llm_calls": attempts,
         "candidate_retries": retries,
         "candidate_returned_patch": returned,
         "valid_patch": valid,

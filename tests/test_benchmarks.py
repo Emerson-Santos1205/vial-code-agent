@@ -31,6 +31,7 @@ from benchmark.run_swebench import (
     _governed_apply,
     _normalize_astropy_test_id,
     _reverse_fixture,
+    _run_command,
     _run_test_groups,
     _single_candidate_validation,
     baseline_is_valid,
@@ -50,6 +51,21 @@ from vial_code_agent.patches import PatchError
 
 
 class BenchmarkMetricTests(unittest.TestCase):
+    @patch("benchmark.run_swebench.subprocess.run")
+    def test_official_image_activates_testbed_environment(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess([], 0, "", "")
+
+        _run_command(["python", "-m", "pytest", "tests/test_example.py"],
+                     Path("."), {}, "swebench/example:latest")
+
+        command = run.call_args_list[0].args[0]
+        self.assertIn("--entrypoint", command)
+        self.assertIn("/bin/bash", command)
+        self.assertEqual(command[-2:], [
+            "-lc",
+            "source /opt/miniconda3/bin/activate testbed && python -m pytest tests/test_example.py",
+        ])
+
     @patch("benchmark.run_swebench.subprocess.run")
     def test_environment_image_validation_reports_all_missing_images(self, run) -> None:
         run.return_value.returncode = 1
@@ -720,6 +736,24 @@ class BenchmarkMetricTests(unittest.TestCase):
                                  ("pytest==7.4.4",), (), 30)
             self.assertIn("python -m pip install pytest==7.4.4", captured["script"])
             self.assertNotIn("pip install -e", captured["script"])
+
+    def test_official_image_does_not_install_dependencies_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            captured = {}
+            with patch("benchmark.run_swebench._run_command") as run_command:
+                def capture(command, *args, **kwargs):
+                    captured["script"] = (root / ".vial-test-groups.sh").read_text()
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout="__VIAL_FAIL_BEGIN__\n__VIAL_FAIL_END__:0\n"
+                               "__VIAL_PASS_BEGIN__\n__VIAL_PASS_END__:0\n",
+                        stderr="",
+                    )
+                run_command.side_effect = capture
+                _run_test_groups(root, [], [], {}, "swebench/example:latest",
+                                 ("pytest==7.4.4",), (), 30)
+            self.assertNotIn("python -m pip install", captured["script"])
 
     def test_configured_pytest_command_is_scoped_to_each_test_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

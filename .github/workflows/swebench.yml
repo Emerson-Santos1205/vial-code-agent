@@ -26,7 +26,11 @@ on:
       adapters:
         description: Comma-separated protocols to evaluate
         required: false
-        default: vial
+        default: baseline,vial
+      task_timeout_seconds:
+        description: Maximum test execution time per task
+        required: false
+        default: "900"
       consensus_model:
         description: Independent model used only by the VIAL consensus gate
         required: false
@@ -47,7 +51,7 @@ on:
 jobs:
   swebench:
     runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 60
+    timeout-minutes: 50
     defaults:
       run:
         shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -eo pipefail "{0}"
@@ -154,20 +158,21 @@ jobs:
           model="${{ inputs.model || 'openai/gpt-5.6-terra' }}"
           consensus="${{ inputs.consensus_model || 'openai/gpt-5.6-sol' }}"
           adjudicator="${{ inputs.adjudicator_model || 'openai/gpt-5.6-luna-fast' }}"
-          adapters="${{ inputs.adapters || 'vial' }}"
+          adapters="${{ inputs.adapters || 'baseline,vial' }}"
+          task_timeout="${{ inputs.task_timeout_seconds || '900' }}"
           shard_count="${{ inputs.shard_count || '50' }}"
           args="--workload benchmark/swebench-ci-workload.json"
           args="$args --model $model --adapters $adapters"
           args="$args --consensus-model $consensus"
           args="$args --adjudicator-model $adjudicator"
-          args="$args --offset 0 --limit 10"
+          args="$args --offset 0 --limit 3"
           args="$args --shard-index ${{ matrix.shard_index }} --shard-count $shard_count"
           if [ -n "${{ inputs.test_image }}" ]; then
             args="$args --test-image ${{ inputs.test_image }}"
           else
             args="$args --official-images"
           fi
-          args="$args --run-tests --out benchmark/results/shard-${{ matrix.shard_index }}"
+          args="$args --run-tests --repeat 1 --task-timeout-seconds $task_timeout --out benchmark/results/shard-${{ matrix.shard_index }}"
           python benchmark/run_swebench.py $args
       - name: Upload benchmark evidence
         if: ${{ always() && env.HAS_OPENCODE_AUTH == 'true' }}

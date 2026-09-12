@@ -17,7 +17,7 @@ from .errors import ERR_INVALID_CONFIG, wrap
 from .evidence import TestRunnerAdapter
 from .model import OpenCodeProvider
 from .patches import PatchApplier, PatchError
-from .risk import RiskPolicy, classify_task
+from .risk import RISK_ORDER, RiskPolicy, classify_task
 from .router import (
     ConsensusResult,
     ModelRouter,
@@ -134,7 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="command to verify a change; keep this option last")
     parser.add_argument("--test-timeout", type=int, default=120)
     parser.add_argument("--no-consensus", action="store_true",
-                        help="skip the cross-model consensus gate with an explicit audit note")
+                        help="skip a consensus required by risk policy with an explicit audit note")
+    parser.add_argument("--independent-verification", action="store_true",
+                        help="require cross-model consensus for this task")
     parser.add_argument("--unsafe-direct-apply", action="store_true",
                         help="allow mutation without VIAL Runtime (unsafe compatibility mode)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -381,6 +383,12 @@ def _run_fix_consensus(root: Path, config: AgentConfig, args, task: str,
     return result
 
 
+def _requires_independent_verification(risk: str, config: AgentConfig, args) -> bool:
+    """Keep independent review for high-risk changes or an explicit request."""
+    threshold = RISK_ORDER.get(config.consensus_risk_threshold, RISK_ORDER["high"])
+    return args.independent_verification or RISK_ORDER.get(risk, RISK_ORDER["critical"]) >= threshold
+
+
 def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
              args, telemetry) -> int:
     if args.model != "auto":
@@ -476,12 +484,13 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
             decision = runtime.propose_patch_decision(
                 generated.context_id, risk=risk)
             consensus = None
+            requires_consensus = _requires_independent_verification(risk, config, args)
             if args.no_consensus:
                 runtime.approve_decision(
-                    decision.id, runtime.authority,
+                    decision.id, config.authority,
                     note="consensus skipped by operator flag --no-consensus")
                 print("consensus: skipped by operator (--no-consensus)")
-            else:
+            elif requires_consensus:
                 consensus = _run_fix_consensus(
                     root, config, args, args.fix, model, executable,
                     auto_approve, agent)
@@ -509,6 +518,12 @@ def _run_fix(root: Path, config: AgentConfig, vial: VialCoreReference | None,
                     for ref, response in consensus.responses.items():
                         print(f"candidate from {ref}:", file=sys.stderr)
                         print(response.text, file=sys.stderr)
+            else:
+                runtime.approve_decision(
+                    decision.id, config.authority,
+                    note=("VIAL-MIN: single-agent mechanical validation and tests; "
+                          "independent verification not required by risk policy"))
+                print("consensus: not required (VIAL-MIN)")
             result = runtime.apply_patch(
                 PatchApplier(root), generated.patch, generated.context_id,
                 allowed_paths={path.relative_to(root).as_posix() for path in files},

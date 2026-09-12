@@ -835,6 +835,7 @@ class ConsensusCliTests(unittest.TestCase):
                                 "--fix", "change", "--root", str(root),
                                 "--vial-root", str(VENDOR),
                                 "--include", "source.txt",
+                                "--independent-verification",
                             ]
                         )
             self.assertEqual(result, 1)
@@ -903,6 +904,7 @@ class ConsensusCliTests(unittest.TestCase):
                                     "--fix", "change", "--root", str(root),
                                     "--vial-root", str(VENDOR),
                                     "--include", "source.txt",
+                                    "--independent-verification",
                                 ]
                             )
             self.assertEqual(result, 1)
